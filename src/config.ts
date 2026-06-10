@@ -72,9 +72,15 @@ export function resolveStorageState(
     profile.storageState ?? path.join(SCOUT_DIR, "state", `${profileName}.json`)
   );
   if (!fs.existsSync(statePath)) {
-    throw new Error(
-      `storageState do profile "${profileName}" não encontrado em ${statePath}. Rode: scout login ${profileName}`
-    );
+    // Caminho explícito configurado e ausente = erro do usuário.
+    // Caminho default ausente = contexto fresh — cobre profiles logged-out
+    // e profiles que logam dentro do cenário via $ENV.
+    if (profile.storageState) {
+      throw new Error(
+        `storageState do profile "${profileName}" não encontrado em ${statePath} (caminho configurado em ${CONFIG_FILE}). Rode: scout login ${profileName}`
+      );
+    }
+    return undefined;
   }
   return statePath;
 }
