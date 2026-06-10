@@ -4,15 +4,36 @@
   "description": "Self-healing browser QA: natural-language scenarios verified by an AI agent, replayed deterministically in CI",
   "type": "module",
   "license": "MIT",
+  "keywords": [
+    "qa",
+    "testing",
+    "browser",
+    "playwright",
+    "ai",
+    "self-healing",
+    "e2e",
+    "claude",
+    "mcp"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pcamarajr/scout.git"
   },
   "author": "Pedro Camara Junior <eu@pcamarajr.dev>",
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "scout": "dist/cli.js"
   },
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "files": [
     "dist"
   ],
