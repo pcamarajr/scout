@@ -9,6 +9,12 @@ import { runScenario } from "./engine.js";
 import { renderSummary } from "./report.js";
 import { Store } from "./store.js";
 
+// Rejeições fora da cadeia de await (SDK/Playwright em subprocesso) não podem
+// derrubar a suíte inteira — logar e deixar o cenário corrente falhar sozinho.
+process.on("unhandledRejection", (reason) => {
+  console.error(`\n⚠ unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`);
+});
+
 const program = new Command();
 program
   .name("scout")
