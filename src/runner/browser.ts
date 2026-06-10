@@ -1,0 +1,349 @@
+import path from "node:path";
+import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "playwright";
+import type { Step, Target } from "../types.js";
+
+export interface ElementInfo {
+  ref: number;
+  role: string;
+  name: string;
+  css: string;
+  tag: string;
+  value?: string;
+  href?: string;
+}
+
+export interface PageSnapshot {
+  url: string;
+  title: string;
+  text: string;
+  elements: ElementInfo[];
+}
+
+export interface LaunchOptions {
+  baseUrl: string;
+  headless: boolean;
+  storageState?: string;
+  locale?: string;
+  runDir: string;
+}
+
+const STEP_TIMEOUT = 10_000;
+
+/**
+ * Thin Playwright wrapper shared by the AI runner and the replay runner.
+ * Owns ref→element resolution, tracing and screenshots.
+ */
+export class BrowserSession {
+  private screenshotCount = 0;
+  readonly screenshots: string[] = [];
+
+  private constructor(
+    private browser: Browser,
+    private context: BrowserContext,
+    readonly page: Page,
+    private opts: LaunchOptions,
+    private refs = new Map<number, ElementInfo>()
+  ) {}
+
+  static async launch(opts: LaunchOptions): Promise<BrowserSession> {
+    const browser = await chromium.launch({ headless: opts.headless });
+    const context = await browser.newContext({
+      locale: opts.locale ?? "pt-BR",
+      viewport: { width: 390, height: 844 }, // mobile-first; vertical video product
+      storageState: opts.storageState,
+    });
+    await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
+    const page = await context.newPage();
+    page.setDefaultTimeout(STEP_TIMEOUT);
+    return new BrowserSession(browser, context, page, opts);
+  }
+
+  resolveUrl(url: string): string {
+    return new URL(url, this.opts.baseUrl).toString();
+  }
+
+  async navigate(url: string): Promise<void> {
+    await this.page.goto(this.resolveUrl(url), { waitUntil: "domcontentloaded" });
+  }
+
+  /**
+   * Builds a numbered map of visible interactive elements (role + accessible
+   * name + CSS path) plus a text excerpt. Refs are valid until the next snapshot.
+   */
+  async snapshot(): Promise<PageSnapshot> {
+    await this.page.waitForLoadState("domcontentloaded").catch(() => {});
+    const raw = (await this.page.evaluate(snapshotScript)) as {
+      elements: ElementInfo[];
+      text: string;
+    };
+    this.refs.clear();
+    for (const el of raw.elements) this.refs.set(el.ref, el);
+    return { url: this.page.url(), title: await this.page.title(), ...raw };
+  }
+
+  formatSnapshot(snap: PageSnapshot): string {
+    const lines = snap.elements.map((e) => {
+      const extra = [e.value ? `value="${e.value}"` : "", e.href ? `href="${e.href}"` : ""]
+        .filter(Boolean)
+        .join(" ");
+      return `[${e.ref}] ${e.role} "${e.name}"${extra ? " " + extra : ""}`;
+    });
+    return [
+      `URL: ${snap.url}`,
+      `Title: ${snap.title}`,
+      ``,
+      `Interactive elements:`,
+      ...lines,
+      ``,
+      `Visible text (excerpt):`,
+      snap.text,
+    ].join("\n");
+  }
+
+  /**
+   * Resolves a snapshot ref to a locator AND the durable Target recorded for
+   * replay: role+name when unique on the page, CSS path otherwise.
+   */
+  private async resolveRef(ref: number): Promise<{ locator: Locator; target: Target }> {
+    const info = this.refs.get(ref);
+    if (!info) {
+      throw new Error(`Ref [${ref}] desconhecido — tire um novo browser_snapshot, a página mudou.`);
+    }
+    const description = `${info.role} "${info.name}"`;
+    if (info.role && info.name) {
+      const byRole = this.page.getByRole(info.role as Parameters<Page["getByRole"]>[0], {
+        name: info.name,
+        exact: true,
+      });
+      if ((await byRole.count()) === 1) {
+        return { locator: byRole, target: { role: info.role, name: info.name, description } };
+      }
+    }
+    return { locator: this.page.locator(info.css), target: { css: info.css, description } };
+  }
+
+  async click(ref: number): Promise<Target> {
+    const { locator, target } = await this.resolveRef(ref);
+    await locator.click();
+    return target;
+  }
+
+  async fill(ref: number, value: string): Promise<Target> {
+    const { locator, target } = await this.resolveRef(ref);
+    await locator.fill(value);
+    return target;
+  }
+
+  async select(ref: number, value: string): Promise<Target> {
+    const { locator, target } = await this.resolveRef(ref);
+    await locator.selectOption(value);
+    return target;
+  }
+
+  async press(key: string): Promise<void> {
+    await this.page.keyboard.press(key);
+  }
+
+  async waitForText(text: string): Promise<void> {
+    await this.page.getByText(text).first().waitFor({ state: "visible", timeout: STEP_TIMEOUT });
+  }
+
+  async waitForUrl(pattern: string): Promise<void> {
+    await this.page.waitForURL((u) => u.toString().includes(pattern), { timeout: STEP_TIMEOUT });
+  }
+
+  async assertVisible(text: string): Promise<void> {
+    await this.page.getByText(text).first().waitFor({ state: "visible", timeout: STEP_TIMEOUT });
+  }
+
+  async assertNotVisible(text: string): Promise<void> {
+    // give the page a beat to render, then require absence
+    await this.page.waitForTimeout(1000);
+    const visible = await this.page
+      .getByText(text)
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (visible) throw new Error(`Texto "${text}" está visível, mas não deveria estar.`);
+  }
+
+  async assertUrl(pattern: string): Promise<void> {
+    const url = this.page.url();
+    if (!url.includes(pattern)) {
+      throw new Error(`URL atual "${url}" não contém "${pattern}".`);
+    }
+  }
+
+  async screenshot(label: string): Promise<string> {
+    this.screenshotCount += 1;
+    const safe = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40);
+    const file = path.join(this.opts.runDir, `${String(this.screenshotCount).padStart(2, "0")}-${safe}.png`);
+    await this.page.screenshot({ path: file, fullPage: false });
+    this.screenshots.push(file);
+    return file;
+  }
+
+  /** Replays one recorded step (used by the deterministic runner). */
+  async executeStep(step: Step): Promise<void> {
+    switch (step.kind) {
+      case "navigate":
+        return this.navigate(step.url);
+      case "click":
+        return void (await this.targetLocator(step.target).click());
+      case "fill":
+        return void (await this.targetLocator(step.target).fill(resolveEnvValue(step.value)));
+      case "select":
+        return void (await this.targetLocator(step.target).selectOption(resolveEnvValue(step.value)));
+      case "press":
+        return this.press(step.key);
+      case "waitForText":
+        return this.waitForText(step.text);
+      case "waitForUrl":
+        return this.waitForUrl(step.pattern);
+      case "assertVisible":
+        return this.assertVisible(step.text);
+      case "assertNotVisible":
+        return this.assertNotVisible(step.text);
+      case "assertUrl":
+        return this.assertUrl(step.pattern);
+      case "screenshot":
+        return void (await this.screenshot(step.label));
+    }
+  }
+
+  private targetLocator(target: Target): Locator {
+    if (target.role && target.name) {
+      return this.page
+        .getByRole(target.role as Parameters<Page["getByRole"]>[0], {
+          name: target.name,
+          exact: true,
+        })
+        .first();
+    }
+    if (target.css) return this.page.locator(target.css);
+    throw new Error(`Target sem estratégia de localização: ${target.description}`);
+  }
+
+  async close(): Promise<string | undefined> {
+    let tracePath: string | undefined;
+    try {
+      tracePath = path.join(this.opts.runDir, "trace.zip");
+      await this.context.tracing.stop({ path: tracePath });
+    } catch {
+      tracePath = undefined;
+    }
+    await this.context.close().catch(() => {});
+    await this.browser.close().catch(() => {});
+    return tracePath;
+  }
+}
+
+/** Replaces $ENV:VAR_NAME placeholders so secrets never live in committed scripts. */
+export function resolveEnvValue(value: string): string {
+  return value.replace(/\$ENV:([A-Z0-9_]+)/g, (_, name) => {
+    const v = process.env[name];
+    if (v === undefined) throw new Error(`Env var ${name} (referenciada como $ENV:${name}) não definida.`);
+    return v;
+  });
+}
+
+/** Runs inside the page: collects visible interactive elements + text excerpt. */
+const snapshotScript = `(() => {
+  const ROLE_BY_TAG = {
+    a: "link", button: "button", select: "combobox", textarea: "textbox",
+    summary: "button", option: "option",
+  };
+  const INPUT_ROLES = {
+    button: "button", submit: "button", reset: "button", checkbox: "checkbox",
+    radio: "radio", range: "slider", search: "searchbox",
+  };
+
+  function isVisible(el) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return false;
+    const style = getComputedStyle(el);
+    return style.visibility !== "hidden" && style.display !== "none";
+  }
+
+  function roleOf(el) {
+    const explicit = el.getAttribute("role");
+    if (explicit) return explicit;
+    const tag = el.tagName.toLowerCase();
+    if (tag === "input") {
+      const type = (el.getAttribute("type") || "text").toLowerCase();
+      return INPUT_ROLES[type] || "textbox";
+    }
+    if (tag === "a" && !el.hasAttribute("href")) return "";
+    return ROLE_BY_TAG[tag] || "";
+  }
+
+  function nameOf(el) {
+    const aria = el.getAttribute("aria-label");
+    if (aria) return aria.trim();
+    const labelledBy = el.getAttribute("aria-labelledby");
+    if (labelledBy) {
+      const ref = document.getElementById(labelledBy.split(/\\s+/)[0]);
+      if (ref) return (ref.textContent || "").trim().slice(0, 80);
+    }
+    if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT") {
+      if (el.id) {
+        const label = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+        if (label) return (label.textContent || "").trim().slice(0, 80);
+      }
+      const placeholder = el.getAttribute("placeholder");
+      if (placeholder) return placeholder.trim();
+      if (el.tagName === "INPUT" && (el.type === "submit" || el.type === "button") && el.value) {
+        return el.value.trim();
+      }
+      return el.getAttribute("name") || "";
+    }
+    const img = el.querySelector("img[alt]");
+    const text = (el.textContent || "").replace(/\\s+/g, " ").trim();
+    return (text || (img ? img.getAttribute("alt") : "") || el.getAttribute("title") || "").slice(0, 80);
+  }
+
+  function cssPath(el) {
+    const parts = [];
+    let node = el;
+    while (node && node.nodeType === 1 && node.tagName !== "HTML") {
+      const tag = node.tagName.toLowerCase();
+      if (node.id) {
+        parts.unshift(tag + "#" + CSS.escape(node.id));
+        break;
+      }
+      let index = 1;
+      let sibling = node.previousElementSibling;
+      while (sibling) {
+        if (sibling.tagName === node.tagName) index += 1;
+        sibling = sibling.previousElementSibling;
+      }
+      parts.unshift(tag + ":nth-of-type(" + index + ")");
+      node = node.parentElement;
+    }
+    return parts.join(" > ");
+  }
+
+  const selector = 'a[href], button, input, select, textarea, summary, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="switch"], [role="option"], [onclick], [tabindex]:not([tabindex="-1"])';
+  const nodes = Array.from(document.querySelectorAll(selector)).filter(isVisible);
+  const seen = new Set();
+  const elements = [];
+  let ref = 1;
+  for (const el of nodes) {
+    if (seen.has(el)) continue;
+    seen.add(el);
+    const role = roleOf(el);
+    const name = nameOf(el);
+    if (!role && !name) continue;
+    const info = { ref: ref++, role: role || el.tagName.toLowerCase(), name, css: cssPath(el), tag: el.tagName.toLowerCase() };
+    if (el.tagName === "INPUT" && el.type !== "password" && el.value) info.value = String(el.value).slice(0, 40);
+    if (el.tagName === "A") {
+      const href = el.getAttribute("href");
+      if (href && !href.startsWith("javascript:")) info.href = href.slice(0, 80);
+    }
+    elements.push(info);
+    if (elements.length >= 120) break;
+  }
+
+  const text = (document.body.innerText || "").replace(/\\n{3,}/g, "\\n\\n").slice(0, 2500);
+  return { elements, text };
+})()`;

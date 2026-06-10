@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.scout/runs/
+.scout/state/
+*.log
+.env
