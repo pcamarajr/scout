@@ -4,3 +4,8 @@ dist/
 .scout/state/
 *.log
 .env
+# personal-knowledge CLI: managed skill/rule files
+/.claude/skills/memory/
+/.cursor/rules/memory.mdc
+/.claude/skills/init-memory/
+/.claude/skills/import-memories/

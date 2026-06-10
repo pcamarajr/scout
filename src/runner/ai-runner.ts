@@ -49,7 +49,11 @@ export async function runWithAgent(
         async ({ url }) => {
           try {
             await session.navigate(url);
-            record({ kind: "navigate", url });
+            // Grava relativo quando a URL está sob o baseUrl — o script
+            // precisa sobreviver a SCOUT_BASE_URL apontando pra outro ambiente.
+            const base = config.baseUrl.replace(/\/+$/, "");
+            const recorded = url.startsWith(base) ? url.slice(base.length) || "/" : url;
+            record({ kind: "navigate", url: recorded });
             return ok(await afterAction());
           } catch (e) {
             return fail(e);
