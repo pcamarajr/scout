@@ -141,9 +141,38 @@ scout init                      # bootstrap in the project
 scout create <name> -c <scenario> [-p profile] [-n notes]
 scout list                      # scenarios + status + 📜 if cached script exists
 scout go [-s id|slug] [--ai] [--no-heal] [--headed]
-scout report                    # markdown suite summary
+scout report [--json] [--check] # suite summary (markdown default)
 scout login <profile>           # capture storageState in headed browser
 scout mcp                       # MCP server stdio
+```
+
+### `scout report` — markdown, JSON and gate mode
+
+By default `scout report` prints the markdown suite summary (embeddable in a PR body). Two flags make it consumable by scripts and CI gates — they compose freely:
+
+```bash
+scout report                  # markdown summary (default)
+scout report --json           # machine-readable JSON (below)
+scout report --check          # exit 1 if ANY scenario is not `verified`, exit 0 otherwise
+scout report --json --check   # prints the JSON AND sets the exit code
+```
+
+`--json` shape:
+
+```jsonc
+{
+  "scenarios": [
+    { "id": 1, "slug": "paywall-free", "name": "Paywall free", "profile": "anon", "status": "verified", "lastRun": "2026-06-10T12:00:00.000Z" }
+  ],
+  "summary": { "total": 4, "verified": 3, "failed": 1, "partial": 0, "blocked": 0, "pending": 0 }
+}
+```
+
+`--check` is the PR-gate primitive: no grepping the markdown for emojis/words. A scenario counts as passing only with status `verified` — `failed`, `partial`, `blocked` and `pending` all fail the check. An empty suite passes vacuously (gate scripts that require scenarios should test `summary.total`).
+
+```bash
+# typical gate script
+npx scout report --check || { echo "Scout gate: non-verified scenarios"; exit 1; }
 ```
 
 ## Verdicts
@@ -176,6 +205,7 @@ Design decisions:
 
 - **The agent never writes test code.** It acts in the browser; the script is recorded from actions that actually worked (`getByRole` + accessible name when unique on the page, CSS path as fallback). Eliminates hallucinated selectors.
 - **Assertions are tools.** The agent registers each expectation via `browser_assert` — that's what makes the replay a real test, not just a click macro.
+- **Recorded scripts are pruned before caching.** Agent retries (e.g. re-filling the same field) are deduplicated conservatively: an earlier `fill`/`select` is dropped only when a later one targets the same element and nothing in between (click/press/navigate) could have consumed the value. Clicks are never deduplicated.
 - **Trace > video.** Playwright's trace.zip gives per-action screenshots, DOM, network, and console in a single navigable artifact. Raw video stays as an optional enhancement.
 - **No server/dashboard.** State is the filesystem in the target repo; report is markdown. Pluggable into any project with `npm i` + 2 files.
 

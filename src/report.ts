@@ -53,6 +53,50 @@ export function renderRunReport(result: RunResult, scenario: Scenario, steps?: S
   return lines.join("\n") + "\n";
 }
 
+export interface ReportScenario {
+  id: number;
+  slug: string;
+  name: string;
+  profile: string | null;
+  status: ScenarioStatus;
+  lastRun: string | null;
+}
+
+export interface ReportData {
+  scenarios: ReportScenario[];
+  summary: {
+    total: number;
+    verified: number;
+    failed: number;
+    partial: number;
+    blocked: number;
+    pending: number;
+  };
+}
+
+/** Structured suite report (the `scout report --json` output) — for CI/PR gates. */
+export function buildReport(scenarios: Scenario[]): ReportData {
+  const count = (status: ScenarioStatus) => scenarios.filter((s) => s.status === status).length;
+  return {
+    scenarios: scenarios.map((s) => ({
+      id: s.id,
+      slug: s.slug,
+      name: s.name,
+      profile: s.profile ?? null,
+      status: s.status,
+      lastRun: s.lastRun ?? null,
+    })),
+    summary: {
+      total: scenarios.length,
+      verified: count("verified"),
+      failed: count("failed"),
+      partial: count("partial"),
+      blocked: count("blocked"),
+      pending: count("pending"),
+    },
+  };
+}
+
 /** Suite summary — PR-embeddable (the \`scout report\` output). */
 export function renderSummary(scenarios: Scenario[], latest: Map<string, RunResult>): string {
   const lines = [
