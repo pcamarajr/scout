@@ -6,7 +6,7 @@ import { Command } from "commander";
 import { chromium } from "playwright";
 import { CONFIG_FILE, SCOUT_DIR, loadConfig } from "./config.js";
 import { runScenario } from "./engine.js";
-import { renderSummary } from "./report.js";
+import { buildReport, renderSummary } from "./report.js";
 import { Store } from "./store.js";
 
 // Rejeições fora da cadeia de await (SDK/Playwright em subprocesso) não podem
@@ -128,10 +128,20 @@ program
 
 program
   .command("report")
-  .description("Prints the suite summary in markdown (embeddable in PR)")
-  .action(() => {
+  .description("Prints the suite summary — markdown by default (embeddable in PR)")
+  .option("--json", "Machine-readable output: scenarios + summary as JSON", false)
+  .option("--check", "Exit 1 if any scenario is not verified (CI/PR gate)", false)
+  .action((opts) => {
     const store = new Store();
-    console.log(renderSummary(store.listScenarios(), store.latestRuns()));
+    const scenarios = store.listScenarios();
+    if (opts.json) {
+      console.log(JSON.stringify(buildReport(scenarios), null, 2));
+    } else {
+      console.log(renderSummary(scenarios, store.latestRuns()));
+    }
+    if (opts.check) {
+      process.exit(scenarios.every((s) => s.status === "verified") ? 0 : 1);
+    }
   });
 
 program

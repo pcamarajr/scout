@@ -6,7 +6,7 @@ import { Store } from "./store.js";
 import { BrowserSession } from "./runner/browser.js";
 import { runWithAgent } from "./runner/ai-runner.js";
 import { describeStep, replaySteps } from "./runner/script-runner.js";
-import type { RunResult, Scenario, Step } from "./types.js";
+import type { RunResult, Scenario, Step, Target } from "./types.js";
 
 export interface RunOptions {
   /** Skip the cached script and force an AI run (re-record) */
@@ -166,13 +166,49 @@ async function runAi(
   };
 }
 
+/** Steps that can sit between two fills of the same field without consuming its value. */
+const INERT_BETWEEN_FILLS = new Set<Step["kind"]>([
+  "waitForText",
+  "waitForUrl",
+  "assertVisible",
+  "assertNotVisible",
+  "assertUrl",
+  "screenshot",
+]);
+
+function targetKey(target: Target): string {
+  return JSON.stringify([target.role ?? null, target.name ?? null, target.css ?? null]);
+}
+
 /**
- * Cleans the recorded trace before caching: drops exploratory snapshots the
- * agent took that produced no action (they're not steps) — currently steps
- * are only recorded on success, so this is a hook for future pruning rules.
+ * Cleans the recorded trace before caching. The agent sometimes retries an
+ * input (e.g. re-fills the password field) — the earlier fill is redundant
+ * noise in the replay script, since Playwright's fill() replaces the value.
+ *
+ * Conservative by design: an earlier `fill`/`select` is dropped only when a
+ * later one targets the SAME element and nothing in between could have
+ * consumed the value — fills on other fields and passive steps (waits,
+ * asserts, screenshots) are inert; any `click`, `press`, `select` (other
+ * target) or `navigate` blocks the dedupe. Clicks are never deduplicated.
  */
-function pruneSteps(steps: Step[]): Step[] {
-  return steps;
+export function pruneSteps(steps: Step[]): Step[] {
+  const drop = new Set<number>();
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    if (step.kind !== "fill" && step.kind !== "select") continue;
+    for (let j = i + 1; j < steps.length; j++) {
+      const later = steps[j];
+      if (later.kind === step.kind && targetKey(later.target) === targetKey(step.target)) {
+        drop.add(i); // only the last value matters
+        break;
+      }
+      // fill on a different field doesn't consume this one's value
+      if (later.kind === "fill") continue;
+      if (INERT_BETWEEN_FILLS.has(later.kind)) continue;
+      break; // click/press/select/navigate may have consumed the value — keep both
+    }
+  }
+  return drop.size ? steps.filter((_, i) => !drop.has(i)) : steps;
 }
 
 export { describeStep };

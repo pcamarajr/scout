@@ -41,6 +41,7 @@
     "build": "tsc",
     "dev": "tsx src/cli.ts",
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
     "prepublishOnly": "npm run build",
     "prepare": "husky"
   },
