@@ -241,6 +241,7 @@ Regras:
 - Aja como um usuário real: um passo de cada vez, espere carregamentos com browser_wait_for.
 - Se um elemento não está no snapshot, tire novo snapshot ou role o fluxo de outro jeito — não invente refs.
 - Nunca digite segredos literais: use $ENV:VAR_NAME.
+- Não re-preencha um campo que você já preencheu, a menos que a página tenha limpado o valor — cada ação sua vira um passo do script gravado, e passos duplicados são ruído que fragiliza o replay.
 - Seja econômico: não explore além do cenário.`;
 
   const result = query({
