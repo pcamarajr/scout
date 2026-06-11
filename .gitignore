@@ -6,3 +6,4 @@ dist/
 .env
 # local Claude Code config (personal memory MCP, skills)
 /.claude/
+.cursor/
