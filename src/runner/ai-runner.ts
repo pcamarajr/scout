@@ -9,6 +9,54 @@ export interface AiRunOutcome {
   reason: string;
   steps: Step[];
   transcript: string[];
+  /**
+   * Set when the runner itself failed to produce a verdict (agent never called
+   * scout_verdict) — NOT a UI judgment. Callers may retry and must report it
+   * as an infrastructure failure, never as "the scenario is blocked by the UI".
+   */
+  runnerFailure?: string;
+}
+
+/** How the SDK query ended, for no-verdict diagnostics. */
+export interface QueryEndInfo {
+  subtype: string;
+  numTurns?: number;
+  errors?: string[];
+}
+
+/**
+ * Human-readable cause for a run that ended without scout_verdict.
+ * Distinguishes runner-infrastructure causes (turn budget, SDK errors) from
+ * an agent that simply stopped talking.
+ */
+export function describeNoVerdict(end: QueryEndInfo | undefined, maxTurns: number): string {
+  if (!end) return "a sessão do agente terminou sem emitir resultado (subprocesso morreu?)";
+  switch (end.subtype) {
+    case "error_max_turns":
+      return `o agente estourou o limite de ${maxTurns} turns sem chamar scout_verdict`;
+    case "error_during_execution":
+      return `erro durante a execução do agente${end.errors?.length ? `: ${end.errors.join("; ")}` : ""}`;
+    case "success":
+      return "o agente encerrou normalmente sem chamar scout_verdict";
+    default:
+      return `a sessão do agente terminou com "${end.subtype}"${end.errors?.length ? `: ${end.errors.join("; ")}` : ""}`;
+  }
+}
+
+/**
+ * Records navigation relative to the configured baseUrl so cached scripts
+ * survive --base-url / SCOUT_BASE_URL pointing at another server. URLs that
+ * merely share the prefix (http://localhost:3000x) or live on other hosts
+ * stay absolute.
+ */
+export function relativizeUrl(url: string, baseUrl: string): string {
+  const base = baseUrl.replace(/\/+$/, "");
+  if (url === base || url === `${base}/`) return "/";
+  if (url.startsWith(base)) {
+    const rest = url.slice(base.length);
+    if (rest.startsWith("/") || rest.startsWith("?") || rest.startsWith("#")) return rest;
+  }
+  return url;
 }
 
 /**
@@ -49,11 +97,7 @@ export async function runWithAgent(
         async ({ url }) => {
           try {
             await session.navigate(url);
-            // Grava relativo quando a URL está sob o baseUrl — o script
-            // precisa sobreviver a SCOUT_BASE_URL apontando pra outro ambiente.
-            const base = config.baseUrl.replace(/\/+$/, "");
-            const recorded = url.startsWith(base) ? url.slice(base.length) || "/" : url;
-            record({ kind: "navigate", url: recorded });
+            record({ kind: "navigate", url: relativizeUrl(url, config.baseUrl) });
             return ok(await afterAction());
           } catch (e) {
             return fail(e);
@@ -242,35 +286,90 @@ Regras:
 - Se um elemento não está no snapshot, tire novo snapshot ou role o fluxo de outro jeito — não invente refs.
 - Nunca digite segredos literais: use $ENV:VAR_NAME.
 - Não re-preencha um campo que você já preencheu, a menos que a página tenha limpado o valor — cada ação sua vira um passo do script gravado, e passos duplicados são ruído que fragiliza o replay.
-- Seja econômico: não explore além do cenário.`;
+- Seja econômico: não explore além do cenário. Seu orçamento é de ${config.maxTurns} ações.
+- Se você está repetindo tentativas sem progresso (overlay bloqueando, elemento que não aparece), PARE e chame scout_verdict (partial ou blocked) explicando o obstáculo — um veredito parcial vale mais que morrer sem veredito.`;
 
-  const result = query({
-    prompt: `Verifique este cenário de QA:\n\n## ${scenario.name}\n\n${scenario.scenario}${scenario.notes ? `\n\nNotas: ${scenario.notes}` : ""}`,
-    options: {
-      model: config.model,
-      maxTurns: config.maxTurns,
-      systemPrompt,
-      mcpServers: { browser: browserServer },
-      allowedTools: ["mcp__browser__*"],
-      tools: [],
-      settingSources: [],
-      permissionMode: "bypassPermissions",
-    },
-  });
+  const baseOptions = {
+    model: config.model,
+    systemPrompt,
+    mcpServers: { browser: browserServer },
+    allowedTools: ["mcp__browser__*"],
+    tools: [] as [],
+    settingSources: [] as [],
+    permissionMode: "bypassPermissions" as const,
+  };
 
-  for await (const message of result) {
-    if (message.type === "assistant") {
-      for (const block of message.message.content) {
-        if (block.type === "text" && block.text.trim()) transcript.push(block.text.trim());
+  let sessionId: string | undefined;
+  let endInfo: QueryEndInfo | undefined;
+
+  /** Drains a query, collecting transcript/session/end info. Always aborts at the end so no claude-agent-sdk subprocess outlives the run. */
+  const drain = async (q: ReturnType<typeof query>, controller: AbortController): Promise<void> => {
+    try {
+      for await (const message of q) {
+        if ("session_id" in message && message.session_id) sessionId = message.session_id;
+        if (message.type === "assistant") {
+          for (const block of message.message.content) {
+            if (block.type === "text" && block.text.trim()) transcript.push(block.text.trim());
+          }
+        }
+        if (message.type === "result") {
+          endInfo = {
+            subtype: message.subtype,
+            numTurns: message.num_turns,
+            errors: "errors" in message ? message.errors : undefined,
+          };
+          break;
+        }
       }
+    } finally {
+      controller.abort();
     }
-    if (message.type === "result") break;
+  };
+
+  const mainController = new AbortController();
+  try {
+    await drain(
+      query({
+        prompt: `Verifique este cenário de QA:\n\n## ${scenario.name}\n\n${scenario.scenario}${scenario.notes ? `\n\nNotas: ${scenario.notes}` : ""}`,
+        options: { ...baseOptions, maxTurns: config.maxTurns, abortController: mainController },
+      }),
+      mainController
+    );
+  } catch (error) {
+    endInfo = { subtype: "sdk_error", errors: [error instanceof Error ? error.message : String(error)] };
+  }
+
+  // Forced-verdict rescue: the agent died mute (typically error_max_turns).
+  // Resume the same session with a tiny turn budget and demand scout_verdict
+  // with whatever it observed — a partial verdict beats a silent death.
+  const mainCause = verdict ? undefined : describeNoVerdict(endInfo, config.maxTurns);
+  if (!verdict && sessionId) {
+    transcript.push(
+      `[scout] Agente encerrou sem veredito (${mainCause}) — resgate: exigindo scout_verdict com o que foi observado.`
+    );
+    const rescueController = new AbortController();
+    try {
+      await drain(
+        query({
+          prompt:
+            "Sua verificação atingiu o limite de ações. NÃO execute mais nenhuma ação de browser. Chame scout_verdict AGORA com base no que você já observou: 'partial' se a verificação ficou incompleta, 'blocked' se você nem chegou ao fluxo, 'failed'/'verified' apenas se já tinha evidência suficiente.",
+          options: { ...baseOptions, maxTurns: 4, resume: sessionId, abortController: rescueController },
+        }),
+        rescueController
+      );
+    } catch (error) {
+      transcript.push(`[scout] Resgate de veredito falhou: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   if (!verdict) {
-    verdict = {
+    const cause = mainCause ?? describeNoVerdict(endInfo, config.maxTurns);
+    return {
       verdict: "blocked",
-      reason: "Agente encerrou sem registrar veredito (scout_verdict não foi chamado).",
+      reason: `Falha do RUNNER, não veredito de UI: ${cause}; scout_verdict não foi chamado nem no resgate de veredito.`,
+      steps,
+      transcript,
+      runnerFailure: cause,
     };
   }
 

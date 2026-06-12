@@ -16,7 +16,8 @@ import { Store } from "../store.js";
  *   { "mcpServers": { "scout": { "command": "npx", "args": ["scout", "mcp"] } } }
  */
 export async function startMcpServer(): Promise<void> {
-  const server = new McpServer({ name: "scout", version: "0.1.0" });
+  const pkg = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string };
+  const server = new McpServer({ name: "scout", version: pkg.version });
   const store = new Store();
 
   server.registerTool(
@@ -65,10 +66,14 @@ export async function startMcpServer(): Promise<void> {
       inputSchema: {
         scenario: z.string().optional().describe("id ou slug; omitir = todos"),
         forceAi: z.boolean().optional().describe("Ignora o cache e re-grava o script via AI"),
+        baseUrl: z
+          .string()
+          .optional()
+          .describe("Override do app alvo só para esta execução (ex: server efêmero de um worktree). Precedência: param > SCOUT_BASE_URL > scout.config.json"),
       },
     },
-    async ({ scenario, forceAi }) => {
-      const config = loadConfig();
+    async ({ scenario, forceAi, baseUrl }) => {
+      const config = loadConfig(process.cwd(), { baseUrl });
       const all = store.listScenarios();
       const targets = scenario
         ? all.filter((s) => s.id === Number(scenario) || s.slug === scenario)
@@ -86,6 +91,7 @@ export async function startMcpServer(): Promise<void> {
             mode: r.mode,
             healed: r.healed ?? false,
             reason: r.reason,
+            runnerFailure: r.runnerFailure,
             runDir: r.runDir,
             screenshots: r.screenshots,
             trace: r.trace,

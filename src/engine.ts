@@ -119,6 +119,23 @@ export async function runScenario(
   return result;
 }
 
+/**
+ * Runs `attempt` until it produces a real verdict, retrying runner failures
+ * (agent died without calling scout_verdict) up to maxAttempts total runs.
+ * A verdict — even failed/blocked — is the agent's judgment and is never retried.
+ */
+export async function runAiWithRetry<T extends { runnerFailure?: string }>(
+  attempt: (attemptNo: number) => Promise<T>,
+  maxAttempts = 2
+): Promise<{ outcome: T; attempts: number }> {
+  let outcome!: T;
+  for (let i = 1; i <= maxAttempts; i++) {
+    outcome = await attempt(i);
+    if (!outcome.runnerFailure) return { outcome, attempts: i };
+  }
+  return { outcome, attempts: maxAttempts };
+}
+
 async function runAi(
   scenario: Scenario,
   config: ScoutConfig,
@@ -129,23 +146,32 @@ async function runAi(
 ): Promise<RunResult> {
   const startedAt = new Date().toISOString();
   const start = Date.now();
-  const session = await BrowserSession.launch({
-    baseUrl: config.baseUrl,
-    headless: opts.headed ? false : config.headless,
-    storageState,
-    locale: config.locale,
-    runDir,
+  const transcript: string[] = [];
+  const screenshots: string[] = [];
+  let trace: string | undefined;
+
+  const { outcome, attempts } = await runAiWithRetry(async (attemptNo) => {
+    if (attemptNo > 1) transcript.push(`[scout] Tentativa ${attemptNo}: run anterior falhou no runner — browser novo, agente novo.`);
+    const session = await BrowserSession.launch({
+      baseUrl: config.baseUrl,
+      headless: opts.headed ? false : config.headless,
+      storageState,
+      locale: config.locale,
+      runDir,
+    });
+    let result;
+    try {
+      result = await runWithAgent(session, scenario, config);
+    } finally {
+      await session.screenshot("final-state").catch(() => {});
+    }
+    trace = await session.close();
+    transcript.push(...result.transcript);
+    for (const shot of session.screenshots) if (!screenshots.includes(shot)) screenshots.push(shot);
+    return result;
   });
 
-  let outcome;
-  try {
-    outcome = await runWithAgent(session, scenario, config);
-  } finally {
-    await session.screenshot("final-state").catch(() => {});
-  }
-  const trace = await session.close();
-
-  fs.writeFileSync(path.join(runDir, "transcript.md"), outcome.transcript.join("\n\n---\n\n"));
+  fs.writeFileSync(path.join(runDir, "transcript.md"), transcript.join("\n\n---\n\n"));
 
   if (outcome.verdict === "verified" && outcome.steps.length) {
     store.saveSteps(scenario.slug, pruneSteps(outcome.steps));
@@ -156,13 +182,16 @@ async function runAi(
     slug: scenario.slug,
     mode: "ai",
     verdict: outcome.verdict,
-    reason: outcome.reason,
+    reason: outcome.runnerFailure
+      ? `${outcome.reason} (${attempts} tentativas de AI run — investigue os artifacts em ${runDir})`
+      : outcome.reason,
     stepCount: outcome.steps.length,
     runDir,
     startedAt,
     durationMs: Date.now() - start,
-    screenshots: session.screenshots,
+    screenshots,
     trace,
+    runnerFailure: outcome.runnerFailure,
   };
 }
 

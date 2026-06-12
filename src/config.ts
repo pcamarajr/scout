@@ -42,7 +42,13 @@ const DEFAULTS: ScoutConfig = {
   profiles: {},
 };
 
-export function loadConfig(cwd = process.cwd()): ScoutConfig {
+/** Per-invocation overrides (CLI flags, MCP tool params). Highest precedence. */
+export interface ConfigOverrides {
+  baseUrl?: string;
+}
+
+/** Precedence: overrides (flag) > env (SCOUT_*) > scout.config.json > defaults. */
+export function loadConfig(cwd = process.cwd(), overrides: ConfigOverrides = {}): ScoutConfig {
   const file = path.join(cwd, CONFIG_FILE);
   let fromFile: Partial<ScoutConfig> = {};
   if (fs.existsSync(file)) {
@@ -52,6 +58,7 @@ export function loadConfig(cwd = process.cwd()): ScoutConfig {
   if (process.env.SCOUT_BASE_URL) merged.baseUrl = process.env.SCOUT_BASE_URL;
   if (process.env.SCOUT_MODEL) merged.model = process.env.SCOUT_MODEL;
   if (process.env.SCOUT_HEADED === "1") merged.headless = false;
+  if (overrides.baseUrl) merged.baseUrl = overrides.baseUrl;
   return merged;
 }
 

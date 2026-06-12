@@ -17,7 +17,7 @@ export function renderRunReport(result: RunResult, scenario: Scenario, steps?: S
     ``,
     `| | |`,
     `|---|---|`,
-    `| Verdict | **${result.verdict}** |`,
+    `| Verdict | **${result.verdict}**${result.runnerFailure ? " ⚠️ runner failure — not a UI judgment" : ""} |`,
     `| Mode | ${result.mode === "replay" ? "deterministic replay" : "AI-driven"}${result.healed ? " (healed)" : ""} |`,
     `| Profile | ${scenario.profile ?? "anonymous"} |`,
     `| Duration | ${(result.durationMs / 1000).toFixed(1)}s |`,
