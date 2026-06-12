@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/pcamarajr/scout/compare/scout-v0.2.0...scout-v0.3.0) (2026-06-12)
+
+
+### Features
+
+* verdict rescue/retry for AI runs and per-run base-url override ([#5](https://github.com/pcamarajr/scout/issues/5)) ([5d55e1c](https://github.com/pcamarajr/scout/commit/5d55e1c0326fdbbe41819fc92fda0b0f251ba613))
+
 ## [0.2.0](https://github.com/pcamarajr/scout/compare/scout-v0.1.0...scout-v0.2.0) (2026-06-11)
 
 
