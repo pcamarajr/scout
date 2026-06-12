@@ -75,12 +75,15 @@ In CI, generate the storageState in a setup step (login via script) or let the a
 
 ## Worktrees and environments
 
-Everything is relative to the project directory and the target comes from env — two worktrees run in parallel without colliding:
+Everything is relative to the project directory and the target can be overridden per run — two worktrees run in parallel without colliding:
 
 ```bash
-SCOUT_BASE_URL=http://localhost:3001 scout go     # worktree B pointing to a different port
+scout go --base-url http://localhost:3001                     # worktree B pointing to its ephemeral server
+SCOUT_BASE_URL=http://localhost:3001 scout go                 # same, via env
 SCOUT_BASE_URL=https://staging.myapp.com scout go --no-heal   # against staging
 ```
+
+Precedence: `--base-url` flag (or the `baseUrl` param of the `scout_run` MCP tool) > `SCOUT_BASE_URL` > `baseUrl` in `scout.config.json`. Recorded scripts store navigation **relative to the baseUrl in effect at recording time**, so a script recorded against `:3000` replays unchanged against `:3001` or staging.
 
 - `.scout/scenarios.json` and `.scout/scripts/` are **committed** — the suite travels with the branch.
 - `.scout/runs/` and `.scout/state/` are **gitignored** — artifacts and sessions are per-machine.
@@ -140,9 +143,9 @@ With heal in CI: add `ANTHROPIC_API_KEY` and switch to `npx scout go` — when t
 scout init                      # bootstrap in the project
 scout create <name> -c <scenario> [-p profile] [-n notes]
 scout list                      # scenarios + status + 📜 if cached script exists
-scout go [-s id|slug] [--ai] [--no-heal] [--headed]
+scout go [-s id|slug] [--ai] [--no-heal] [--headed] [--base-url <url>]
 scout report [--json] [--check] # suite summary (markdown default)
-scout login <profile>           # capture storageState in headed browser
+scout login <profile> [--base-url <url>]  # capture storageState in headed browser
 scout mcp                       # MCP server stdio
 ```
 
@@ -183,6 +186,16 @@ npx scout report --check || { echo "Scout gate: non-verified scenarios"; exit 1;
 | ❌ `failed` | Broken behavior (the reason says exactly what) |
 | ⚠️ `partial` | Partially verified |
 | 🚫 `blocked` | Couldn't reach the flow (app down, login broken) |
+
+### Runner failure ≠ UI verdict
+
+An AI run can also die without any verdict — agent ran out of turns, SDK error, dead subprocess. Scout treats that as an **infrastructure failure**, never as a judgment about the app:
+
+1. **Forced verdict:** when the agent ends without calling `scout_verdict` (typically `maxTurns` exhausted), Scout resumes the same session with a tiny turn budget and demands a verdict based on what was already observed — a `partial` with context beats a silent death.
+2. **Automatic retry:** if the rescue also fails, the whole AI run is retried once with a fresh browser and agent.
+3. **Honest reporting:** if it still fails, the result is `blocked` with `runnerFailure` set in `result.json` (and flagged in `report.md` and the CLI output: 💥 *runner failure — not a UI judgment*), naming the cause (e.g. "agent exhausted the 40-turn limit") and pointing at the run artifacts. Rerun it instead of debugging the app.
+
+Every AI run aborts its Agent SDK query on completion (success or failure), so no `claude` subprocess outlives the run.
 
 ## Architecture
 

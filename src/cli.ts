@@ -15,11 +15,13 @@ process.on("unhandledRejection", (reason) => {
   console.error(`\n⚠ unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`);
 });
 
+const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
+
 const program = new Command();
 program
   .name("scout")
   .description("Self-healing browser QA — natural-language scenarios, deterministic replay in CI")
-  .version("0.1.0");
+  .version(pkg.version);
 
 program
   .command("init")
@@ -90,9 +92,10 @@ program
   .option("--ai", "Force AI-driven run (re-records the script)", false)
   .option("--no-heal", "Do not fall back to AI when replay fails (cheap CI)")
   .option("--headed", "Visible browser (local debug)", false)
+  .option("--base-url <url>", "Target app URL for this run (precedence: flag > SCOUT_BASE_URL > scout.config.json)")
   .action(async (opts) => {
     const store = new Store();
-    const config = loadConfig();
+    const config = loadConfig(process.cwd(), { baseUrl: opts.baseUrl });
     const all = store.listScenarios();
     const targets = opts.scenario
       ? all.filter((s) => s.id === Number(opts.scenario) || s.slug === opts.scenario)
@@ -111,8 +114,9 @@ program
           heal: opts.heal,
           headed: opts.headed,
         });
-        const icon = result.verdict === "verified" ? "✅" : result.verdict === "partial" ? "⚠️" : "❌";
-        console.log(`${icon} ${result.verdict} [${result.mode}${result.healed ? "+heal" : ""}] ${(result.durationMs / 1000).toFixed(1)}s`);
+        const icon = result.runnerFailure ? "💥" : result.verdict === "verified" ? "✅" : result.verdict === "partial" ? "⚠️" : "❌";
+        const tag = result.runnerFailure ? " (runner failure — re-rode, não é veredito de UI)" : "";
+        console.log(`${icon} ${result.verdict}${tag} [${result.mode}${result.healed ? "+heal" : ""}] ${(result.durationMs / 1000).toFixed(1)}s`);
         if (result.verdict !== "verified") {
           console.log(`   ↳ ${result.reason}`);
           failed++;
@@ -147,8 +151,9 @@ program
 program
   .command("login <profile>")
   .description("Opens headed browser to capture a profile session (storageState)")
-  .action(async (profileName) => {
-    const config = loadConfig();
+  .option("--base-url <url>", "Target app URL (precedence: flag > SCOUT_BASE_URL > scout.config.json)")
+  .action(async (profileName, opts) => {
+    const config = loadConfig(process.cwd(), { baseUrl: opts.baseUrl });
     if (!config.profiles[profileName]) {
       console.error(`Profile "${profileName}" does not exist in ${CONFIG_FILE}. Add it first.`);
       process.exit(1);

@@ -55,4 +55,10 @@ export interface RunResult {
   trace?: string;
   /** true when this AI run replaced a broken cached script */
   healed?: boolean;
+  /**
+   * Set when the AI runner itself failed to obtain a verdict (infrastructure
+   * failure: turn budget, SDK error). The verdict is "blocked" by convention,
+   * but it is NOT a UI judgment — rerun instead of debugging the app.
+   */
+  runnerFailure?: string;
 }
