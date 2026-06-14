@@ -54,9 +54,9 @@ export function renderRunReport(result: RunResult, scenario: Scenario, steps?: S
 }
 
 export interface ReportScenario {
-  id: number;
   slug: string;
   name: string;
+  feature: string;
   profile: string | null;
   status: ScenarioStatus;
   lastRun: string | null;
@@ -74,20 +74,26 @@ export interface ReportData {
   };
 }
 
+/** Status of a scenario derived from its latest run (pure-input specs never store it). */
+export function scenarioStatus(slug: string, latest: Map<string, RunResult>): ScenarioStatus {
+  return latest.get(slug)?.verdict ?? "pending";
+}
+
 /** Structured suite report (the `scout report --json` output) — for CI/PR gates. */
-export function buildReport(scenarios: Scenario[]): ReportData {
-  const count = (status: ScenarioStatus) => scenarios.filter((s) => s.status === status).length;
+export function buildReport(scenarios: Scenario[], latest: Map<string, RunResult>): ReportData {
+  const rows: ReportScenario[] = scenarios.map((s) => ({
+    slug: s.slug,
+    name: s.name,
+    feature: s.feature,
+    profile: s.profile ?? null,
+    status: scenarioStatus(s.slug, latest),
+    lastRun: latest.get(s.slug)?.startedAt ?? null,
+  }));
+  const count = (status: ScenarioStatus) => rows.filter((r) => r.status === status).length;
   return {
-    scenarios: scenarios.map((s) => ({
-      id: s.id,
-      slug: s.slug,
-      name: s.name,
-      profile: s.profile ?? null,
-      status: s.status,
-      lastRun: s.lastRun ?? null,
-    })),
+    scenarios: rows,
     summary: {
-      total: scenarios.length,
+      total: rows.length,
       verified: count("verified"),
       failed: count("failed"),
       partial: count("partial"),
@@ -102,18 +108,22 @@ export function renderSummary(scenarios: Scenario[], latest: Map<string, RunResu
   const lines = [
     `## 🔭 Scout — browser verification`,
     ``,
-    `| # | Scenario | Profile | Status | Mode | Last run |`,
-    `|---|---------|---------|--------|------|------------|`,
+    `| Feature | Scenario | Profile | Status | Mode | Last run |`,
+    `|---------|----------|---------|--------|------|----------|`,
   ];
   for (const s of scenarios) {
     const run = latest.get(s.slug);
+    const status = scenarioStatus(s.slug, latest);
     const mode = run ? (run.mode === "replay" ? "replay" : run.healed ? "AI (healed)" : "AI") : "—";
     lines.push(
-      `| ${s.id} | ${s.name} | ${s.profile ?? "anonymous"} | ${ICON[s.status]} ${s.status} | ${mode} | ${s.lastRun ? s.lastRun.slice(0, 16).replace("T", " ") : "never"} |`
+      `| ${s.feature} | ${s.name} | ${s.profile ?? "anonymous"} | ${ICON[status]} ${status} | ${mode} | ${run?.startedAt ? run.startedAt.slice(0, 16).replace("T", " ") : "never"} |`
     );
   }
 
-  const failing = scenarios.filter((s) => s.status === "failed" || s.status === "blocked");
+  const failing = scenarios.filter((s) => {
+    const status = scenarioStatus(s.slug, latest);
+    return status === "failed" || status === "blocked";
+  });
   if (failing.length) {
     lines.push(``, `### Failures`, ``);
     for (const s of failing) {
@@ -122,7 +132,7 @@ export function renderSummary(scenarios: Scenario[], latest: Map<string, RunResu
     }
   }
 
-  const verified = scenarios.filter((s) => s.status === "verified").length;
+  const verified = scenarios.filter((s) => scenarioStatus(s.slug, latest) === "verified").length;
   lines.push(``, `**${verified}/${scenarios.length} verified.**`);
   return lines.join("\n") + "\n";
 }

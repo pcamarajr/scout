@@ -25,22 +25,31 @@ export type Step =
 export type Verdict = "verified" | "failed" | "partial" | "blocked";
 export type ScenarioStatus = Verdict | "pending";
 
+/**
+ * A single verification scenario, parsed from a `.scout/specs/**\/*.scout.md`
+ * file. The markdown is the source of truth and a *pure input* — it is never
+ * mutated by a run. Status and last-run derive from `.scout/runs/` instead.
+ */
 export interface Scenario {
-  id: number;
+  /** Logical identity, unique across the suite: `<file-slug>/<scenario-slug>` */
   slug: string;
+  /** Heading text of the scenario section */
   name: string;
   /** Natural-language description of the flow + expected behavior */
   scenario: string;
+  /** Feature/group this scenario belongs to (frontmatter `feature` or filename) */
+  feature: string;
   /** Auth profile name from scout.config.json (omit = anonymous) */
   profile?: string;
-  status: ScenarioStatus;
-  createdAt: string;
-  lastRun?: string;
+  /** Extra context handed to the AI agent */
   notes?: string;
+  /** Free-form tags (file-level + per-scenario, merged) */
+  tags?: string[];
+  /** Source spec file, relative to the project root */
+  file: string;
 }
 
 export interface RunResult {
-  scenarioId: number;
   slug: string;
   /** replay = cached deterministic steps; ai = agent-driven run */
   mode: "replay" | "ai";

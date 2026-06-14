@@ -1,6 +1,6 @@
 # 🔭 Scout
 
-Self-healing browser QA. Scenarios written in **natural language**, verified by an **AI agent** in a real browser (Playwright), and recorded as a **deterministic script** that runs cheaply and quickly in CI — AI only kicks in when the script breaks.
+Self-healing browser QA. Scenarios written in **natural language** as versioned `.scout.md` files, verified by an **AI agent** in a real browser (Playwright), and recorded as a **deterministic script** that runs cheaply and quickly in CI — AI only kicks in when the script breaks.
 
 > Status: functional POC.
 
@@ -16,11 +16,11 @@ Self-healing browser QA. Scenarios written in **natural language**, verified by 
 **Scenario lifecycle:**
 
 ```
-scout create "Paywall free" -c "Open ep 3 of series X without login; paywall should appear with signup CTA"
-        │
+scout create "Paywall free" -f paywall -c "Open ep 3 of series X without login; paywall should appear with signup CTA"
+        │       (writes a `## Paywall free` section into .scout/specs/paywall.scout.md)
         ▼
 scout go  ──── 1st run: AI agent runs in browser, judges (verified/failed/partial/blocked)
-        │       and records .scout/scripts/paywall-free.json (deterministic steps + assertions)
+        │       and records .scout/scripts/paywall/paywall-free.json (deterministic steps + assertions)
         ▼
 CI / subsequent runs: pure Playwright replay, no LLM, seconds per scenario
         │
@@ -35,8 +35,9 @@ UI changed and replay broke? ── AI re-runs, re-judges, re-records the script
 npm install @pcamarajr/scout       # or npm link during POC
 npx playwright install chromium    # browser engine
 
-scout init                         # creates scout.config.json + .scout/
+scout init                         # creates scout.config.json + .scout/specs/
 scout create "Login with Google" \
+  -f auth \
   -c "On logged-out home, click Sign In; login page should show Google and email/password options" \
   -p anon
 scout go                           # 1st run = AI (requires Anthropic credentials)
@@ -49,6 +50,40 @@ scout report                       # markdown ready to embed in PR body
 - **Local:** if you use Claude Code, the Agent SDK reuses your machine credentials — zero config.
 - **CI/headless:** export `ANTHROPIC_API_KEY`. The SDK is self-contained (Claude Code CLI not required).
 - Deterministic replay **does not use LLM** — in CI without a key, use `scout go --no-heal` (failure becomes ❌ in the report instead of healing).
+
+## Scenarios are files (`.scout.md`)
+
+Scenarios live as markdown under `.scout/specs/**/*.scout.md` — **one file per feature/component**, versioned and reviewed like the rest of your tests. The markdown is the **source of truth and a pure input**: a run never writes back to it. Status and last-run derive from `.scout/runs/` instead, so the spec diff only ever reflects an intent change, never run noise. The layout mirrors the Playwright Agents test-plan format, with YAML frontmatter as a scout superset.
+
+```markdown
+---
+feature: Paywall          # optional; defaults to the filename
+profile: anon             # default auth profile for scenarios below
+tags: [monetization]      # optional
+---
+
+## Free user hits paywall on ep 3
+Open ep 3 of series X without login; paywall appears with a signup CTA.
+
+## Subscriber bypasses paywall
+profile: qa               # per-scenario override (also: notes, tags)
+
+Logged-in subscriber opens ep 3; plays with no paywall.
+```
+
+- Each `##` heading is one scenario; its **logical slug** is `<file>/<scenario>` (e.g. `paywall/free-user-hits-paywall-on-ep-3`), unique across the suite.
+- Optional `profile`/`notes`/`tags` lines right after a heading override the file-level defaults.
+- Author by hand, or via `scout create <name> -f <feature> -c <text>` / the `scout_create_scenario` MCP tool.
+
+### Migrating from a legacy `scenarios.json`
+
+Older scouts kept a single `.scout/scenarios.json`. Convert it once:
+
+```bash
+scout migrate   # → one .scout/specs/<slug>.scout.md per scenario, relocates cached scripts, backs up the JSON
+```
+
+It's idempotent and preserves cached scripts (so replay still works without re-recording). Re-run `scout go` once afterward to repopulate run status. Review the generated `feature:` frontmatter and delete the `.scout/scenarios.json.bak` when happy.
 
 ## Auth profiles (storageState)
 
@@ -85,7 +120,7 @@ SCOUT_BASE_URL=https://staging.myapp.com scout go --no-heal   # against staging
 
 Precedence: `--base-url` flag (or the `baseUrl` param of the `scout_run` MCP tool) > `SCOUT_BASE_URL` > `baseUrl` in `scout.config.json`. Recorded scripts store navigation **relative to the baseUrl in effect at recording time**, so a script recorded against `:3000` replays unchanged against `:3001` or staging.
 
-- `.scout/scenarios.json` and `.scout/scripts/` are **committed** — the suite travels with the branch.
+- `.scout/specs/` (the `.scout.md` suite) and `.scout/scripts/` are **committed** — the suite travels with the branch.
 - `.scout/runs/` and `.scout/state/` are **gitignored** — artifacts and sessions are per-machine.
 
 ## Per-run artifacts
@@ -140,11 +175,12 @@ With heal in CI: add `ANTHROPIC_API_KEY` and switch to `npx scout go` — when t
 ## Full CLI
 
 ```
-scout init                      # bootstrap in the project
-scout create <name> -c <scenario> [-p profile] [-n notes]
+scout init                      # bootstrap in the project (.scout/specs/ + config)
+scout create <name> -f <feature> -c <scenario> [-p profile] [-n notes]
 scout list                      # scenarios + status + 📜 if cached script exists
-scout go [-s id|slug] [--ai] [--no-heal] [--headed] [--base-url <url>]
+scout go [-s slug|name] [--ai] [--no-heal] [--headed] [--base-url <url>]
 scout report [--json] [--check] # suite summary (markdown default)
+scout migrate                   # legacy scenarios.json → .scout.md specs
 scout login <profile> [--base-url <url>]  # capture storageState in headed browser
 scout mcp                       # MCP server stdio
 ```
@@ -165,7 +201,7 @@ scout report --json --check   # prints the JSON AND sets the exit code
 ```jsonc
 {
   "scenarios": [
-    { "id": 1, "slug": "paywall-free", "name": "Paywall free", "profile": "anon", "status": "verified", "lastRun": "2026-06-10T12:00:00.000Z" }
+    { "slug": "paywall/paywall-free", "name": "Paywall free", "feature": "Paywall", "profile": "anon", "status": "verified", "lastRun": "2026-06-10T12:00:00.000Z" }
   ],
   "summary": { "total": 4, "verified": 3, "failed": 1, "partial": 0, "blocked": 0, "pending": 0 }
 }
@@ -204,7 +240,8 @@ src/
 ├── cli.ts                  # commander CLI
 ├── engine.ts               # orchestrates: replay → (failed?) → AI heal → re-record
 ├── config.ts               # scout.config.json + env overrides
-├── store.ts                # .scout/ (scenarios, scripts, runs)
+├── specs.ts                # .scout.md parser + slug model + scenario writer
+├── store.ts                # .scout/ (specs, scripts, runs)
 ├── report.ts               # per-run markdown + suite summary
 ├── runner/
 │   ├── browser.ts          # Playwright wrapper: snapshot with refs, trace, screenshots,
@@ -220,6 +257,7 @@ Design decisions:
 - **Assertions are tools.** The agent registers each expectation via `browser_assert` — that's what makes the replay a real test, not just a click macro.
 - **Recorded scripts are pruned before caching.** Agent retries (e.g. re-filling the same field) are deduplicated conservatively: an earlier `fill`/`select` is dropped only when a later one targets the same element and nothing in between (click/press/navigate) could have consumed the value. Clicks are never deduplicated.
 - **Trace > video.** Playwright's trace.zip gives per-action screenshots, DOM, network, and console in a single navigable artifact. Raw video stays as an optional enhancement.
+- **Scenarios are versioned source, not database rows.** One `.scout.md` per feature, reviewed in PRs like a `.test.ts`; the spec is a pure input that a run never mutates (status derives from `.scout/runs/`). The recorded JSON script is a derived sidecar — clean diffs, no run noise in history.
 - **No server/dashboard.** State is the filesystem in the target repo; report is markdown. Pluggable into any project with `npm i` + 2 files.
 
 ## Known POC limitations
