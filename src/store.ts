@@ -1,23 +1,27 @@
 import fs from "node:fs";
 import path from "node:path";
 import { SCOUT_DIR } from "./config.js";
+import { SPECS_DIR, loadScenarios, slugToToken } from "./specs.js";
 import type { RunResult, Scenario, Step } from "./types.js";
 
 /**
  * Filesystem store inside the target project:
- *   .scout/scenarios.json        — committed (the suite definition)
- *   .scout/scripts/<slug>.json   — committed (cached deterministic steps)
- *   .scout/runs/<runId>/         — gitignored (artifacts per run)
- *   .scout/state/<profile>.json  — gitignored (auth storageState)
+ *   .scout/specs/<feature>.scout.md  — committed (the suite; markdown source of truth)
+ *   .scout/scripts/<slug>.json       — committed (cached deterministic steps; `<slug>` is `<file>/<scenario>`)
+ *   .scout/runs/<runId>/             — gitignored (artifacts per run)
+ *   .scout/state/<profile>.json      — gitignored (auth storageState)
  */
 export class Store {
   readonly root: string;
+  readonly cwd: string;
 
   constructor(cwd = process.cwd()) {
+    this.cwd = cwd;
     this.root = path.join(cwd, SCOUT_DIR);
   }
 
   init(): void {
+    fs.mkdirSync(path.join(this.root, SPECS_DIR), { recursive: true });
     fs.mkdirSync(path.join(this.root, "scripts"), { recursive: true });
     fs.mkdirSync(path.join(this.root, "runs"), { recursive: true });
     fs.mkdirSync(path.join(this.root, "state"), { recursive: true });
@@ -25,56 +29,22 @@ export class Store {
     if (!fs.existsSync(gitignore)) {
       fs.writeFileSync(gitignore, "runs/\nstate/\n");
     }
-    if (!fs.existsSync(this.scenariosFile)) {
-      fs.writeFileSync(this.scenariosFile, "[]\n");
+    const example = path.join(this.root, SPECS_DIR, "example.scout.md");
+    if (!fs.existsSync(example)) {
+      fs.writeFileSync(example, EXAMPLE_SPEC);
     }
   }
 
-  get scenariosFile(): string {
-    return path.join(this.root, "scenarios.json");
-  }
-
   exists(): boolean {
-    return fs.existsSync(this.scenariosFile);
+    return fs.existsSync(this.root);
   }
 
   listScenarios(): Scenario[] {
-    if (!this.exists()) return [];
-    return JSON.parse(fs.readFileSync(this.scenariosFile, "utf8"));
+    return loadScenarios(this.cwd);
   }
 
-  saveScenarios(scenarios: Scenario[]): void {
-    fs.writeFileSync(this.scenariosFile, JSON.stringify(scenarios, null, 2) + "\n");
-  }
-
-  addScenario(input: { name: string; scenario: string; profile?: string; notes?: string }): Scenario {
-    const scenarios = this.listScenarios();
-    const id = scenarios.length ? Math.max(...scenarios.map((s) => s.id)) + 1 : 1;
-    const scenario: Scenario = {
-      id,
-      slug: slugify(input.name),
-      name: input.name,
-      scenario: input.scenario,
-      profile: input.profile,
-      notes: input.notes,
-      status: "pending",
-      createdAt: new Date().toISOString(),
-    };
-    scenarios.push(scenario);
-    this.saveScenarios(scenarios);
-    return scenario;
-  }
-
-  getScenario(idOrSlug: number | string): Scenario | undefined {
-    return this.listScenarios().find((s) => s.id === Number(idOrSlug) || s.slug === idOrSlug);
-  }
-
-  updateScenario(id: number, patch: Partial<Scenario>): void {
-    const scenarios = this.listScenarios();
-    const idx = scenarios.findIndex((s) => s.id === id);
-    if (idx === -1) throw new Error(`Scenario ${id} not found`);
-    scenarios[idx] = { ...scenarios[idx], ...patch };
-    this.saveScenarios(scenarios);
+  getScenario(slug: string): Scenario | undefined {
+    return this.listScenarios().find((s) => s.slug === slug);
   }
 
   // ---- cached deterministic scripts ----
@@ -90,14 +60,16 @@ export class Store {
   }
 
   saveSteps(slug: string, steps: Step[]): void {
-    fs.writeFileSync(this.scriptPath(slug), JSON.stringify(steps, null, 2) + "\n");
+    const file = this.scriptPath(slug);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(steps, null, 2) + "\n");
   }
 
   // ---- runs ----
 
   newRunDir(slug: string): string {
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const dir = path.join(this.root, "runs", `${stamp}-${slug}`);
+    const dir = path.join(this.root, "runs", `${stamp}-${slugToToken(slug)}`);
     fs.mkdirSync(dir, { recursive: true });
     return dir;
   }
@@ -125,12 +97,34 @@ export class Store {
   }
 }
 
-export function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 60);
-}
+// The example sits inside a fenced block so it loads as ZERO scenarios — it
+// documents the format without polluting the suite (or the `--check` gate).
+const EXAMPLE_SPEC = `---
+feature: Example
+---
+
+# How to write a scout spec
+
+One file per feature/component. File-level frontmatter sets defaults
+(\`feature\`, \`profile\`, \`tags\`). Each \`##\` heading is one scenario; optional
+\`profile\`/\`notes\`/\`tags\` override lines may follow a heading before the prose.
+Write the flow + expected behavior in plain language — no selectors, no code.
+
+Copy the block below into a new \`*.scout.md\` file (outside the fence) to start:
+
+\`\`\`markdown
+---
+feature: Paywall
+profile: anon
+tags: [monetization]
+---
+
+## Free user hits paywall on ep 3
+Open ep 3 of series X without login; paywall appears with a signup CTA.
+
+## Subscriber bypasses paywall
+profile: qa
+
+Logged-in subscriber opens ep 3; plays with no paywall.
+\`\`\`
+`;

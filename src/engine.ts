@@ -62,7 +62,6 @@ export async function runScenario(
 
     if (replay.passed) {
       result = {
-        scenarioId: scenario.id,
         slug: scenario.slug,
         mode: "replay",
         verdict: "verified",
@@ -86,7 +85,6 @@ export async function runScenario(
       };
     } else {
       result = {
-        scenarioId: scenario.id,
         slug: scenario.slug,
         mode: "replay",
         verdict: "failed",
@@ -111,7 +109,6 @@ export async function runScenario(
   }
 
   store.saveRunResult(result);
-  store.updateScenario(scenario.id, { status: result.verdict, lastRun: result.startedAt });
   fs.writeFileSync(
     path.join(runDir, "report.md"),
     renderRunReport(result, scenario, store.loadSteps(scenario.slug))
@@ -178,7 +175,6 @@ async function runAi(
   }
 
   return {
-    scenarioId: scenario.id,
     slug: scenario.slug,
     mode: "ai",
     verdict: outcome.verdict,

@@ -5,7 +5,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { loadConfig } from "../config.js";
 import { runScenario } from "../engine.js";
-import { renderSummary } from "../report.js";
+import { renderSummary, scenarioStatus } from "../report.js";
+import { addScenario } from "../specs.js";
 import { Store } from "../store.js";
 
 /**
@@ -27,8 +28,11 @@ export async function startMcpServer(): Promise<void> {
       inputSchema: {},
     },
     async () => {
+      const latest = store.latestRuns();
       const scenarios = store.listScenarios().map((s) => ({
         ...s,
+        status: scenarioStatus(s.slug, latest),
+        lastRun: latest.get(s.slug)?.startedAt ?? null,
         hasCachedScript: Boolean(store.loadSteps(s.slug)),
       }));
       return { content: [{ type: "text", text: JSON.stringify(scenarios, null, 2) }] };
@@ -39,20 +43,20 @@ export async function startMcpServer(): Promise<void> {
     "scout_create_scenario",
     {
       description:
-        "Cria um cenário de verificação em linguagem natural. Descreva o FLUXO (passos do usuário) e o COMPORTAMENTO ESPERADO (o que deve/não deve acontecer). Não escreva seletores nem código — o runner descobre sozinho no browser.",
+        "Cria um cenário de verificação em linguagem natural num arquivo de feature (.scout/specs/<feature>.scout.md). Descreva o FLUXO (passos do usuário) e o COMPORTAMENTO ESPERADO (o que deve/não deve acontecer). Não escreva seletores nem código — o runner descobre sozinho no browser.",
       inputSchema: {
-        name: z.string().describe("Nome curto do cenário"),
+        feature: z.string().describe("Feature/component — o arquivo de spec onde o cenário entra (agrupa cenários relacionados)"),
+        name: z.string().describe("Nome curto do cenário (vira o heading)"),
         scenario: z.string().describe("Fluxo + expectativas em linguagem natural"),
         profile: z.string().optional().describe("Profile de auth de scout.config.json (omitir = anônimo)"),
         notes: z.string().optional().describe("Contexto extra para o runner"),
       },
     },
-    async ({ name, scenario, profile, notes }) => {
-      store.init();
-      const created = store.addScenario({ name, scenario, profile, notes });
+    async ({ feature, name, scenario, profile, notes }) => {
+      const created = addScenario({ feature, name, scenario, profile, notes });
       return {
         content: [
-          { type: "text", text: `Cenário #${created.id} (${created.slug}) criado. Rode com scout_run.` },
+          { type: "text", text: `Cenário ${created.slug} criado em ${created.file}. Rode com scout_run.` },
         ],
       };
     }
@@ -64,7 +68,7 @@ export async function startMcpServer(): Promise<void> {
       description:
         "Roda a verificação de um cenário (ou todos). Usa o script determinístico cacheado quando existe; cai pro agente AI no primeiro run ou quando o script quebra (self-healing). Retorna veredito + evidências.",
       inputSchema: {
-        scenario: z.string().optional().describe("id ou slug; omitir = todos"),
+        scenario: z.string().optional().describe("slug do cenário (<feature>/<cenário>); omitir = todos"),
         forceAi: z.boolean().optional().describe("Ignora o cache e re-grava o script via AI"),
         baseUrl: z
           .string()
@@ -76,7 +80,7 @@ export async function startMcpServer(): Promise<void> {
       const config = loadConfig(process.cwd(), { baseUrl });
       const all = store.listScenarios();
       const targets = scenario
-        ? all.filter((s) => s.id === Number(scenario) || s.slug === scenario)
+        ? all.filter((s) => s.slug === scenario || s.name === scenario)
         : all;
       if (!targets.length) {
         return { content: [{ type: "text", text: `Nenhum cenário encontrado para "${scenario}".` }], isError: true };

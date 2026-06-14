@@ -6,7 +6,8 @@ import { Command } from "commander";
 import { chromium } from "playwright";
 import { CONFIG_FILE, SCOUT_DIR, loadConfig } from "./config.js";
 import { runScenario } from "./engine.js";
-import { buildReport, renderSummary } from "./report.js";
+import { buildReport, renderSummary, scenarioStatus } from "./report.js";
+import { addScenario, slugify } from "./specs.js";
 import { Store } from "./store.js";
 
 // Rejeições fora da cadeia de await (SDK/Playwright em subprocesso) não podem
@@ -55,23 +56,20 @@ program
 
 program
   .command("create <name>")
-  .description("Creates a verification scenario")
+  .description("Adds a scenario to a feature spec (.scout/specs/<feature>.scout.md)")
+  .requiredOption("-f, --feature <feature>", "Feature/component — the spec file this scenario goes into")
   .requiredOption("-c, --scenario <text>", "Scenario in natural language: flow + expected behavior")
   .option("-p, --profile <profile>", "Auth profile (from scout.config.json)")
   .option("-n, --notes <notes>", "Extra notes for the agent")
   .action((name, opts) => {
-    const store = new Store();
-    if (!store.exists()) {
-      console.error("Run `scout init` first.");
-      process.exit(1);
-    }
-    const scenario = store.addScenario({
+    const scenario = addScenario({
+      feature: opts.feature,
       name,
       scenario: opts.scenario,
       profile: opts.profile,
       notes: opts.notes,
     });
-    console.log(`✓ Scenario #${scenario.id} created: ${scenario.slug}`);
+    console.log(`✓ Scenario created: ${scenario.slug} (${scenario.file})`);
   });
 
 program
@@ -79,9 +77,11 @@ program
   .description("Lists scenarios and status")
   .action(() => {
     const store = new Store();
+    const latest = store.latestRuns();
     for (const s of store.listScenarios()) {
       const script = store.loadSteps(s.slug) ? "📜" : "  ";
-      console.log(`#${s.id} ${script} [${s.status.padEnd(8)}] ${s.name} (${s.profile ?? "anonymous"})`);
+      const status = scenarioStatus(s.slug, latest);
+      console.log(`${script} [${status.padEnd(8)}] ${s.slug}  —  ${s.name} (${s.profile ?? "anonymous"})`);
     }
   });
 
@@ -98,7 +98,7 @@ program
     const config = loadConfig(process.cwd(), { baseUrl: opts.baseUrl });
     const all = store.listScenarios();
     const targets = opts.scenario
-      ? all.filter((s) => s.id === Number(opts.scenario) || s.slug === opts.scenario)
+      ? all.filter((s) => s.slug === opts.scenario || s.name === opts.scenario)
       : all;
     if (!targets.length) {
       console.error(opts.scenario ? `Scenario "${opts.scenario}" not found.` : "No scenarios. Use `scout create`.");
@@ -107,7 +107,7 @@ program
 
     let failed = 0;
     for (const scenario of targets) {
-      process.stdout.write(`▶ #${scenario.id} ${scenario.name} ... `);
+      process.stdout.write(`▶ ${scenario.slug} ... `);
       try {
         const result = await runScenario(store, scenario, config, {
           forceAi: opts.ai,
@@ -138,14 +138,63 @@ program
   .action((opts) => {
     const store = new Store();
     const scenarios = store.listScenarios();
+    const latest = store.latestRuns();
     if (opts.json) {
-      console.log(JSON.stringify(buildReport(scenarios), null, 2));
+      console.log(JSON.stringify(buildReport(scenarios, latest), null, 2));
     } else {
-      console.log(renderSummary(scenarios, store.latestRuns()));
+      console.log(renderSummary(scenarios, latest));
     }
     if (opts.check) {
-      process.exit(scenarios.every((s) => s.status === "verified") ? 0 : 1);
+      process.exit(scenarios.every((s) => scenarioStatus(s.slug, latest) === "verified") ? 0 : 1);
     }
+  });
+
+program
+  .command("migrate")
+  .description("Converts a legacy .scout/scenarios.json into .scout/specs/*.scout.md and relocates cached scripts")
+  .action(() => {
+    const store = new Store();
+    const legacy = path.join(process.cwd(), SCOUT_DIR, "scenarios.json");
+    if (!fs.existsSync(legacy)) {
+      console.log("Nothing to migrate — no .scout/scenarios.json found.");
+      return;
+    }
+    const old = JSON.parse(fs.readFileSync(legacy, "utf8")) as Array<{
+      slug: string;
+      name: string;
+      scenario: string;
+      profile?: string;
+      notes?: string;
+    }>;
+    const existing = new Set(store.listScenarios().map((s) => s.slug));
+    let created = 0;
+    let scripts = 0;
+    let skipped = 0;
+    for (const s of old) {
+      const slug = `${slugify(s.slug)}/${slugify(s.name)}`;
+      if (existing.has(slug)) {
+        skipped++;
+        continue;
+      }
+      // feature = old slug keeps the spec filename == old slug, so the cached
+      // script can be relocated deterministically under the new nested path.
+      addScenario({ feature: s.slug, name: s.name, scenario: s.scenario, profile: s.profile, notes: s.notes });
+      created++;
+      const oldScript = path.join(process.cwd(), SCOUT_DIR, "scripts", `${s.slug}.json`);
+      if (fs.existsSync(oldScript)) {
+        const newScript = store.scriptPath(slug);
+        fs.mkdirSync(path.dirname(newScript), { recursive: true });
+        fs.renameSync(oldScript, newScript);
+        scripts++;
+      }
+    }
+    fs.renameSync(legacy, legacy + ".bak");
+    console.log(
+      `✓ Migrated ${created} scenario(s), relocated ${scripts} cached script(s)${skipped ? `, skipped ${skipped} already present` : ""}.`
+    );
+    console.log(
+      "  Legacy file moved to .scout/scenarios.json.bak — review .scout/specs/ (and the `feature:` frontmatter) then delete the .bak."
+    );
   });
 
 program
