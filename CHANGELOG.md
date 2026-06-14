@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/pcamarajr/scout/compare/scout-v0.3.0...scout-v0.4.0) (2026-06-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* the suite is now .scout/specs/**/*.scout.md (one file per feature, YAML frontmatter + `##` scenario sections, mirroring the Playwright Agents test-plan format) instead of a single .scout/scenarios.json.
+
+### Features
+
+* store scenarios as versioned .scout.md files instead of scenarios.json ([#7](https://github.com/pcamarajr/scout/issues/7)) ([6884b62](https://github.com/pcamarajr/scout/commit/6884b62c33933e09c9fe561f0ab2c592700f79d2))
+
 ## [0.3.0](https://github.com/pcamarajr/scout/compare/scout-v0.2.0...scout-v0.3.0) (2026-06-12)
 
 
