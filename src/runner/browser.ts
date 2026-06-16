@@ -63,7 +63,9 @@ export class BrowserSession {
   }
 
   async navigate(url: string): Promise<void> {
-    await this.page.goto(this.resolveUrl(url), { waitUntil: "domcontentloaded" });
+    // Resolve $ENV:VAR before resolveUrl so tokens/credentials in the query
+    // string (e.g. /renew?token=$ENV:TOKEN) work just like in browser_fill.
+    await this.page.goto(this.resolveUrl(resolveEnvValue(url)), { waitUntil: "domcontentloaded" });
   }
 
   /**

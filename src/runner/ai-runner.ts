@@ -92,8 +92,8 @@ export async function runWithAgent(
     tools: [
       tool(
         "browser_navigate",
-        "Navega para uma URL (absoluta ou relativa ao baseUrl do app).",
-        { url: z.string().describe("Ex: /login ou https://...") },
+        "Navega para uma URL (absoluta ou relativa ao baseUrl do app). Para tokens/segredos na URL use placeholder $ENV:VAR_NAME — resolvido em runtime, nunca passa por você.",
+        { url: z.string().describe("Ex: /login, /renovar?token=$ENV:TOKEN ou https://...") },
         async ({ url }) => {
           try {
             await session.navigate(url);
@@ -261,7 +261,7 @@ export async function runWithAgent(
 
   const envVars = scenario.profile ? (config.profiles[scenario.profile]?.env ?? []) : [];
   const envInfo = envVars.length
-    ? `Env vars disponíveis para browser_fill via placeholder: ${envVars.map((v) => `$ENV:${v}`).join(", ")}.`
+    ? `Env vars disponíveis via placeholder $ENV:VAR (em browser_fill e em URLs de browser_navigate): ${envVars.map((v) => `$ENV:${v}`).join(", ")}.`
     : "";
 
   const systemPrompt = `Você é Scout, um agente de QA que verifica cenários em um browser real.
@@ -284,7 +284,7 @@ Método de trabalho:
 Regras:
 - Aja como um usuário real: um passo de cada vez, espere carregamentos com browser_wait_for.
 - Se um elemento não está no snapshot, tire novo snapshot ou role o fluxo de outro jeito — não invente refs.
-- Nunca digite segredos literais: use $ENV:VAR_NAME.
+- Nunca use segredos literais: use $ENV:VAR_NAME — vale tanto em browser_fill quanto em URLs de browser_navigate (ex: tokens na query string).
 - Não re-preencha um campo que você já preencheu, a menos que a página tenha limpado o valor — cada ação sua vira um passo do script gravado, e passos duplicados são ruído que fragiliza o replay.
 - Seja econômico: não explore além do cenário. Seu orçamento é de ${config.maxTurns} ações.
 - Se você está repetindo tentativas sem progresso (overlay bloqueando, elemento que não aparece), PARE e chame scout_verdict (partial ou blocked) explicando o obstáculo — um veredito parcial vale mais que morrer sem veredito.`;
