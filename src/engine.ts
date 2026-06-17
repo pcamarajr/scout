@@ -5,7 +5,8 @@ import { renderRunReport } from "./report.js";
 import { Store } from "./store.js";
 import { BrowserSession } from "./runner/browser.js";
 import { runWithAgent } from "./runner/ai-runner.js";
-import { describeStep, replaySteps } from "./runner/script-runner.js";
+import { describeStep, replayForVideo, replaySteps } from "./runner/script-runner.js";
+import { generateVideo, pacingFor } from "./runner/video.js";
 import type { RunResult, Scenario, Step, Target } from "./types.js";
 
 export interface RunOptions {
@@ -58,7 +59,7 @@ export async function runScenario(
   if (cached?.length) {
     const session = await launch();
     const replay = await replaySteps(session, cached);
-    const trace = await session.close();
+    const { trace } = await session.close();
 
     if (replay.passed) {
       result = {
@@ -108,12 +109,89 @@ export async function runScenario(
     result = { ...aiResult, startedAt, durationMs: Date.now() - start };
   }
 
+  // Preview video: always sourced from a dedicated clean replay of the
+  // recorded script (never the AI run), only when verified and opted-in.
+  if (config.recordVideo && result.verdict === "verified") {
+    const steps = store.loadSteps(scenario.slug);
+    if (steps?.length) {
+      result.video = await recordPreviewVideo(scenario, steps, config, storageState, runDir);
+    }
+  }
+
   store.saveRunResult(result);
   fs.writeFileSync(
     path.join(runDir, "report.md"),
     renderRunReport(result, scenario, store.loadSteps(scenario.slug))
   );
   return result;
+}
+
+/**
+ * Runs one extra, paced replay of the verified script with video recording on,
+ * then renders it to a GitHub-ready MP4 with baked step labels + verdict card.
+ * Best-effort: any failure warns and yields no video — the verdict is untouched.
+ */
+async function recordPreviewVideo(
+  scenario: Scenario,
+  steps: Step[],
+  config: ScoutConfig,
+  storageState: string | undefined,
+  runDir: string
+): Promise<string | undefined> {
+  const pacing = pacingFor(config.videoSpeed);
+  let session: BrowserSession;
+  try {
+    session = await BrowserSession.launch({
+      baseUrl: config.baseUrl,
+      headless: config.headless,
+      storageState,
+      locale: config.locale,
+      runDir,
+      recordVideo: true,
+      slowMoMs: pacing.slowMoMs,
+    });
+  } catch {
+    console.warn("[scout] vídeo: não foi possível abrir o browser para o replay de preview.");
+    return undefined;
+  }
+
+  const preview = await replayForVideo(session, steps, pacing.assertDwellMs, pacing.verdictCardMs);
+  const { video: webm } = await session.close();
+
+  if (!preview.passed) {
+    console.warn("[scout] vídeo: replay de preview falhou — nenhum vídeo gerado (veredito não afetado).");
+    if (webm) fs.rmSync(webm, { force: true });
+    return undefined;
+  }
+  if (!webm || !fs.existsSync(webm)) {
+    console.warn("[scout] vídeo: replay não produziu arquivo WebM.");
+    return undefined;
+  }
+
+  fs.writeFileSync(path.join(runDir, "video.timeline.json"), JSON.stringify(preview.timeline, null, 2) + "\n");
+  const result = generateVideo({
+    webmPath: webm,
+    outPath: path.join(runDir, "video.mp4"),
+    width: 390,
+    height: 844,
+    scenarioName: scenario.name,
+    verdict: "verified",
+    timeline: preview.timeline,
+    pacing,
+  });
+  if (result.warning) console.warn(`[scout] vídeo: ${result.warning}`);
+  if (result.output && result.output !== webm) {
+    fs.rmSync(webm, { force: true }); // MP4 superseded the intermediate WebM
+    return result.output;
+  }
+  // Fallback (no/failed ffmpeg): keep the raw WebM under a stable name.
+  const dest = path.join(runDir, "video.webm");
+  try {
+    fs.renameSync(webm, dest);
+    return dest;
+  } catch {
+    return webm;
+  }
 }
 
 /**
@@ -162,7 +240,7 @@ async function runAi(
     } finally {
       await session.screenshot("final-state").catch(() => {});
     }
-    trace = await session.close();
+    trace = (await session.close()).trace;
     transcript.push(...result.transcript);
     for (const shot of session.screenshots) if (!screenshots.includes(shot)) screenshots.push(shot);
     return result;

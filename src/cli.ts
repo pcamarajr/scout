@@ -92,10 +92,11 @@ program
   .option("--ai", "Force AI-driven run (re-records the script)", false)
   .option("--no-heal", "Do not fall back to AI when replay fails (cheap CI)")
   .option("--headed", "Visible browser (local debug)", false)
+  .option("--record-video", "Record a paced MP4 preview of each verified replay (needs ffmpeg)", false)
   .option("--base-url <url>", "Target app URL for this run (precedence: flag > SCOUT_BASE_URL > scout.config.json)")
   .action(async (opts) => {
     const store = new Store();
-    const config = loadConfig(process.cwd(), { baseUrl: opts.baseUrl });
+    const config = loadConfig(process.cwd(), { baseUrl: opts.baseUrl, recordVideo: opts.recordVideo });
     const all = store.listScenarios();
     const targets = opts.scenario
       ? all.filter((s) => s.slug === opts.scenario || s.name === opts.scenario)
@@ -122,6 +123,7 @@ program
           failed++;
         }
         console.log(`   ↳ artifacts: ${path.relative(process.cwd(), result.runDir)}`);
+        if (result.video) console.log(`   ↳ preview: ${path.relative(process.cwd(), result.video)}`);
       } catch (error) {
         console.log(`💥 error: ${error instanceof Error ? error.message : error}`);
         failed++;

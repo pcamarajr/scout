@@ -134,6 +134,17 @@ Each run records in `.scout/runs/<timestamp>-<slug>/`:
 | `report.md` | Verdict + reason + recorded script + evidence |
 | `result.json` | Structured result (consumable by automation) |
 | `transcript.md` | Agent reasoning (AI runs only) |
+| `video.mp4` | Paced preview of the verified flow with baked step labels + verdict card — only with `--record-video` (see below) |
+| `video.timeline.json` | Step→timestamp map the overlays are burned from |
+
+### Preview video (`--record-video`)
+
+Opt-in, off by default (zero overhead otherwise). When enabled, a **verified** scenario gets one extra, deterministic replay — recorded, paced for human viewing, and rendered by `ffmpeg` into a GitHub-playable MP4 with the scenario title, per-step captions, and a green/red verdict card burned in. It's meant as a **rich PR artifact**: a reviewer plays it and sees the implemented feature working, no tooling required.
+
+- Always sourced from the clean deterministic replay — never the exploratory AI run.
+- Pacing via `videoSpeed` in `scout.config.json` (`(0,1]`, default `0.4` = slower; `1` = natural speed).
+- Requires `ffmpeg` on `PATH` (or `FFMPEG_PATH`). Missing it isn't fatal — scout keeps the raw `.webm` and warns with an install hint. Font autodetected, or set `SCOUT_VIDEO_FONT` to a `.ttf`.
+- Enable per-run with `--record-video`, via `SCOUT_RECORD_VIDEO=1`, or `"recordVideo": true` in the config.
 
 ## MCP — usage by coding agents (Claude Code, cloud sessions)
 
@@ -178,7 +189,7 @@ With heal in CI: add `ANTHROPIC_API_KEY` and switch to `npx scout go` — when t
 scout init                      # bootstrap in the project (.scout/specs/ + config)
 scout create <name> -f <feature> -c <scenario> [-p profile] [-n notes]
 scout list                      # scenarios + status + 📜 if cached script exists
-scout go [-s slug|name] [--ai] [--no-heal] [--headed] [--base-url <url>]
+scout go [-s slug|name] [--ai] [--no-heal] [--headed] [--record-video] [--base-url <url>]
 scout report [--json] [--check] # suite summary (markdown default)
 scout migrate                   # legacy scenarios.json → .scout.md specs
 scout login <profile> [--base-url <url>]  # capture storageState in headed browser
@@ -256,7 +267,7 @@ Design decisions:
 - **The agent never writes test code.** It acts in the browser; the script is recorded from actions that actually worked (`getByRole` + accessible name when unique on the page, CSS path as fallback). Eliminates hallucinated selectors.
 - **Assertions are tools.** The agent registers each expectation via `browser_assert` — that's what makes the replay a real test, not just a click macro.
 - **Recorded scripts are pruned before caching.** Agent retries (e.g. re-filling the same field) are deduplicated conservatively: an earlier `fill`/`select` is dropped only when a later one targets the same element and nothing in between (click/press/navigate) could have consumed the value. Clicks are never deduplicated.
-- **Trace > video.** Playwright's trace.zip gives per-action screenshots, DOM, network, and console in a single navigable artifact. Raw video stays as an optional enhancement.
+- **Trace for debugging, video for humans.** Playwright's trace.zip is the deep-debug artifact (per-action screenshots, DOM, network, console). The opt-in preview video is a different job: a low-friction, GitHub-playable clip a reviewer watches in the PR to see the feature working — sourced from the clean replay and paced + annotated so it's worth watching, not "video for the sake of video".
 - **Scenarios are versioned source, not database rows.** One `.scout.md` per feature, reviewed in PRs like a `.test.ts`; the spec is a pure input that a run never mutates (status derives from `.scout/runs/`). The recorded JSON script is a derived sidecar — clean diffs, no run noise in history.
 - **No server/dashboard.** State is the filesystem in the target repo; report is markdown. Pluggable into any project with `npm i` + 2 files.
 

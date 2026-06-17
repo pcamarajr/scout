@@ -64,3 +64,18 @@ test("empty override is ignored (falls through to env/config)", () => {
     assert.equal(config.baseUrl, "http://app.test:4000");
   });
 });
+
+test("recordVideo defaults off; SCOUT_RECORD_VIDEO and --record-video enable it", () => {
+  withEnv({ SCOUT_RECORD_VIDEO: undefined }, () => {
+    assert.equal(loadConfig(tmpProject()).recordVideo, false);
+    assert.equal(loadConfig(tmpProject(), { recordVideo: true }).recordVideo, true);
+  });
+  withEnv({ SCOUT_RECORD_VIDEO: "1" }, () => {
+    assert.equal(loadConfig(tmpProject()).recordVideo, true);
+  });
+});
+
+test("videoSpeed defaults to 0.4 and is overridable via config file", () => {
+  assert.equal(loadConfig(tmpProject()).videoSpeed, 0.4);
+  assert.equal(loadConfig(tmpProject({ videoSpeed: 1 })).videoSpeed, 1);
+});

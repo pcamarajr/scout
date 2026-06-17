@@ -25,7 +25,13 @@ export interface LaunchOptions {
   storageState?: string;
   locale?: string;
   runDir: string;
+  /** Record a WebM of the context (used only by the preview-video replay) */
+  recordVideo?: boolean;
+  /** Playwright slowMo (ms/action) — paces the preview replay for human viewing */
+  slowMoMs?: number;
 }
+
+const VIDEO_SIZE = { width: 390, height: 844 } as const;
 
 const STEP_TIMEOUT = 10_000;
 
@@ -42,20 +48,24 @@ export class BrowserSession {
     private context: BrowserContext,
     readonly page: Page,
     private opts: LaunchOptions,
+    /** Date.now() at video start (context creation); undefined when not recording */
+    readonly videoEpoch: number | undefined,
     private refs = new Map<number, ElementInfo>()
   ) {}
 
   static async launch(opts: LaunchOptions): Promise<BrowserSession> {
-    const browser = await chromium.launch({ headless: opts.headless });
+    const browser = await chromium.launch({ headless: opts.headless, slowMo: opts.slowMoMs });
     const context = await browser.newContext({
       locale: opts.locale ?? "pt-BR",
-      viewport: { width: 390, height: 844 }, // mobile-first; vertical video product
+      viewport: { ...VIDEO_SIZE }, // mobile-first; vertical video product
       storageState: opts.storageState,
+      ...(opts.recordVideo ? { recordVideo: { dir: opts.runDir, size: { ...VIDEO_SIZE } } } : {}),
     });
+    const videoEpoch = opts.recordVideo ? Date.now() : undefined;
     await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
     const page = await context.newPage();
     page.setDefaultTimeout(STEP_TIMEOUT);
-    return new BrowserSession(browser, context, page, opts);
+    return new BrowserSession(browser, context, page, opts, videoEpoch);
   }
 
   resolveUrl(url: string): string {
@@ -226,17 +236,28 @@ export class BrowserSession {
     throw new Error(`Target sem estratégia de localização: ${target.description}`);
   }
 
-  async close(): Promise<string | undefined> {
-    let tracePath: string | undefined;
+  async close(): Promise<{ trace?: string; video?: string }> {
+    let trace: string | undefined;
     try {
-      tracePath = path.join(this.opts.runDir, "trace.zip");
-      await this.context.tracing.stop({ path: tracePath });
+      trace = path.join(this.opts.runDir, "trace.zip");
+      await this.context.tracing.stop({ path: trace });
     } catch {
-      tracePath = undefined;
+      trace = undefined;
     }
+    // The Video handle must be captured before close(); the file is only
+    // finalized once the context is closed (hence close() is awaited).
+    const video = this.page.video();
     await this.context.close().catch(() => {});
     await this.browser.close().catch(() => {});
-    return tracePath;
+    let videoPath: string | undefined;
+    if (video) {
+      try {
+        videoPath = await video.path();
+      } catch {
+        videoPath = undefined;
+      }
+    }
+    return { trace, video: videoPath };
   }
 }
 

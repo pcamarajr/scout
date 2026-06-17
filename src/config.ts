@@ -27,6 +27,10 @@ export interface ScoutConfig {
   maxTurns: number;
   /** Locale forced on the browser context */
   locale?: string;
+  /** Record a paced MP4 preview of the verified replay. Enable with --record-video or SCOUT_RECORD_VIDEO=1. */
+  recordVideo?: boolean;
+  /** Preview pacing in (0,1]; <1 = slower so a human can follow. Default 0.4. */
+  videoSpeed?: number;
   profiles: Record<string, ScoutProfile>;
 }
 
@@ -39,12 +43,15 @@ const DEFAULTS: ScoutConfig = {
   headless: true,
   maxTurns: 40,
   locale: "pt-BR",
+  recordVideo: false,
+  videoSpeed: 0.4,
   profiles: {},
 };
 
 /** Per-invocation overrides (CLI flags, MCP tool params). Highest precedence. */
 export interface ConfigOverrides {
   baseUrl?: string;
+  recordVideo?: boolean;
 }
 
 /** Precedence: overrides (flag) > env (SCOUT_*) > scout.config.json > defaults. */
@@ -58,7 +65,9 @@ export function loadConfig(cwd = process.cwd(), overrides: ConfigOverrides = {})
   if (process.env.SCOUT_BASE_URL) merged.baseUrl = process.env.SCOUT_BASE_URL;
   if (process.env.SCOUT_MODEL) merged.model = process.env.SCOUT_MODEL;
   if (process.env.SCOUT_HEADED === "1") merged.headless = false;
+  if (process.env.SCOUT_RECORD_VIDEO === "1") merged.recordVideo = true;
   if (overrides.baseUrl) merged.baseUrl = overrides.baseUrl;
+  if (overrides.recordVideo) merged.recordVideo = true;
   return merged;
 }
 
