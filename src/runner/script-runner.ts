@@ -1,11 +1,55 @@
 import type { Step } from "../types.js";
 import type { BrowserSession } from "./browser.js";
+import type { TimelineEntry } from "./video.js";
 
 export interface ReplayOutcome {
   passed: boolean;
   failedStep?: string;
   failedIndex?: number;
   error?: string;
+}
+
+const ASSERTION_KINDS = new Set<Step["kind"]>([
+  "waitForText",
+  "waitForUrl",
+  "assertVisible",
+  "assertNotVisible",
+  "assertUrl",
+]);
+
+export interface PreviewReplayOutcome {
+  passed: boolean;
+  timeline: TimelineEntry[];
+  failedIndex?: number;
+}
+
+/**
+ * Replay dedicated to producing the preview video: identical step execution to
+ * {@link replaySteps}, but it records each step's wall-clock offset (for burned
+ * captions) and dwells after assertions / at the end so a human can read the
+ * verified state. It is decoupled from the verdict — this run is never the
+ * source of truth, so the pacing pauses cannot affect a pass/fail decision.
+ */
+export async function replayForVideo(
+  session: BrowserSession,
+  steps: Step[],
+  assertDwellMs: number,
+  endDwellMs: number
+): Promise<PreviewReplayOutcome> {
+  const timeline: TimelineEntry[] = [];
+  const epoch = session.videoEpoch ?? Date.now();
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    timeline.push({ label: `${i + 1}/${steps.length} · ${describeStep(step)}`, tMs: Date.now() - epoch });
+    try {
+      await session.executeStep(step);
+    } catch {
+      return { passed: false, timeline, failedIndex: i };
+    }
+    if (ASSERTION_KINDS.has(step.kind)) await session.page.waitForTimeout(assertDwellMs);
+  }
+  await session.page.waitForTimeout(endDwellMs); // hold the final frame for the verdict card
+  return { passed: true, timeline };
 }
 
 /** Describes a step for reports/errors. */

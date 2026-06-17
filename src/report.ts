@@ -41,6 +41,18 @@ export function renderRunReport(result: RunResult, scenario: Scenario, steps?: S
     }
   }
 
+  if (result.video) {
+    const name = path.basename(result.video);
+    lines.push(
+      ``,
+      `## Preview`,
+      ``,
+      `<video src="./${name}" controls></video>`,
+      ``,
+      `[▶ ${name}](./${name}) — paced replay of the verified flow.`
+    );
+  }
+
   if (result.trace) {
     lines.push(
       ``,
