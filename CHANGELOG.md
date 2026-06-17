@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/pcamarajr/scout/compare/scout-v0.4.0...scout-v0.5.0) (2026-06-17)
+
+
+### Features
+
+* opt-in preview video of verified replays for PR review ([#10](https://github.com/pcamarajr/scout/issues/10)) ([be33f65](https://github.com/pcamarajr/scout/commit/be33f65af6531425c9f267ddcdc8558356920087))
+* resolve $ENV:VAR placeholders in browser_navigate URLs ([#9](https://github.com/pcamarajr/scout/issues/9)) ([239733e](https://github.com/pcamarajr/scout/commit/239733e8f5f93c81cfa974ef8edc4ddb3685ee42))
+
 ## [0.4.0](https://github.com/pcamarajr/scout/compare/scout-v0.3.0...scout-v0.4.0) (2026-06-14)
 
 
