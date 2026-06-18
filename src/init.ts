@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { CONFIG_FILE, SCOUT_DIR } from "./config.js";
+import { scaffoldAgentOnboarding } from "./scaffold.js";
 import { Store } from "./store.js";
 
 export const DEFAULT_BASE_URL = "http://localhost:3000";
@@ -80,4 +81,8 @@ export async function runInit(opts: InitOptions = {}, deps: InitDeps = {}): Prom
     log(`✓ ${CONFIG_FILE} created (baseUrl: ${baseUrl}) — adjust baseUrl and profiles.`);
   }
   log(`✓ ${SCOUT_DIR}/ initialized.`);
+
+  // Refresh agent-onboarding artifacts (AGENTS.md block, Claude skill, Cursor
+  // rule). Idempotent — re-running init is the upgrade path for these files.
+  scaffoldAgentOnboarding({ cwd, log });
 }
