@@ -1,0 +1,29 @@
+# Providers & credentials
+
+The first `scout go` on a scenario (and any heal) needs an AI provider. Deterministic **replay never uses an LLM**, so CI that only replays needs no credentials.
+
+Run **`scout doctor`** anytime to check: it prints the model, inferred provider, and engine, runs a fast network-free detection ladder, then does a live one-step ping to confirm the credentials actually work (exit `0` valid, `1` not — with copy-pasteable remediation).
+
+## Choosing a provider
+
+Scout infers the provider from the `model` in `scout.config.json` (case-insensitive):
+
+| `model` starts with | Provider | Guide |
+|---|---|---|
+| `claude…` | Anthropic (default) | [claude.md](./claude.md) |
+| `gemini…` / `google…` | Google | [gemini.md](./gemini.md) |
+| `gpt…`, `o1`, `o3`, `o4…` | OpenAI | [openai.md](./openai.md) |
+
+Unknown/empty model ids fall back to Anthropic.
+
+## Engines
+
+- **`agent-sdk`** (default for Anthropic) — the trusted Claude Agent SDK. Reuses a Claude Code session with **zero config**.
+- **`ai-sdk`** (default for Google/OpenAI; can also run Claude for parity) — the Vercel AI SDK engine. Authenticates with a real API key only.
+
+Override with `SCOUT_ENGINE=agent-sdk|ai-sdk` or `"engine"` in `scout.config.json`. Note: the AI SDK engine cannot reuse the Claude Code keychain/OAuth session — under it, Anthropic needs `ANTHROPIC_API_KEY`.
+
+## TL;DR
+
+- **Claude Code signed in?** Nothing to do — `scout doctor` should report ✓.
+- **Otherwise** export one of: `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, or `OPENAI_API_KEY`, matching your `model`.
