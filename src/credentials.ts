@@ -27,6 +27,14 @@ export interface DetectOptions {
    * are deterministic regardless of the host machine's Claude Code session.
    */
   hasKeychainSession?: () => boolean;
+  /**
+   * Which engine the run will use. The AI SDK engine authenticates with a real
+   * ANTHROPIC_API_KEY only — it cannot reuse the Claude Code keychain/OAuth
+   * session the way the default Agent SDK engine does. When set to `ai-sdk`,
+   * detection that would otherwise pass on a keychain-only session fails closed
+   * with engine-specific remediation. Unset/`agent-sdk` keeps PR1 behavior.
+   */
+  engine?: "agent-sdk" | "ai-sdk";
 }
 
 /**
@@ -49,6 +57,18 @@ const ANTHROPIC_REMEDIATION = [
   "No usable AI credentials found for Anthropic. Do one of:",
   "  • Install Claude Code (https://claude.com/claude-code) and run `claude` to sign in — Scout reuses that session automatically.",
   "  • Or export an API key:  export ANTHROPIC_API_KEY=sk-ant-...",
+  "Run `scout doctor` to re-check.",
+].join("\n");
+
+/**
+ * The AI SDK engine cannot use the keychain/OAuth Claude Code session — it
+ * needs a real ANTHROPIC_API_KEY. Emitted only when the AI SDK engine is
+ * selected and the sole credential source is the macOS keychain.
+ */
+const AI_SDK_KEYCHAIN_ONLY_REMEDIATION = [
+  "The AI SDK engine needs ANTHROPIC_API_KEY; the Claude Code keychain session only works with the default engine (unset SCOUT_ENGINE or set SCOUT_ENGINE=agent-sdk).",
+  "  • Export an API key:  export ANTHROPIC_API_KEY=sk-ant-...",
+  "  • Or switch back to the default engine:  unset SCOUT_ENGINE  (or SCOUT_ENGINE=agent-sdk)",
   "Run `scout doctor` to re-check.",
 ].join("\n");
 
@@ -117,6 +137,12 @@ function detectAnthropic(opts: DetectOptions = {}): CredentialStatus {
   }
   const hasKeychain = opts.hasKeychainSession ?? hasMacKeychainSession;
   if (hasKeychain()) {
+    // The keychain session works only for the default Agent SDK engine. The AI
+    // SDK engine needs a real ANTHROPIC_API_KEY, so under it this source does
+    // NOT count — fail closed with engine-specific remediation.
+    if (opts.engine === "ai-sdk") {
+      return { ok: false, provider: "anthropic", remediation: AI_SDK_KEYCHAIN_ONLY_REMEDIATION };
+    }
     return { ok: true, provider: "anthropic", source: "macOS keychain (Claude Code session)" };
   }
   return { ok: false, provider: "anthropic", remediation: ANTHROPIC_REMEDIATION };

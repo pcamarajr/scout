@@ -6,6 +6,7 @@ import { Command } from "commander";
 import { chromium } from "playwright";
 import { CONFIG_FILE, SCOUT_DIR, loadConfig } from "./config.js";
 import { detectAiCredentials, inferProvider } from "./credentials.js";
+import { resolveEngineKind } from "./runner/engines/index.js";
 import { runScenario } from "./engine.js";
 import { runInit } from "./init.js";
 import { buildReport, renderSummary, scenarioStatus } from "./report.js";
@@ -270,10 +271,12 @@ program
   .action(async () => {
     const config = loadConfig();
     const provider = inferProvider(config.model);
-    const status = detectAiCredentials(provider);
+    const engine = resolveEngineKind(provider, config.engine);
+    const status = detectAiCredentials(provider, { engine });
 
     console.log(`Model:    ${config.model}`);
     console.log(`Provider: ${provider}`);
+    console.log(`Engine:   ${engine}`);
 
     if (provider !== "anthropic") {
       // Seam: detection already fails closed for non-Anthropic providers.
