@@ -6,6 +6,7 @@ import { Command } from "commander";
 import { chromium } from "playwright";
 import { CONFIG_FILE, SCOUT_DIR, loadConfig } from "./config.js";
 import { runScenario } from "./engine.js";
+import { runInit } from "./init.js";
 import { buildReport, renderSummary, scenarioStatus } from "./report.js";
 import { addScenario, slugify } from "./specs.js";
 import { Store } from "./store.js";
@@ -27,31 +28,10 @@ program
 program
   .command("init")
   .description("Creates scout.config.json and .scout/ in the current project")
-  .action(() => {
-    const store = new Store();
-    store.init();
-    const configPath = path.join(process.cwd(), CONFIG_FILE);
-    if (!fs.existsSync(configPath)) {
-      fs.writeFileSync(
-        configPath,
-        JSON.stringify(
-          {
-            baseUrl: "http://localhost:3000",
-            model: "claude-sonnet-4-6",
-            headless: true,
-            maxTurns: 40,
-            locale: "pt-BR",
-            profiles: {
-              anon: { description: "Logged-out session" },
-            },
-          },
-          null,
-          2
-        ) + "\n"
-      );
-      console.log(`✓ ${CONFIG_FILE} created — adjust baseUrl and profiles.`);
-    }
-    console.log(`✓ ${SCOUT_DIR}/ initialized.`);
+  .option("--base-url <url>", "Default target app URL (skips the prompt)")
+  .option("-y, --yes", "Non-interactive: accept defaults, never prompt", false)
+  .action(async (opts) => {
+    await runInit({ baseUrl: opts.baseUrl, yes: opts.yes });
   });
 
 program
