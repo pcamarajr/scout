@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/pcamarajr/scout/compare/scout-v0.5.0...scout-v0.6.0) (2026-06-18)
+
+
+### Features
+
+* prompt for base URL on init with --base-url/--yes for non-interactive runs ([#13](https://github.com/pcamarajr/scout/issues/13)) ([7bd3e08](https://github.com/pcamarajr/scout/commit/7bd3e08e76ccd4c14f0b0975f26dfe7b04a456fe))
+* scaffold agent onboarding (AGENTS.md, Claude skill, Cursor rule) on init ([#14](https://github.com/pcamarajr/scout/issues/14)) ([92f3684](https://github.com/pcamarajr/scout/commit/92f368451c2586960c67a536b01944bb1bcdee24))
+
+
+### Bug Fixes
+
+* record a non-paced fallback clip when paced preview replay fails ([#12](https://github.com/pcamarajr/scout/issues/12)) ([65ed7c5](https://github.com/pcamarajr/scout/commit/65ed7c5db1e8b2845074c8f6525da2b4cafb03ac))
+
 ## [0.5.0](https://github.com/pcamarajr/scout/compare/scout-v0.4.0...scout-v0.5.0) (2026-06-17)
 
 
