@@ -37,7 +37,7 @@ export async function runScenario(
   const runDir = store.newRunDir(scenario.slug);
   const storageState = resolveStorageState(scenario.profile, config);
   const cached = opts.forceAi ? undefined : store.loadSteps(scenario.slug);
-  const aiCreds = detectAiCredentials(inferProvider(config.model));
+  const aiCreds = detectAiCredentials(inferProvider(config.model), { engine: config.engine });
 
   const launch = () =>
     BrowserSession.launch({
