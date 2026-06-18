@@ -1,0 +1,49 @@
+# Environments & CI
+
+## Targeting a base URL
+
+Everything is relative to the project directory, and the target can be overridden per run — so two worktrees can run in parallel without colliding:
+
+```bash
+scout go --base-url http://localhost:3001                     # worktree B on its ephemeral server
+SCOUT_BASE_URL=http://localhost:3001 scout go                 # same, via env
+SCOUT_BASE_URL=https://staging.myapp.com scout go --no-heal   # against staging
+```
+
+**Precedence:** `--base-url` flag (or the `baseUrl` param of the `scout_run` MCP tool) > `SCOUT_BASE_URL` > `baseUrl` in `scout.config.json`.
+
+Recorded scripts store navigation **relative to the base URL in effect at recording time**, so a script recorded against `:3000` replays unchanged against `:3001` or staging.
+
+## CI (GitHub Actions)
+
+Deterministic replay uses **no LLM**, so the gate needs no AI credentials.
+
+```yaml
+qa-browser:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with: { node-version: 24 }
+    - run: npm ci && npx playwright install --with-deps chromium
+    - run: npm run start:test-server &        # app running
+    - run: npx scout go --no-heal             # pure replay, no LLM, exit 1 on failure
+      env: { SCOUT_BASE_URL: "http://localhost:3000" }
+    - run: npx scout report >> "$GITHUB_STEP_SUMMARY"
+      if: always()
+    - uses: actions/upload-artifact@v4        # traces + screenshots in the action run
+      if: always()
+      with: { name: scout-runs, path: .scout/runs/ }
+```
+
+### The PR gate
+
+```bash
+npx scout report --check   # exit 1 if ANY scenario is not `verified`, exit 0 otherwise
+```
+
+`--check` is the gate primitive — no grepping markdown for emojis. A scenario passes only with status `verified`; `failed`, `partial`, `blocked`, and `pending` all fail the check. An empty suite passes vacuously (test `summary.total` if you require scenarios). See the [CLI reference](./cli.md) for `--json`.
+
+### Healing in CI
+
+To let CI re-record on a legitimate UI change, add `ANTHROPIC_API_KEY` (or another provider key) and drop `--no-heal`: `npx scout go`. When the UI changed, the job re-records the script and the `.scout/scripts/` diff shows up for commit (e.g. via a PR bot).

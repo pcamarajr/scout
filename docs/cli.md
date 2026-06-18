@@ -1,0 +1,52 @@
+# CLI reference
+
+```
+scout init [--base-url <url>] [-y|--yes]   # bootstrap: scout.config.json, .scout/, AI agent files
+scout create <name> -f <feature> -c <scenario> [-p profile] [-n notes]
+scout list                                 # scenarios + status + 📜 if a cached script exists
+scout go [-s slug|name] [--ai] [--no-heal] [--headed] [--record-video] [--base-url <url>]
+scout report [--json] [--check]            # suite summary (markdown default)
+scout doctor                               # diagnose AI credentials for the configured model
+scout migrate                              # legacy scenarios.json → .scout.md specs
+scout login <profile> [--base-url <url>]   # capture your app's storageState in a headed browser
+scout mcp                                  # MCP server (stdio)
+```
+
+## `scout init`
+
+Creates `scout.config.json` (prompts for the base URL on a TTY; `--base-url` or `--yes` skip the prompt) and `.scout/`, and scaffolds the AI agent files (`AGENTS.md`, the Claude skill, the Cursor rule). Idempotent — re-run it to upgrade the scaffolded files. Never overwrites an existing `scout.config.json`.
+
+## `scout go`
+
+Runs scenarios: cached-script replay, AI on the first run or when the script breaks.
+
+- `-s, --scenario <idOrSlug>` — run a single scenario.
+- `--ai` — force an AI-driven run (re-records the script).
+- `--no-heal` — don't fall back to AI when replay fails (cheap CI; failure becomes ❌).
+- `--headed` — visible browser (local debug).
+- `--record-video` — paced MP4 preview of each verified replay (needs `ffmpeg`; see [artifacts](./artifacts.md)).
+- `--base-url <url>` — target for this run (precedence: flag > `SCOUT_BASE_URL` > config).
+
+## `scout doctor`
+
+Diagnoses AI credentials for the model in `scout.config.json`: prints the model, inferred provider, and engine; runs a network-free detection ladder; then does a live one-step ping to confirm the credentials actually work. Exit `0` = valid, `1` = missing/invalid (with copy-pasteable remediation). See [Providers & credentials](./providers).
+
+## `scout report`
+
+```bash
+scout report                  # markdown suite summary (embeddable in a PR body)
+scout report --json           # machine-readable JSON
+scout report --check          # exit 1 if ANY scenario is not `verified`
+scout report --json --check   # prints JSON AND sets the exit code
+```
+
+`--json` shape:
+
+```jsonc
+{
+  "scenarios": [
+    { "slug": "paywall/paywall-free", "name": "Paywall free", "feature": "Paywall", "profile": "anon", "status": "verified", "lastRun": "2026-06-10T12:00:00.000Z" }
+  ],
+  "summary": { "total": 4, "verified": 3, "failed": 1, "partial": 0, "blocked": 0, "pending": 0 }
+}
+```
