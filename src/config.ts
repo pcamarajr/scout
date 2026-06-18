@@ -31,6 +31,13 @@ export interface ScoutConfig {
   recordVideo?: boolean;
   /** Preview pacing in (0,1]; <1 = slower so a human can follow. Default 0.4. */
   videoSpeed?: number;
+  /**
+   * Agent engine for AI runs. `agent-sdk` (default) uses the trusted
+   * @anthropic-ai/claude-agent-sdk; `ai-sdk` uses the Vercel AI SDK. Override
+   * with SCOUT_ENGINE. Unset = provider-aware default (agent-sdk for Anthropic,
+   * ai-sdk for other providers).
+   */
+  engine?: "agent-sdk" | "ai-sdk";
   profiles: Record<string, ScoutProfile>;
 }
 
@@ -66,6 +73,9 @@ export function loadConfig(cwd = process.cwd(), overrides: ConfigOverrides = {})
   if (process.env.SCOUT_MODEL) merged.model = process.env.SCOUT_MODEL;
   if (process.env.SCOUT_HEADED === "1") merged.headless = false;
   if (process.env.SCOUT_RECORD_VIDEO === "1") merged.recordVideo = true;
+  if (process.env.SCOUT_ENGINE === "agent-sdk" || process.env.SCOUT_ENGINE === "ai-sdk") {
+    merged.engine = process.env.SCOUT_ENGINE;
+  }
   if (overrides.baseUrl) merged.baseUrl = overrides.baseUrl;
   if (overrides.recordVideo) merged.recordVideo = true;
   return merged;
