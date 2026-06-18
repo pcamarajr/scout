@@ -36,3 +36,17 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  # Validates the real packaged artifact: pack the tarball, install it into a
+  # throwaway project, and exercise the installed `scout` bin offline. Public
+  # repo → free Actions minutes, so this always runs (no label gating).
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run smoke

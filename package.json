@@ -43,6 +43,7 @@
     "dev": "tsx src/cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
+    "smoke": "node scripts/smoke.mjs",
     "prepublishOnly": "npm run build",
     "prepare": "husky"
   },

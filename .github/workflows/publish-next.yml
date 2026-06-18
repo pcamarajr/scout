@@ -1,0 +1,78 @@
+# Release-candidate publish to npm under the `@next` dist-tag.
+#
+# ┌──────────────────────────────────────────────────────────────────────────┐
+# │ REQUIRED ONE-TIME MAINTAINER SETUP — OIDC TRUSTED PUBLISHING               │
+# │                                                                            │
+# │ This workflow publishes to npm via OIDC trusted publishing (no NPM_TOKEN). │
+# │ For that to work, `publish-next.yml` must be registered as a TRUSTED       │
+# │ PUBLISHER for the `@pcamarajr/scout` package on npmjs.com — IN ADDITION    │
+# │ to the existing `release-please.yml` entry. npm matches the OIDC claim     │
+# │ against the exact workflow filename, so the release-please registration    │
+# │ does NOT cover this workflow.                                              │
+# │                                                                            │
+# │ Add it under: npmjs.com → @pcamarajr/scout → Settings → Trusted Publishing │
+# │   (owner: pcamarajr, repo: scout, workflow: publish-next.yml).             │
+# │ Until this is done, the `npm publish` step below will FAIL.                │
+# └──────────────────────────────────────────────────────────────────────────┘
+#
+# Label-gated: runs only when the PR carries the `publish-next` label. The
+# published version is `<base>-next.<short-sha>`, a distinct prerelease that can
+# never collide with the eventual `latest` release.
+name: publish-next
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+  id-token: write # OIDC trusted publishing
+
+jobs:
+  publish-next:
+    if: contains(github.event.pull_request.labels.*.name, 'publish-next')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      # npm >= 11.5.1 required for OIDC trusted publishing
+      - run: npm install -g npm@latest
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      # Compute a distinct prerelease version so it never collides with the
+      # `latest` release. Modifies package.json in CI only (uncommitted).
+      - name: Compute and publish prerelease
+        id: publish
+        run: |
+          BASE=$(node -p "require('./package.json').version")
+          SHORT=${GITHUB_SHA::7}
+          VERSION="${BASE}-next.${SHORT}"
+          npm version "$VERSION" --no-git-tag-version
+          npm publish --tag next --access public --provenance
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Comment install command on the PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = "${{ steps.publish.outputs.version }}";
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: [
+                `Published prerelease \`@pcamarajr/scout@${version}\` to the \`next\` dist-tag.`,
+                "",
+                "Install the latest `@next` build with:",
+                "",
+                "```sh",
+                "npm i @pcamarajr/scout@next",
+                "```",
+              ].join("\n"),
+            });
