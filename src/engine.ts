@@ -6,7 +6,7 @@ import { Store } from "./store.js";
 import { BrowserSession } from "./runner/browser.js";
 import { runWithAgent } from "./runner/ai-runner.js";
 import { describeStep, replayForVideo, replaySteps } from "./runner/script-runner.js";
-import { generateVideo, pacingFor } from "./runner/video.js";
+import { generateVideo, pacingFor, type TimelineEntry, type VideoPacing } from "./runner/video.js";
 import type { RunResult, Scenario, Step, Target } from "./types.js";
 
 export interface RunOptions {
@@ -126,49 +126,45 @@ export async function runScenario(
   return result;
 }
 
+/** A single recorded replay attempt: the WebM it produced and whether it passed. */
+export interface RecordedReplay {
+  passed: boolean;
+  /** Path to the recorded WebM, if the context produced one. */
+  webm?: string;
+  /** Step captions with wall-clock offsets, for burned overlays. */
+  timeline: TimelineEntry[];
+}
+
 /**
- * Runs one extra, paced replay of the verified script with video recording on,
- * then renders it to a GitHub-ready MP4 with baked step labels + verdict card.
- * Best-effort: any failure warns and yields no video — the verdict is untouched.
+ * Builds the pacing for the non-paced fallback replay: zero slowMo and zero
+ * dwell so it mirrors the authoritative `ai+heal` replay (which passed). The
+ * title/verdict card durations are kept so the rendered MP4 still bookends with
+ * the scenario name and the VERIFIED card.
  */
-async function recordPreviewVideo(
+export function nonPacedPacing(paced: VideoPacing): VideoPacing {
+  return { ...paced, slowMoMs: 0, assertDwellMs: 0 };
+}
+
+/**
+ * Renders an MP4 from a recorded WebM, persisting the timeline and degrading to
+ * the raw WebM under a stable name when ffmpeg is missing or fails. Returns the
+ * artifact path, or undefined when no WebM was produced at all.
+ */
+function renderPreview(
+  recorded: RecordedReplay,
   scenario: Scenario,
-  steps: Step[],
-  config: ScoutConfig,
-  storageState: string | undefined,
-  runDir: string
-): Promise<string | undefined> {
-  const pacing = pacingFor(config.videoSpeed);
-  let session: BrowserSession;
-  try {
-    session = await BrowserSession.launch({
-      baseUrl: config.baseUrl,
-      headless: config.headless,
-      storageState,
-      locale: config.locale,
-      runDir,
-      recordVideo: true,
-      slowMoMs: pacing.slowMoMs,
-    });
-  } catch {
-    console.warn("[scout] vídeo: não foi possível abrir o browser para o replay de preview.");
-    return undefined;
-  }
-
-  const preview = await replayForVideo(session, steps, pacing.assertDwellMs, pacing.verdictCardMs);
-  const { video: webm } = await session.close();
-
-  if (!preview.passed) {
-    console.warn("[scout] vídeo: replay de preview falhou — nenhum vídeo gerado (veredito não afetado).");
-    if (webm) fs.rmSync(webm, { force: true });
-    return undefined;
-  }
+  runDir: string,
+  pacing: VideoPacing
+): string | undefined {
+  const webm = recorded.webm;
   if (!webm || !fs.existsSync(webm)) {
-    console.warn("[scout] vídeo: replay não produziu arquivo WebM.");
+    console.warn("[scout] video: replay produced no WebM file.");
     return undefined;
   }
-
-  fs.writeFileSync(path.join(runDir, "video.timeline.json"), JSON.stringify(preview.timeline, null, 2) + "\n");
+  fs.writeFileSync(
+    path.join(runDir, "video.timeline.json"),
+    JSON.stringify(recorded.timeline, null, 2) + "\n"
+  );
   const result = generateVideo({
     webmPath: webm,
     outPath: path.join(runDir, "video.mp4"),
@@ -176,10 +172,10 @@ async function recordPreviewVideo(
     height: 844,
     scenarioName: scenario.name,
     verdict: "verified",
-    timeline: preview.timeline,
+    timeline: recorded.timeline,
     pacing,
   });
-  if (result.warning) console.warn(`[scout] vídeo: ${result.warning}`);
+  if (result.warning) console.warn(`[scout] video: ${result.warning}`);
   if (result.output && result.output !== webm) {
     fs.rmSync(webm, { force: true }); // MP4 superseded the intermediate WebM
     return result.output;
@@ -192,6 +188,77 @@ async function recordPreviewVideo(
   } catch {
     return webm;
   }
+}
+
+/**
+ * Orchestrates preview-video generation, decoupled from the browser so it can be
+ * tested: `attempt` performs one recorded replay at a given pacing and returns
+ * its outcome + WebM. Best-effort and post-verdict — never touches the verdict.
+ *
+ * The verified scenario must NEVER yield zero video. The first attempt is paced
+ * (slowMo + dwell) for human viewing. If that paced replay fails — the pacing
+ * sometimes perturbs timing on flows the authoritative run handled fine (e.g. a
+ * cookie banner) — we fall back to a non-paced replay that mirrors the
+ * authoritative run, which passed, so a usable clip is still produced. Only if
+ * the fallback ALSO fails do we warn and yield no video.
+ */
+export async function recordPreviewVideoFrom(
+  attempt: (pacing: VideoPacing) => Promise<RecordedReplay>,
+  scenario: Scenario,
+  runDir: string,
+  pacing: VideoPacing
+): Promise<string | undefined> {
+  const paced = await attempt(pacing);
+  if (paced.passed) return renderPreview(paced, scenario, runDir, pacing);
+  if (paced.webm) fs.rmSync(paced.webm, { force: true }); // discard the failed paced take
+
+  console.warn(
+    "[scout] video: paced preview replay failed; recorded a non-paced fallback clip (verdict unaffected)."
+  );
+  const fallbackPacing = nonPacedPacing(pacing);
+  const fallback = await attempt(fallbackPacing);
+  if (fallback.passed) return renderPreview(fallback, scenario, runDir, fallbackPacing);
+
+  if (fallback.webm) fs.rmSync(fallback.webm, { force: true });
+  console.warn("[scout] video: non-paced fallback replay also failed — no video generated (verdict unaffected).");
+  return undefined;
+}
+
+/**
+ * Runs one extra, paced replay of the verified script with video recording on,
+ * then renders it to a GitHub-ready MP4 with baked step labels + verdict card.
+ * On a paced-replay failure it retries without pacing so a verified scenario
+ * still yields a clip; the verdict is never affected.
+ */
+async function recordPreviewVideo(
+  scenario: Scenario,
+  steps: Step[],
+  config: ScoutConfig,
+  storageState: string | undefined,
+  runDir: string
+): Promise<string | undefined> {
+  const attempt = async (pacing: VideoPacing): Promise<RecordedReplay> => {
+    let session: BrowserSession;
+    try {
+      session = await BrowserSession.launch({
+        baseUrl: config.baseUrl,
+        headless: config.headless,
+        storageState,
+        locale: config.locale,
+        runDir,
+        recordVideo: true,
+        slowMoMs: pacing.slowMoMs,
+      });
+    } catch {
+      console.warn("[scout] video: could not open the browser for the preview replay.");
+      return { passed: false, timeline: [] };
+    }
+    const preview = await replayForVideo(session, steps, pacing.assertDwellMs, pacing.verdictCardMs);
+    const { video: webm } = await session.close();
+    return { passed: preview.passed, webm, timeline: preview.timeline };
+  };
+
+  return recordPreviewVideoFrom(attempt, scenario, runDir, pacingFor(config.videoSpeed));
 }
 
 /**
