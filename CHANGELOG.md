@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.0](https://github.com/pcamarajr/scout/compare/scout-v0.6.0...scout-v0.7.0) (2026-06-18)
+
+
+### Features
+
+* add a Vercel AI SDK engine behind SCOUT_ENGINE, with Anthropic parity ([#17](https://github.com/pcamarajr/scout/issues/17)) ([6f78c65](https://github.com/pcamarajr/scout/commit/6f78c65bdc4ae9f2dd43a77d329c32e15a0d077a))
+* provider-aware AI credential preflight and scout doctor ([#16](https://github.com/pcamarajr/scout/issues/16)) ([3448135](https://github.com/pcamarajr/scout/commit/344813545b445a5cc7e26b223e9c2c594171febb))
+* wire Google and OpenAI providers on the AI SDK engine ([#21](https://github.com/pcamarajr/scout/issues/21)) ([a769e1d](https://github.com/pcamarajr/scout/commit/a769e1da7e9fb7a0a6437da36931c830493f2a13))
+
 ## [0.6.0](https://github.com/pcamarajr/scout/compare/scout-v0.5.0...scout-v0.6.0) (2026-06-18)
 
 
