@@ -5,7 +5,7 @@ import readline from "node:readline";
 import { Command } from "commander";
 import { chromium } from "playwright";
 import { CONFIG_FILE, SCOUT_DIR, loadConfig } from "./config.js";
-import { detectAiCredentials, inferProvider } from "./credentials.js";
+import { detectAiCredentials, inferProvider, type AiProvider } from "./credentials.js";
 import { resolveEngineKind } from "./runner/engines/index.js";
 import { runScenario } from "./engine.js";
 import { runInit } from "./init.js";
@@ -265,6 +265,32 @@ async function livePingAnthropic(model: string): Promise<{ ok: boolean; error?: 
   }
 }
 
+/**
+ * Provider-aware live ping for the AI SDK engine (google/openai). Resolves the
+ * same provider model the engine would use and runs a 1-step `generateText`
+ * asking for the single word "ok". Token cost: a one-word system prompt + a
+ * one-word reply (a handful of tokens). Any thrown error (bad/absent key, wrong
+ * project, network) is surfaced as the failure reason.
+ */
+async function livePingAiSdk(
+  provider: AiProvider,
+  model: string
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { generateText } = await import("ai");
+    const { resolveModel } = await import("./runner/engines/ai-sdk.js");
+    await generateText({
+      model: resolveModel(provider, model),
+      system: "You are a connectivity probe. Reply with exactly one word.",
+      prompt: "Reply with the single word: ok",
+      maxOutputTokens: 8,
+    });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 program
   .command("doctor")
   .description("Diagnoses AI credentials (model provider auth) for the configured model — CI-usable exit code")
@@ -278,31 +304,38 @@ program
     console.log(`Provider: ${provider}`);
     console.log(`Engine:   ${engine}`);
 
-    if (provider !== "anthropic") {
-      // Seam: detection already fails closed for non-Anthropic providers.
-      console.log(`Detection: ✗ ${provider} is not yet supported (coming via AI SDK engine).`);
-      console.log(`\n${status.remediation}`);
-      process.exit(1);
-    }
-
     if (status.ok) {
       console.log(`Detection: ✓ matched ${status.source}`);
-    } else {
+    } else if (provider === "anthropic") {
       // The file/env probe missed — but a macOS keychain-backed Claude Code
       // session is invisible to it, yet the SDK can still authenticate. Don't
       // give up here; let the live ping be the authority for Anthropic.
       console.log("Detection: ✗ no credential file or env var found (a macOS keychain session would not show here).");
+    } else {
+      // google/openai have no invisible-credential path: if detection failed,
+      // there is nothing to ping. Report remediation and stop.
+      console.log(`Detection: ✗ no usable ${provider} credentials found.`);
+      console.log(`\n${status.remediation}`);
+      process.exit(1);
     }
 
     process.stdout.write("Live check: pinging the model... ");
-    const ping = await livePingAnthropic(config.model);
+    const ping =
+      provider === "anthropic"
+        ? await livePingAnthropic(config.model)
+        : await livePingAiSdk(provider, config.model);
     if (ping.ok) {
       console.log("✓ credentials valid");
       process.exit(0);
     }
     console.log("✗");
     console.log(`The live check failed: ${ping.error ?? "unknown error"}`);
-    console.log(`\n${status.remediation ?? detectAiCredentials("anthropic").remediation}`);
+    // When detection passed, the credentials are present but the live key was
+    // rejected (invalid/expired key, wrong project, no quota) — the ping error
+    // above is the actionable message. Only fall back to detection remediation
+    // when detection itself had something to say.
+    const remediation = status.remediation ?? detectAiCredentials(provider, { engine }).remediation;
+    if (remediation) console.log(`\n${remediation}`);
     process.exit(1);
   });
 

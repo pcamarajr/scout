@@ -3,6 +3,7 @@ import { test } from "node:test";
 import type { LanguageModelV3Content, LanguageModelV3FinishReason } from "@ai-sdk/provider";
 import { MockLanguageModelV3 } from "ai/test";
 import type { ScoutConfig } from "../src/config.js";
+import type { AiProvider } from "../src/credentials.js";
 import { createScoutTools } from "../src/runner/agent-tools.js";
 import { AiSdkEngine } from "../src/runner/engines/ai-sdk.js";
 import type { BrowserSession } from "../src/runner/browser.js";
@@ -75,7 +76,11 @@ function fakeSession(): { session: BrowserSession; calls: string[] } {
 
 const config = { baseUrl: "http://localhost:3000", profiles: {}, maxTurns: 40 } as unknown as ScoutConfig;
 
-function buildRun(turns: ReturnType<typeof turn>[], maxTurns = 40) {
+function buildRun(
+  turns: ReturnType<typeof turn>[],
+  maxTurns = 40,
+  spec: { provider?: AiProvider; model?: string } = {}
+) {
   const steps: Step[] = [];
   let verdict: { verdict: Verdict; reason: string } | undefined;
   const { session, calls } = fakeSession();
@@ -93,7 +98,8 @@ function buildRun(turns: ReturnType<typeof turn>[], maxTurns = 40) {
     getVerdict: () => verdict,
     run: () =>
       engine.run({
-        model: "claude-sonnet-4-6",
+        provider: spec.provider ?? "anthropic",
+        model: spec.model ?? "claude-sonnet-4-6",
         systemPrompt: "sys",
         userPrompt: "verify this",
         tools,
@@ -172,3 +178,33 @@ test("ai-sdk engine maps an error finishReason to error_during_execution", async
   const session = await h.run();
   assert.equal(session.end.subtype, "error_during_execution");
 });
+
+// --- provider-agnostic loop: google / openai specs run through the mock model ---
+// The injected MockLanguageModelV3 bypasses resolveModel, proving the tool loop
+// is identical regardless of EngineRunSpec.provider.
+
+for (const provider of ["google", "openai"] as const) {
+  test(`ai-sdk engine drives a ${provider} EngineRunSpec through the same tool loop`, async () => {
+    const model = provider === "google" ? "gemini-2.5-pro" : "gpt-4o";
+    const h = buildRun(
+      [
+        turn({ text: "navigating", toolName: "browser_navigate", input: { url: "/login" } }),
+        turn({ toolName: "browser_assert", input: { visibleText: "Welcome" } }),
+        turn({ toolName: "scout_verdict", input: { verdict: "verified", reason: "ok" } }),
+        turn({ text: "done", finishReason: "stop" }),
+      ],
+      40,
+      { provider, model }
+    );
+
+    const session = await h.run();
+
+    assert.deepEqual(
+      h.steps.map((s) => s.kind),
+      ["navigate", "assertVisible"]
+    );
+    assert.deepEqual(h.getVerdict(), { verdict: "verified", reason: "ok" });
+    assert.deepEqual(h.calls, ["navigate:/login", "assertVisible:Welcome"]);
+    assert.equal(session.end.subtype, "success");
+  });
+}

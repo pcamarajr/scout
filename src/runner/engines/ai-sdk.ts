@@ -1,4 +1,7 @@
 import { anthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createVertex } from "@ai-sdk/google-vertex";
+import { openai } from "@ai-sdk/openai";
 import {
   generateText,
   stepCountIs,
@@ -7,6 +10,8 @@ import {
   type LanguageModel,
   type ModelMessage,
 } from "ai";
+import type { AiProvider } from "../../credentials.js";
+import { detectAiCredentials } from "../../credentials.js";
 import type { ScoutTool } from "../agent-tools.js";
 import type {
   AgentEngine,
@@ -18,26 +23,62 @@ import type {
 
 /**
  * Optional injection seam. Production leaves `model` unset and we resolve the
- * Anthropic provider from the model id; tests pass a MockLanguageModelV3 so the
- * tool-calling loop runs deterministically with no network.
+ * provider model from the spec's provider + model id; tests pass a
+ * MockLanguageModelV3 so the tool-calling loop runs deterministically with no
+ * network.
  */
 export interface AiSdkEngineOptions {
   model?: LanguageModel;
 }
 
 /**
+ * Maps a provider + model id onto the matching AI SDK `LanguageModel`.
+ *
+ *   anthropic → @ai-sdk/anthropic
+ *   openai    → @ai-sdk/openai
+ *   google    → @ai-sdk/google when a Gemini/Generative-AI API key is present;
+ *               otherwise @ai-sdk/google-vertex (keyless, via Application Default
+ *               Credentials). The split is driven by the same credential ladder
+ *               `detectAiCredentials("google")` reports, so the engine and
+ *               `scout doctor` agree on which sub-provider runs.
+ *
+ * For Vertex we pass `project` from GOOGLE_CLOUD_PROJECT when set (the provider
+ * otherwise reads GOOGLE_VERTEX_PROJECT) and default `location` to
+ * GOOGLE_VERTEX_LOCATION or "us-central1" — the Vertex provider requires a
+ * location eagerly at model construction, so we supply a sensible default to
+ * keep the keyless path zero-config. ADC itself comes from google-auth-library.
+ */
+export function resolveModel(provider: AiProvider, modelId: string): LanguageModel {
+  switch (provider) {
+    case "anthropic":
+      return anthropic(modelId);
+    case "openai":
+      return openai(modelId);
+    case "google": {
+      const status = detectAiCredentials("google");
+      const usesApiKey = status.ok && status.source !== undefined && /API_KEY$/.test(status.source);
+      if (usesApiKey) return createGoogleGenerativeAI()(modelId);
+      const project = process.env.GOOGLE_CLOUD_PROJECT?.trim();
+      const location = process.env.GOOGLE_VERTEX_LOCATION?.trim() || "us-central1";
+      return createVertex({ location, ...(project ? { project } : {}) })(modelId);
+    }
+  }
+}
+
+/**
  * Second engine, built on the Vercel AI SDK. It runs the SAME engine-neutral
- * ScoutTool set through `generateText`'s tool-calling loop. Today it targets
- * Anthropic (apples-to-apples against the default engine); Google/OpenAI arrive
- * in a later release. The shared orchestrator owns prompts, verdict capture and
- * the forced-verdict rescue — this class only drives the SDK loop and maps the
- * SDK's `finishReason` into the QueryEndInfo vocabulary the rescue understands.
+ * ScoutTool set through `generateText`'s tool-calling loop, against Anthropic,
+ * Google (Gemini API key or Vertex ADC) or OpenAI — selected per the spec's
+ * provider via {@link resolveModel}. The shared orchestrator owns prompts,
+ * verdict capture and the forced-verdict rescue — this class only drives the SDK
+ * loop and maps the SDK's `finishReason` into the QueryEndInfo vocabulary the
+ * rescue understands.
  */
 export class AiSdkEngine implements AgentEngine {
   constructor(private readonly opts: AiSdkEngineOptions = {}) {}
 
   async run(spec: EngineRunSpec): Promise<EngineSession> {
-    const model = this.opts.model ?? anthropic(spec.model);
+    const model = this.opts.model ?? resolveModel(spec.provider, spec.model);
     const tools = buildAiSdkTools(spec.tools);
 
     const transcript: string[] = [];

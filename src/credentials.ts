@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 
 /**
- * AI/model providers Scout can run against. Only `anthropic` is wired up today;
- * `google`/`openai` are part of the seam for the upcoming AI SDK engine
- * (`SCOUT_ENGINE=ai-sdk`) and intentionally fail closed for now.
+ * AI/model providers Scout can run against. `anthropic` runs on either engine;
+ * `google` and `openai` run on the AI SDK engine (the default for non-Anthropic
+ * providers) and have real, network-free credential detection ladders.
  */
 export type AiProvider = "anthropic" | "google" | "openai";
 
@@ -35,6 +35,13 @@ export interface DetectOptions {
    * with engine-specific remediation. Unset/`agent-sdk` keeps PR1 behavior.
    */
   engine?: "agent-sdk" | "ai-sdk";
+  /**
+   * Test seam: override the gcloud Application Default Credentials file probe.
+   * Production code leaves this unset and the real filesystem probe runs; tests
+   * inject a stub so the google ADC rung is deterministic regardless of whether
+   * the host has actually run `gcloud auth application-default login`.
+   */
+  hasAdcFile?: () => boolean;
 }
 
 /**
@@ -72,13 +79,78 @@ const AI_SDK_KEYCHAIN_ONLY_REMEDIATION = [
   "Run `scout doctor` to re-check.",
 ].join("\n");
 
-function notYetSupportedRemediation(provider: AiProvider): string {
-  const name = provider === "google" ? "Google" : "OpenAI";
-  return [
-    `${name} models are not wired up yet. Support is coming via the AI SDK engine (set SCOUT_ENGINE=ai-sdk in a later release).`,
-    "For now, use an Anthropic model (e.g. SCOUT_MODEL=claude-sonnet-4-6) and provide Anthropic credentials.",
-    "Run `scout doctor` to re-check.",
-  ].join("\n");
+const GOOGLE_REMEDIATION = [
+  "No usable AI credentials found for Google (Gemini). Do one of:",
+  "  • Gemini API key — get one at https://aistudio.google.com/apikey, then:",
+  "      export GEMINI_API_KEY=...",
+  "  • Or Vertex AI with Application Default Credentials (keyless):",
+  "      gcloud auth application-default login",
+  "      export GOOGLE_CLOUD_PROJECT=your-gcp-project   # required for Vertex",
+  "Run `scout doctor` to re-check.",
+].join("\n");
+
+const OPENAI_REMEDIATION = [
+  "No usable AI credentials found for OpenAI. Do this:",
+  "  • Get an API key at https://platform.openai.com/api-keys, then:",
+  "      export OPENAI_API_KEY=sk-...",
+  "Run `scout doctor` to re-check.",
+].join("\n");
+
+/** First non-empty env var among the candidates, returned as [name, value]. */
+function firstEnv(names: string[]): [string, string] | undefined {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value && value.trim()) return [name, value];
+  }
+  return undefined;
+}
+
+/**
+ * Path to the gcloud Application Default Credentials file written by
+ * `gcloud auth application-default login`. Used as the last (keyless / Vertex)
+ * rung of the google ladder.
+ */
+export function gcloudAdcPath(): string {
+  return path.join(homeDir(), ".config", "gcloud", "application_default_credentials.json");
+}
+
+/**
+ * google ladder (first match wins), all network-free:
+ *   GOOGLE_GENERATIVE_AI_API_KEY → GEMINI_API_KEY → GOOGLE_API_KEY  (Gemini API key)
+ *   → GOOGLE_APPLICATION_CREDENTIALS (a service-account JSON path that exists)
+ *   → ~/.config/gcloud/application_default_credentials.json         (Vertex, keyless)
+ * The API-key rungs select @ai-sdk/google; the last two select @ai-sdk/google-vertex
+ * (which also needs GOOGLE_CLOUD_PROJECT — see remediation).
+ */
+function detectGoogle(opts: DetectOptions = {}): CredentialStatus {
+  const apiKey = firstEnv([
+    "GOOGLE_GENERATIVE_AI_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+  ]);
+  if (apiKey) return { ok: true, provider: "google", source: apiKey[0] };
+
+  const saPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (saPath && saPath.trim() && fs.existsSync(saPath.trim())) {
+    return { ok: true, provider: "google", source: "GOOGLE_APPLICATION_CREDENTIALS" };
+  }
+
+  const adcPath = gcloudAdcPath();
+  const hasAdc = opts.hasAdcFile ?? (() => fs.existsSync(adcPath));
+  if (hasAdc()) {
+    return { ok: true, provider: "google", source: `gcloud ADC (${adcPath})` };
+  }
+
+  return { ok: false, provider: "google", remediation: GOOGLE_REMEDIATION };
+}
+
+/** openai ladder: OPENAI_API_KEY → none. Network-free. */
+function detectOpenai(): CredentialStatus {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (apiKey && apiKey.trim()) {
+    return { ok: true, provider: "openai", source: "OPENAI_API_KEY" };
+  }
+  return { ok: false, provider: "openai", remediation: OPENAI_REMEDIATION };
 }
 
 /** Resolves the home directory the same way the legacy heuristic did, with an os fallback. */
@@ -158,13 +230,21 @@ function detectAnthropic(opts: DetectOptions = {}): CredentialStatus {
  * zero-config Claude Code happy path working on macOS, where the token is not
  * stored in a file.
  *
- * google/openai always return ok:false in this release (the seam for the
- * upcoming AI SDK engine).
+ * google ladder: GOOGLE_GENERATIVE_AI_API_KEY → GEMINI_API_KEY → GOOGLE_API_KEY
+ * → GOOGLE_APPLICATION_CREDENTIALS (existing file) → gcloud ADC file (Vertex,
+ * keyless). openai ladder: OPENAI_API_KEY. Both run on the AI SDK engine, which
+ * is already the default for non-Anthropic providers — no keychain concerns.
  */
 export function detectAiCredentials(
   provider: AiProvider,
   opts: DetectOptions = {}
 ): CredentialStatus {
-  if (provider === "anthropic") return detectAnthropic(opts);
-  return { ok: false, provider, remediation: notYetSupportedRemediation(provider) };
+  switch (provider) {
+    case "anthropic":
+      return detectAnthropic(opts);
+    case "google":
+      return detectGoogle(opts);
+    case "openai":
+      return detectOpenai();
+  }
 }

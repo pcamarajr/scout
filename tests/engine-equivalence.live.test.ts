@@ -33,8 +33,17 @@ const scenario: Scenario = {
   file: "(live harness)",
 };
 
-async function runOnEngine(engine: "agent-sdk" | "ai-sdk"): Promise<Verdict> {
-  const config = { ...loadConfig(), engine, baseUrl: "https://example.com", maxTurns: 12 };
+async function runOnEngine(
+  engine: "agent-sdk" | "ai-sdk",
+  model?: string
+): Promise<Verdict> {
+  const config = {
+    ...loadConfig(),
+    engine,
+    baseUrl: "https://example.com",
+    maxTurns: 12,
+    ...(model ? { model } : {}),
+  };
   const session = await BrowserSession.launch({
     baseUrl: config.baseUrl,
     headless: true,
@@ -61,5 +70,23 @@ test(
       `engines disagreed: agent-sdk=${agentVerdict} ai-sdk=${aiSdkVerdict}`
     );
     assert.equal(agentVerdict, "verified");
+  }
+);
+
+/**
+ * Optional live Gemini check on the AI SDK engine — the multi-provider proof on
+ * a real model. Auto-skips unless explicitly opted in (so CI stays green):
+ *
+ *   SCOUT_LIVE_TESTS=1 GEMINI_API_KEY=... npm test
+ */
+const LIVE_GEMINI = process.env.SCOUT_LIVE_TESTS === "1" && Boolean(process.env.GEMINI_API_KEY);
+const GEMINI_SKIP = "set SCOUT_LIVE_TESTS=1 and GEMINI_API_KEY to run the live Gemini check";
+
+test(
+  "ai-sdk engine verifies the tiny live scenario on Gemini",
+  { skip: LIVE_GEMINI ? false : GEMINI_SKIP },
+  async () => {
+    const verdict = await runOnEngine("ai-sdk", "gemini-2.5-pro");
+    assert.equal(verdict, "verified", `Gemini verdict was ${verdict}`);
   }
 );
