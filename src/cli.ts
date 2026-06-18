@@ -5,6 +5,7 @@ import readline from "node:readline";
 import { Command } from "commander";
 import { chromium } from "playwright";
 import { CONFIG_FILE, SCOUT_DIR, loadConfig } from "./config.js";
+import { detectAiCredentials, inferProvider } from "./credentials.js";
 import { runScenario } from "./engine.js";
 import { runInit } from "./init.js";
 import { buildReport, renderSummary, scenarioStatus } from "./report.js";
@@ -181,7 +182,9 @@ program
 
 program
   .command("login <profile>")
-  .description("Opens headed browser to capture a profile session (storageState)")
+  .description(
+    "Captures YOUR APP's logged-in session (storageState) via a headed browser. This is your application's auth, NOT AI credentials / model provider auth — for those, run `scout doctor`."
+  )
   .option("--base-url <url>", "Target app URL (precedence: flag > SCOUT_BASE_URL > scout.config.json)")
   .action(async (profileName, opts) => {
     const config = loadConfig(process.cwd(), { baseUrl: opts.baseUrl });
@@ -211,6 +214,93 @@ program
     await context.storageState({ path: statePath });
     await browser.close();
     console.log(`✓ Session saved to ${statePath} (gitignored).`);
+  });
+
+/**
+ * Cheapest correct proof that an Anthropic credential actually works: a 1-turn
+ * agent query with a trivial prompt. It authenticates via the SAME path the
+ * real run uses (ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN / Claude Code
+ * session — including the macOS keychain-backed session the file probe can't
+ * see), so a green ping here means a real run will authenticate too.
+ * Token cost: a one-word system prompt + a one-word reply (a handful of tokens).
+ */
+async function livePingAnthropic(model: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { query } = await import("@anthropic-ai/claude-agent-sdk");
+    const controller = new AbortController();
+    let ended: { subtype: string; errors?: string[] } | undefined;
+    try {
+      for await (const message of query({
+        prompt: "Reply with the single word: ok",
+        options: {
+          model,
+          systemPrompt: "You are a connectivity probe. Reply with exactly one word.",
+          mcpServers: {},
+          allowedTools: [] as [],
+          tools: [] as [],
+          settingSources: [] as [],
+          permissionMode: "bypassPermissions" as const,
+          maxTurns: 1,
+          abortController: controller,
+        },
+      })) {
+        if (message.type === "result") {
+          ended = {
+            subtype: message.subtype,
+            errors: "errors" in message ? message.errors : undefined,
+          };
+          break;
+        }
+      }
+    } finally {
+      controller.abort();
+    }
+    if (ended && ended.subtype !== "success" && ended.errors?.length) {
+      return { ok: false, error: ended.errors.join("; ") };
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+program
+  .command("doctor")
+  .description("Diagnoses AI credentials (model provider auth) for the configured model — CI-usable exit code")
+  .action(async () => {
+    const config = loadConfig();
+    const provider = inferProvider(config.model);
+    const status = detectAiCredentials(provider);
+
+    console.log(`Model:    ${config.model}`);
+    console.log(`Provider: ${provider}`);
+
+    if (provider !== "anthropic") {
+      // Seam: detection already fails closed for non-Anthropic providers.
+      console.log(`Detection: ✗ ${provider} is not yet supported (coming via AI SDK engine).`);
+      console.log(`\n${status.remediation}`);
+      process.exit(1);
+    }
+
+    if (status.ok) {
+      console.log(`Detection: ✓ matched ${status.source}`);
+    } else {
+      // The file/env probe missed — but a macOS keychain-backed Claude Code
+      // session is invisible to it, yet the SDK can still authenticate. Don't
+      // give up here; let the live ping be the authority for Anthropic.
+      console.log("Detection: ✗ no credential file or env var found (a macOS keychain session would not show here).");
+    }
+
+    process.stdout.write("Live check: pinging the model... ");
+    const ping = await livePingAnthropic(config.model);
+    if (ping.ok) {
+      console.log("✓ credentials valid");
+      process.exit(0);
+    }
+    console.log("✗");
+    console.log(`The live check failed: ${ping.error ?? "unknown error"}`);
+    console.log(`\n${status.remediation ?? detectAiCredentials("anthropic").remediation}`);
+    process.exit(1);
   });
 
 program
