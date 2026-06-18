@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { loadConfig, resolveStorageState, type ScoutConfig } from "./config.js";
+import { detectAiCredentials, inferProvider } from "./credentials.js";
 import { renderRunReport } from "./report.js";
 import { Store } from "./store.js";
 import { BrowserSession } from "./runner/browser.js";
@@ -15,14 +16,6 @@ export interface RunOptions {
   /** When the cached script fails, re-verify with the AI agent (default true) */
   heal?: boolean;
   headed?: boolean;
-}
-
-function aiAvailable(): boolean {
-  return Boolean(
-    process.env.ANTHROPIC_API_KEY ||
-      process.env.CLAUDE_CODE_OAUTH_TOKEN ||
-      fs.existsSync(path.join(process.env.HOME ?? "", ".claude"))
-  );
 }
 
 /**
@@ -44,6 +37,7 @@ export async function runScenario(
   const runDir = store.newRunDir(scenario.slug);
   const storageState = resolveStorageState(scenario.profile, config);
   const cached = opts.forceAi ? undefined : store.loadSteps(scenario.slug);
+  const aiCreds = detectAiCredentials(inferProvider(config.model));
 
   const launch = () =>
     BrowserSession.launch({
@@ -74,7 +68,7 @@ export async function runScenario(
         screenshots: session.screenshots,
         trace,
       };
-    } else if (heal && aiAvailable()) {
+    } else if (heal && aiCreds.ok) {
       // cached script broke — re-verify with the agent and re-record
       const aiResult = await runAi(scenario, config, store, runDir, storageState, opts);
       result = {
@@ -100,10 +94,8 @@ export async function runScenario(
       };
     }
   } else {
-    if (!aiAvailable()) {
-      throw new Error(
-        `Scenario "${scenario.slug}" has no recorded script and no Anthropic credentials (ANTHROPIC_API_KEY) for the initial AI run.`
-      );
+    if (!aiCreds.ok) {
+      throw new Error(aiCreds.remediation);
     }
     const aiResult = await runAi(scenario, config, store, runDir, storageState, opts);
     result = { ...aiResult, startedAt, durationMs: Date.now() - start };
