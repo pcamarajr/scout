@@ -143,6 +143,7 @@ Opt-in, off by default (zero overhead otherwise). When enabled, a **verified** s
 
 - Always sourced from the clean deterministic replay — never the exploratory AI run.
 - Pacing via `videoSpeed` in `scout.config.json` (`(0,1]`, default `0.4` = slower; `1` = natural speed).
+- A verified scenario never yields zero video: if the paced replay trips on timing the authoritative run handled fine, scout silently records a non-paced fallback clip instead. The verdict is never affected.
 - Requires `ffmpeg` on `PATH` (or `FFMPEG_PATH`). Missing it isn't fatal — scout keeps the raw `.webm` and warns with an install hint. Font autodetected, or set `SCOUT_VIDEO_FONT` to a `.ttf`.
 - Enable per-run with `--record-video`, via `SCOUT_RECORD_VIDEO=1`, or `"recordVideo": true` in the config.
 
