@@ -1,0 +1,36 @@
+# Per-PR installable preview via pkg.pr.new (https://pkg.pr.new).
+#
+# Label-gated: runs only when the PR carries the `preview` label. Publishes an
+# installable build to the pkg.pr.new registry and auto-comments the install
+# command on the PR. No npm auth or repository secrets are required — the
+# pkg.pr.new GitHub App handles authentication.
+#
+# One-time setup (maintainer): install the pkg.pr.new GitHub App on this repo
+# (https://github.com/apps/pkg-pr-new). Without it, the publish step fails.
+name: preview
+
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preview:
+    if: contains(github.event.pull_request.labels.*.name, 'preview')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # `--bin` makes the auto-comment show `npx`/install-as-CLI usage, which is
+      # the right hint for a CLI package like scout.
+      - run: npx pkg-pr-new publish --bin

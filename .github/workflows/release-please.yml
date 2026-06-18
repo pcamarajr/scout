@@ -1,8 +1,15 @@
 name: release-please
 
+# Two responsibilities live in ONE file on purpose: npm Trusted Publishing binds
+# a single workflow filename per package (it matches the OIDC claim against the
+# exact file), so the @next release-candidate publish must share this already-
+# trusted workflow rather than live in its own. No second trusted-publisher entry
+# is possible — keep both publish jobs here.
 on:
   push:
     branches: [main]
+  pull_request:
+    types: [labeled]
 
 permissions:
   contents: write
@@ -10,7 +17,9 @@ permissions:
   id-token: write
 
 jobs:
+  # --- @latest release pipeline (push to main only) ---
   release-please:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
@@ -21,7 +30,7 @@ jobs:
 
   publish:
     needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
+    if: github.event_name == 'push' && needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -38,3 +47,61 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm publish --access public
+
+  # --- @next release-candidate publish (label-gated, on the release PR) ---
+  # Add the `publish-next` label to a PR (typically the release-please release
+  # PR) to publish its build to the npm `@next` dist-tag as `<base>-next.<sha>`.
+  # A distinct prerelease version, so it never collides with the eventual bare
+  # `latest` release. `latest` stays the merge-the-release-PR path, untouched.
+  # Only maintainers can add labels, so labelling is the authorization gate.
+  publish-next:
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'publish-next')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write # OIDC trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      # npm >= 11.5.1 required for OIDC trusted publishing
+      - run: npm install -g npm@latest
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      # Compute a distinct prerelease version so it never collides with the
+      # `latest` release. Modifies package.json in CI only (uncommitted).
+      - name: Compute and publish prerelease
+        id: publish
+        run: |
+          BASE=$(node -p "require('./package.json').version")
+          SHORT=${GITHUB_SHA::7}
+          VERSION="${BASE}-next.${SHORT}"
+          npm version "$VERSION" --no-git-tag-version
+          npm publish --tag next --access public --provenance
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Comment install command on the PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = "${{ steps.publish.outputs.version }}";
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: [
+                `Published prerelease \`@pcamarajr/scout@${version}\` to the \`next\` dist-tag.`,
+                "",
+                "Install the latest `@next` build with:",
+                "",
+                "```sh",
+                "npm i @pcamarajr/scout@next",
+                "```",
+              ].join("\n"),
+            });
