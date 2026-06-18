@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -17,6 +18,15 @@ export interface CredentialStatus {
   source?: string;
   /** Copy-pasteable, English remediation. Only set when !ok. */
   remediation?: string;
+}
+
+export interface DetectOptions {
+  /**
+   * Test seam: override the macOS keychain probe. Production code leaves this
+   * unset and the real `security` probe runs; tests inject a stub so results
+   * are deterministic regardless of the host machine's Claude Code session.
+   */
+  hasKeychainSession?: () => boolean;
 }
 
 /**
@@ -57,21 +67,42 @@ function homeDir(): string {
 }
 
 /**
- * Path Scout treats as the signal of a real Claude Code session credential.
- *
- * OS caveat: on macOS the Claude Code OAuth token is stored in the login
- * keychain (service "Claude Code-credentials"), NOT in a readable file, so
- * `~/.claude/.credentials.json` may be absent even when you are signed in.
- * We deliberately do NOT shell out to `security` here (slow, may prompt,
- * fragile); instead we treat a present `~/.claude/.credentials.json` as the
- * signal and otherwise fall through to env vars. A live `scout doctor` check
- * is the reliable way to confirm a keychain-backed OAuth session works.
+ * On Linux the Claude Code OAuth token lives in this file. On macOS the token
+ * lives in the login keychain instead (see {@link hasMacKeychainSession}), so
+ * this file is often absent even when you are signed in — the keychain probe
+ * covers that case.
  */
 export function claudeCredentialsPath(): string {
   return path.join(homeDir(), ".claude", ".credentials.json");
 }
 
-function detectAnthropic(): CredentialStatus {
+/** Keychain service name Claude Code uses for its OAuth token on macOS. */
+const CLAUDE_KEYCHAIN_SERVICE = "Claude Code-credentials";
+
+/**
+ * Detects a Claude Code session stored in the macOS login keychain.
+ *
+ * We probe only for the *existence* of the entry (`security
+ * find-generic-password -s ...` with NO `-w`), so it never reads the secret
+ * and never triggers a keychain-unlock prompt. This is what lets a developer
+ * who signed in via Claude Code — and therefore has no ANTHROPIC_API_KEY and
+ * no ~/.claude/.credentials.json — still pass the preflight. Returns false on
+ * non-macOS platforms and on any error (missing `security`, item not found).
+ */
+function hasMacKeychainSession(): boolean {
+  if (process.platform !== "darwin") return false;
+  try {
+    execFileSync("security", ["find-generic-password", "-s", CLAUDE_KEYCHAIN_SERVICE], {
+      stdio: "ignore",
+      timeout: 2000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function detectAnthropic(opts: DetectOptions = {}): CredentialStatus {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (apiKey && apiKey.trim()) {
     return { ok: true, provider: "anthropic", source: "ANTHROPIC_API_KEY" };
@@ -84,6 +115,10 @@ function detectAnthropic(): CredentialStatus {
   if (fs.existsSync(credsPath)) {
     return { ok: true, provider: "anthropic", source: credsPath };
   }
+  const hasKeychain = opts.hasKeychainSession ?? hasMacKeychainSession;
+  if (hasKeychain()) {
+    return { ok: true, provider: "anthropic", source: "macOS keychain (Claude Code session)" };
+  }
   return { ok: false, provider: "anthropic", remediation: ANTHROPIC_REMEDIATION };
 }
 
@@ -92,13 +127,18 @@ function detectAnthropic(): CredentialStatus {
  *
  * anthropic ladder (first match wins): ANTHROPIC_API_KEY env →
  * CLAUDE_CODE_OAUTH_TOKEN env → a real Claude Code credential file at
- * ~/.claude/.credentials.json (NOT mere directory existence). See
- * {@link claudeCredentialsPath} for the macOS keychain caveat.
+ * ~/.claude/.credentials.json (NOT mere directory existence) → a Claude Code
+ * session in the macOS login keychain. The keychain step is what keeps the
+ * zero-config Claude Code happy path working on macOS, where the token is not
+ * stored in a file.
  *
  * google/openai always return ok:false in this release (the seam for the
  * upcoming AI SDK engine).
  */
-export function detectAiCredentials(provider: AiProvider): CredentialStatus {
-  if (provider === "anthropic") return detectAnthropic();
+export function detectAiCredentials(
+  provider: AiProvider,
+  opts: DetectOptions = {}
+): CredentialStatus {
+  if (provider === "anthropic") return detectAnthropic(opts);
   return { ok: false, provider, remediation: notYetSupportedRemediation(provider) };
 }

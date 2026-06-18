@@ -97,7 +97,7 @@ test("anthropic: a bare ~/.claude directory (no credentials file) does NOT pass"
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "scout-home-"));
   fs.mkdirSync(path.join(home, ".claude"), { recursive: true }); // dir only, no .credentials.json
   withEnv({ ANTHROPIC_API_KEY: undefined, CLAUDE_CODE_OAUTH_TOKEN: undefined, HOME: home }, () => {
-    const status = detectAiCredentials("anthropic");
+    const status = detectAiCredentials("anthropic", { hasKeychainSession: () => false });
     assert.equal(status.ok, false);
     assert.match(status.remediation ?? "", /No usable AI credentials found for Anthropic/);
     assert.match(status.remediation ?? "", /ANTHROPIC_API_KEY/);
@@ -108,10 +108,22 @@ test("anthropic: no env and no creds file → ok:false with copy-pasteable remed
   withEnv(
     { ANTHROPIC_API_KEY: undefined, CLAUDE_CODE_OAUTH_TOKEN: undefined, HOME: tmpHome(false) },
     () => {
-      const status = detectAiCredentials("anthropic");
+      const status = detectAiCredentials("anthropic", { hasKeychainSession: () => false });
       assert.equal(status.ok, false);
       assert.equal(status.source, undefined);
       assert.match(status.remediation ?? "", /scout doctor/);
+    }
+  );
+});
+
+test("anthropic: a macOS keychain Claude Code session passes when no env/file", () => {
+  withEnv(
+    { ANTHROPIC_API_KEY: undefined, CLAUDE_CODE_OAUTH_TOKEN: undefined, HOME: tmpHome(false) },
+    () => {
+      const status = detectAiCredentials("anthropic", { hasKeychainSession: () => true });
+      assert.equal(status.ok, true);
+      assert.match(status.source ?? "", /keychain/);
+      assert.equal(status.remediation, undefined);
     }
   );
 });
