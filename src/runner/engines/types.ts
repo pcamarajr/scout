@@ -1,3 +1,4 @@
+import type { AiProvider } from "../../credentials.js";
 import type { Step, Verdict } from "../../types.js";
 import type { ScoutTool } from "../agent-tools.js";
 
@@ -62,6 +63,8 @@ export function relativizeUrl(url: string, baseUrl: string): string {
 
 /** Everything an engine needs to drive one agent run. */
 export interface EngineRunSpec {
+  /** Inferred from the model id; selects the AI SDK provider in the AI SDK engine. */
+  provider: AiProvider;
   model: string;
   systemPrompt: string;
   userPrompt: string;

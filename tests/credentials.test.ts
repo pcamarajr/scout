@@ -128,19 +128,108 @@ test("anthropic: a macOS keychain Claude Code session passes when no env/file", 
   );
 });
 
-// --- detectAiCredentials (google/openai seam) ---
+// --- detectAiCredentials (google ladder) ---
 
-test("google: not yet supported, ok:false with AI SDK engine remediation", () => {
-  const status = detectAiCredentials("google");
-  assert.equal(status.ok, false);
-  assert.equal(status.provider, "google");
-  assert.match(status.remediation ?? "", /AI SDK engine/);
-  assert.match(status.remediation ?? "", /SCOUT_ENGINE=ai-sdk/);
+/** Clears every google credential env var so each rung is tested in isolation. */
+const GOOGLE_ENV_KEYS = {
+  GOOGLE_GENERATIVE_AI_API_KEY: undefined,
+  GEMINI_API_KEY: undefined,
+  GOOGLE_API_KEY: undefined,
+  GOOGLE_APPLICATION_CREDENTIALS: undefined,
+  GOOGLE_CLOUD_PROJECT: undefined,
+} as const;
+
+test("google: GOOGLE_GENERATIVE_AI_API_KEY wins the ladder", () => {
+  withEnv(
+    {
+      ...GOOGLE_ENV_KEYS,
+      GOOGLE_GENERATIVE_AI_API_KEY: "k1",
+      GEMINI_API_KEY: "k2",
+      GOOGLE_API_KEY: "k3",
+    },
+    () => {
+      const status = detectAiCredentials("google", { hasAdcFile: () => false });
+      assert.equal(status.ok, true);
+      assert.equal(status.source, "GOOGLE_GENERATIVE_AI_API_KEY");
+    }
+  );
 });
 
-test("openai: not yet supported, ok:false with AI SDK engine remediation", () => {
-  const status = detectAiCredentials("openai");
-  assert.equal(status.ok, false);
-  assert.equal(status.provider, "openai");
-  assert.match(status.remediation ?? "", /AI SDK engine/);
+test("google: GEMINI_API_KEY is the second rung", () => {
+  withEnv({ ...GOOGLE_ENV_KEYS, GEMINI_API_KEY: "k2", GOOGLE_API_KEY: "k3" }, () => {
+    const status = detectAiCredentials("google", { hasAdcFile: () => false });
+    assert.equal(status.ok, true);
+    assert.equal(status.source, "GEMINI_API_KEY");
+  });
+});
+
+test("google: GOOGLE_API_KEY is the third rung", () => {
+  withEnv({ ...GOOGLE_ENV_KEYS, GOOGLE_API_KEY: "k3" }, () => {
+    const status = detectAiCredentials("google", { hasAdcFile: () => false });
+    assert.equal(status.ok, true);
+    assert.equal(status.source, "GOOGLE_API_KEY");
+  });
+});
+
+test("google: GOOGLE_APPLICATION_CREDENTIALS passes only when the file exists", () => {
+  const saFile = path.join(tmpHome(false), "sa.json");
+  fs.writeFileSync(saFile, "{}");
+  withEnv({ ...GOOGLE_ENV_KEYS, GOOGLE_APPLICATION_CREDENTIALS: saFile }, () => {
+    const status = detectAiCredentials("google", { hasAdcFile: () => false });
+    assert.equal(status.ok, true);
+    assert.equal(status.source, "GOOGLE_APPLICATION_CREDENTIALS");
+  });
+});
+
+test("google: GOOGLE_APPLICATION_CREDENTIALS pointing at a missing file does NOT pass", () => {
+  withEnv({ ...GOOGLE_ENV_KEYS, GOOGLE_APPLICATION_CREDENTIALS: "/no/such/sa.json" }, () => {
+    const status = detectAiCredentials("google", { hasAdcFile: () => false });
+    assert.equal(status.ok, false);
+  });
+});
+
+test("google: the gcloud ADC file is the last (keyless Vertex) rung", () => {
+  withEnv({ ...GOOGLE_ENV_KEYS }, () => {
+    const status = detectAiCredentials("google", { hasAdcFile: () => true });
+    assert.equal(status.ok, true);
+    assert.match(status.source ?? "", /ADC/);
+  });
+});
+
+test("google: no key, no SA file, no ADC → ok:false with both remediation paths", () => {
+  withEnv({ ...GOOGLE_ENV_KEYS }, () => {
+    const status = detectAiCredentials("google", { hasAdcFile: () => false });
+    assert.equal(status.ok, false);
+    assert.equal(status.provider, "google");
+    assert.match(status.remediation ?? "", /GEMINI_API_KEY/);
+    assert.match(status.remediation ?? "", /gcloud auth application-default login/);
+    assert.match(status.remediation ?? "", /GOOGLE_CLOUD_PROJECT/);
+  });
+});
+
+// --- detectAiCredentials (openai ladder) ---
+
+test("openai: OPENAI_API_KEY passes", () => {
+  withEnv({ OPENAI_API_KEY: "sk-test" }, () => {
+    const status = detectAiCredentials("openai");
+    assert.equal(status.ok, true);
+    assert.equal(status.source, "OPENAI_API_KEY");
+  });
+});
+
+test("openai: empty OPENAI_API_KEY does NOT pass", () => {
+  withEnv({ OPENAI_API_KEY: "   " }, () => {
+    const status = detectAiCredentials("openai");
+    assert.equal(status.ok, false);
+  });
+});
+
+test("openai: no key → ok:false with copy-pasteable remediation", () => {
+  withEnv({ OPENAI_API_KEY: undefined }, () => {
+    const status = detectAiCredentials("openai");
+    assert.equal(status.ok, false);
+    assert.equal(status.provider, "openai");
+    assert.match(status.remediation ?? "", /OPENAI_API_KEY/);
+    assert.match(status.remediation ?? "", /platform\.openai\.com/);
+  });
 });

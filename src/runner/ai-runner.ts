@@ -79,8 +79,10 @@ Regras:
 
   const userPrompt = `Verifique este cenário de QA:\n\n## ${scenario.name}\n\n${scenario.scenario}${scenario.notes ? `\n\nNotas: ${scenario.notes}` : ""}`;
 
-  const engine = selectEngine(inferProvider(config.model), config.engine);
+  const provider = inferProvider(config.model);
+  const engine = selectEngine(provider, config.engine);
   const run = await engine.run({
+    provider,
     model: config.model,
     systemPrompt,
     userPrompt,
