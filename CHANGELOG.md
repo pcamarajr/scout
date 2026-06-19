@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/pcamarajr/scout/compare/scout-v0.7.0...scout-v0.7.1) (2026-06-19)
+
+
+### Bug Fixes
+
+* republish to ship README landing page and docs/ refresh ([#23](https://github.com/pcamarajr/scout/issues/23)) ([24624f9](https://github.com/pcamarajr/scout/commit/24624f957039e28672be200ce2e82d57f4953de9))
+
 ## [0.7.0](https://github.com/pcamarajr/scout/compare/scout-v0.6.0...scout-v0.7.0) (2026-06-18)
 
 
