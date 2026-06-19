@@ -45,7 +45,7 @@ const fail = (error: unknown): ToolResult => ({
 });
 
 /**
- * Builds the 9 browser tools + scout_verdict as engine-neutral definitions.
+ * Builds the browser tools + scout_verdict as engine-neutral definitions.
  * The Portuguese descriptions/messages are intentionally verbatim from the
  * original ai-runner — they are part of the verifier's behavior and are tracked
  * for a separate English-sweep chore, NOT to be translated here.
@@ -202,6 +202,64 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
             record({ kind: "assertUrl", pattern: urlContains });
           }
           return ok("Asserção passou.");
+        } catch (e) {
+          return fail(e);
+        }
+      }
+    ),
+    define(
+      "browser_inspect_logs",
+      "Mostra o que o browser registrou: requests de rede (método, status, URL) e mensagens de console (errors/warnings). Use ANTES de browser_assert_network / browser_assert_no_console_errors para ver o que de fato aconteceu e escrever uma asserção tolerante (case por padrão de URL + status, não por valores voláteis).",
+      z.object({}),
+      async () => {
+        try {
+          return ok(session.formatLogs());
+        } catch (e) {
+          return fail(e);
+        }
+      }
+    ),
+    define(
+      "browser_assert_network",
+      'Verifica que uma chamada de rede esperada aconteceu. Case o request por método + padrão de URL (urlGlob com * e **) e, opcionalmente, status. Para inspecionar o corpo da resposta use responseIncludes com trechos ESTÁVEIS (nomes de campos como "orderId"), nunca valores voláteis (ids, timestamps). Vira teste determinístico.',
+      z.object({
+        urlGlob: z.string().describe("Padrão da URL, ex: **/api/checkout/**"),
+        method: z.string().optional().describe("GET, POST, ... (omitido = qualquer método)"),
+        status: z
+          .union([z.number().int(), z.enum(["2xx", "3xx", "4xx", "5xx"])])
+          .optional()
+          .describe("Status exato (200) ou classe (2xx)"),
+        responseIncludes: z
+          .array(z.string())
+          .optional()
+          .describe("Trechos que DEVEM aparecer no corpo da resposta"),
+      }),
+      async ({ urlGlob, method, status, responseIncludes }) => {
+        try {
+          await session.assertNetwork({ urlGlob, method, status, responseIncludes });
+          record({ kind: "assertNetwork", urlGlob, method, status, responseIncludes });
+          return ok(
+            `Asserção de rede passou: ${method ?? "ANY"} ${urlGlob}${status ? ` (status ${status})` : ""}.`
+          );
+        } catch (e) {
+          return fail(e);
+        }
+      }
+    ),
+    define(
+      "browser_assert_no_console_errors",
+      "Verifica que NÃO houve erros no console do browser (console.error + exceções não capturadas) durante o fluxo. Use ignore para tolerar erros conhecidos/esperados (casa por substring). Vira teste determinístico.",
+      z.object({
+        ignore: z
+          .array(z.string())
+          .optional()
+          .describe("Substrings de erros conhecidos a ignorar"),
+      }),
+      async ({ ignore }) => {
+        try {
+          await session.assertNoConsoleErrors(ignore);
+          record({ kind: "assertNoConsoleErrors", ignore });
+          return ok("Nenhum erro no console.");
         } catch (e) {
           return fail(e);
         }

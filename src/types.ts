@@ -9,6 +9,28 @@ export interface Target {
   description: string;
 }
 
+/** HTTP status family used by network assertions when an exact code is too strict. */
+export type StatusClass = "2xx" | "3xx" | "4xx" | "5xx";
+
+/**
+ * Tolerant matcher for a network request observed during the run. Matching is
+ * by shape (method + URL glob + status), never by exact volatile values, so the
+ * assertion survives deterministic replay despite dynamic ids/timestamps.
+ */
+export interface NetworkMatcher {
+  /** HTTP method to match; omit to match any method. */
+  method?: string;
+  /** Glob over the request URL — `*` within a path segment, `**` across segments. */
+  urlGlob: string;
+  /** Exact status (e.g. 200) or a class (`2xx`); omit to match any. */
+  status?: number | StatusClass;
+  /**
+   * Substrings that must ALL appear in the response body. Keep these stable
+   * (field names like `orderId`), not volatile values (ids, timestamps).
+   */
+  responseIncludes?: string[];
+}
+
 export type Step =
   | { kind: "navigate"; url: string }
   | { kind: "click"; target: Target }
@@ -20,6 +42,8 @@ export type Step =
   | { kind: "assertVisible"; text: string }
   | { kind: "assertNotVisible"; text: string }
   | { kind: "assertUrl"; pattern: string }
+  | ({ kind: "assertNetwork" } & NetworkMatcher)
+  | { kind: "assertNoConsoleErrors"; ignore?: string[] }
   | { kind: "screenshot"; label: string };
 
 export type Verdict = "verified" | "failed" | "partial" | "blocked";

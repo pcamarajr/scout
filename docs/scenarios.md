@@ -27,6 +27,23 @@ Logged-in subscriber opens ep 3; plays with no paywall.
 - A `.scout.md` whose every `##` lives inside a fenced ```` ``` ```` block parses as **zero scenarios** (that's how `example.scout.md` documents the format without polluting the suite).
 - Duplicate headings in a file, or a scenario with no body text, are hard errors.
 
+## Asserting console logs & API calls
+
+Beyond what's on screen, scout can verify the **browser console** and the **network calls** the page makes. Just describe the expectation in the prose — the agent observes the real console/network on the first verified run and records a **tolerant, deterministic** assertion that replay re-checks without an LLM.
+
+```markdown
+## Checkout fires the order API cleanly
+The user completes checkout. A POST to /api/checkout returns 2xx and the
+response includes an orderId. No errors appear in the browser console.
+```
+
+What the agent records:
+
+- **Network** — matched by method + URL pattern (glob with `*`/`**`) + status class (`2xx`), optionally requiring stable substrings in the response body (field names like `orderId`). It deliberately avoids volatile values (ids, timestamps), so the assertion survives replay.
+- **Console** — "no errors" covers `console.error` **and** uncaught exceptions. Known/expected noise can be ignored by substring (e.g. a third-party `favicon` 404).
+
+Keep these expectations about **shape, not exact values** — "a POST to `/api/checkout` returned 2xx with an `orderId`", not "orderId was `ord_42`". Pinning a volatile value is the main way a network assertion turns flaky.
+
 ## Authoring options
 
 - **By hand** — write the markdown directly.
