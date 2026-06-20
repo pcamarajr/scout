@@ -46,6 +46,7 @@ export async function runScenario(
       storageState,
       locale: config.locale,
       runDir,
+      permissions: scenario.permissions,
     });
 
   let result: RunResult;
@@ -240,6 +241,7 @@ async function recordPreviewVideo(
         runDir,
         recordVideo: true,
         slowMoMs: pacing.slowMoMs,
+        permissions: scenario.permissions,
       });
     } catch {
       console.warn("[scout] video: could not open the browser for the preview replay.");
@@ -292,6 +294,7 @@ async function runAi(
       storageState,
       locale: config.locale,
       runDir,
+      permissions: scenario.permissions,
     });
     let result;
     try {
