@@ -103,9 +103,33 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
       z.object({ ref: z.number().int().describe("Ref numérico do snapshot") }),
       async ({ ref }) => {
         try {
+          const before = session.tabCount();
           const target = await session.click(ref);
           record({ kind: "click", target });
-          return ok(`Cliquei em ${target.description}.\n\n${await afterAction()}`);
+          const opened =
+            session.tabCount() > before
+              ? "\n\n⚠️ Um novo tab/aba foi aberto por esse clique. Use browser_switch_tab para interagir com ele antes de continuar."
+              : "";
+          return ok(`Cliquei em ${target.description}.${opened}\n\n${await afterAction()}`);
+        } catch (e) {
+          return fail(e);
+        }
+      }
+    ),
+    define(
+      "browser_switch_tab",
+      "Troca o controle para outro tab/aba do navegador (ex: após um clique que abre um popup). Sem urlGlob, vai para o tab mais recém-aberto. Com urlGlob, vai para o tab cuja URL casa o padrão (* dentro de um segmento, ** entre segmentos). Espera o tab carregar. Vira passo determinístico.",
+      z.object({
+        urlGlob: z
+          .string()
+          .optional()
+          .describe("Glob da URL do tab alvo, ex: **/booking**. Omitido = tab mais recente."),
+      }),
+      async ({ urlGlob }) => {
+        try {
+          await session.switchTab(urlGlob);
+          record({ kind: "switchTab", ...(urlGlob ? { urlGlob } : {}) });
+          return ok(`Troquei para o tab: ${session.page.url()}.\n\n${await afterAction()}`);
         } catch (e) {
           return fail(e);
         }

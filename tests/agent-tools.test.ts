@@ -41,6 +41,9 @@ function fakeSession(overrides: Partial<Record<string, unknown>> = {}): {
     assertNetwork: async (m: { urlGlob: string }) => void calls.push(`assertNetwork:${m.urlGlob}`),
     assertNoConsoleErrors: async (ignore?: string[]) =>
       void calls.push(`assertNoConsoleErrors:${(ignore ?? []).join(",")}`),
+    tabCount: () => 1,
+    switchTab: async (urlGlob?: string) => void calls.push(`switchTab:${urlGlob ?? "newest"}`),
+    page: { url: () => "http://localhost:3000/x" },
     formatLogs: () => "Network (0 requests total, últimos 0):\n  (nenhum)",
     screenshot: async (label: string) => {
       calls.push(`screenshot:${label}`);
@@ -87,6 +90,7 @@ test("exposes the browser tools plus scout_verdict", () => {
       "browser_screenshot",
       "browser_select",
       "browser_snapshot",
+      "browser_switch_tab",
       "browser_wait_for",
       "scout_verdict",
     ]
@@ -197,4 +201,32 @@ test("a handler that throws is normalized to an isError result and records nothi
   assert.equal(r.isError, true);
   assert.match(r.text, /ERRO: net down/);
   assert.equal(steps.length, 0);
+});
+
+test("browser_switch_tab switches and records a switchTab step", async () => {
+  const { byName, steps, calls } = harness();
+
+  await byName("browser_switch_tab").handler({ urlGlob: "**/booking**" });
+  assert.deepEqual(steps, [{ kind: "switchTab", urlGlob: "**/booking**" }]);
+  assert.ok(calls.includes("switchTab:**/booking**"));
+
+  // No glob → newest tab; the step omits urlGlob.
+  steps.length = 0;
+  await byName("browser_switch_tab").handler({});
+  assert.deepEqual(steps, [{ kind: "switchTab" }]);
+  assert.ok(calls.includes("switchTab:newest"));
+});
+
+test("browser_click hints when a click opens a new tab", async () => {
+  let count = 1;
+  const { byName } = harness({ tabCount: () => count });
+  // Simulate the click opening a tab: count grows during the handler.
+  const res = await byName("browser_click").handler({ ref: 1 });
+  assert.doesNotMatch(res.text, /novo tab/); // no growth → no hint
+
+  const { byName: byName2 } = harness({
+    tabCount: () => count++, // 1 before click, 2 after
+  });
+  const res2 = await byName2("browser_click").handler({ ref: 1 });
+  assert.match(res2.text, /novo tab\/aba foi aberto/);
 });

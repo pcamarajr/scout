@@ -3,6 +3,7 @@ import { chromium, type Browser, type BrowserContext, type Locator, type Page } 
 import type { NetworkMatcher, PermissionPolicy, Step, Target } from "../types.js";
 import {
   findConsoleErrors,
+  globToRegex,
   matchNetwork,
   type CapturedRequest,
   type ConsoleMessage,
@@ -79,19 +80,35 @@ const CONSOLE_LOG_CAP = 500;
 export class BrowserSession {
   private screenshotCount = 0;
   readonly screenshots: string[] = [];
-  /** Network responses + console messages observed since launch (ring-buffered). */
-  private networkRequests: CapturedRequest[] = [];
-  private consoleMessages: ConsoleMessage[] = [];
+  /**
+   * Per-page ring-buffered observers (console + network), keyed by Page. A
+   * popup's logs/requests stay scoped to its own tab; asserts and formatLogs
+   * read the ACTIVE tab's buffer. Listeners are attached when each page is born
+   * (incl. popups), so a new tab's early logs are not missed.
+   */
+  private pageBuffers = new Map<Page, { console: ConsoleMessage[]; network: CapturedRequest[] }>();
+  /** The tab the agent/replay currently acts on; changed by switchTab. */
+  private activePage: Page;
+  /** The first page — it owns the recorded video for the whole context. */
+  private readonly firstPage: Page;
 
   private constructor(
     private browser: Browser,
     private context: BrowserContext,
-    readonly page: Page,
+    page: Page,
     private opts: LaunchOptions,
     /** Date.now() at video start (context creation); undefined when not recording */
     readonly videoEpoch: number | undefined,
     private refs = new Map<number, ElementInfo>()
-  ) {}
+  ) {
+    this.activePage = page;
+    this.firstPage = page;
+  }
+
+  /** The tab currently under control. Switching tabs reassigns it. */
+  get page(): Page {
+    return this.activePage;
+  }
 
   static async launch(opts: LaunchOptions): Promise<BrowserSession> {
     const browser = await chromium.launch({ headless: opts.headless, slowMo: opts.slowMoMs });
@@ -109,9 +126,9 @@ export class BrowserSession {
     const videoEpoch = opts.recordVideo ? Date.now() : undefined;
     await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
     const page = await context.newPage();
-    page.setDefaultTimeout(STEP_TIMEOUT);
     const session = new BrowserSession(browser, context, page, opts, videoEpoch);
-    session.attachObservers();
+    session.trackPage(page); // first page: registered before context.on("page")
+    context.on("page", (p) => session.trackPage(p)); // popups/new tabs
     return session;
   }
 
@@ -120,23 +137,110 @@ export class BrowserSession {
    * so the real app traffic is untouched — these feed the deterministic
    * assertNetwork / assertNoConsoleErrors checks.
    */
-  private attachObservers(): void {
+  /**
+   * Starts passive console + network observers on a page and registers its
+   * ring-buffered store. Called for the first page and for every popup/new tab
+   * the context opens, so a tab's logs are captured from birth — before any
+   * switchTab. Idempotent. We only LISTEN (never route()), so app traffic is
+   * untouched.
+   */
+  private trackPage(page: Page): void {
+    if (this.pageBuffers.has(page)) return;
+    const buf = { console: [] as ConsoleMessage[], network: [] as CapturedRequest[] };
+    this.pageBuffers.set(page, buf);
+    page.setDefaultTimeout(STEP_TIMEOUT);
+    page.on("close", () => this.pageBuffers.delete(page)); // release a closed popup's buffer
     const pushConsole = (msg: ConsoleMessage): void => {
-      this.consoleMessages.push(msg);
-      if (this.consoleMessages.length > CONSOLE_LOG_CAP) this.consoleMessages.shift();
+      buf.console.push(msg);
+      if (buf.console.length > CONSOLE_LOG_CAP) buf.console.shift();
     };
-    this.page.on("console", (msg) => pushConsole({ type: msg.type(), text: msg.text() }));
-    this.page.on("pageerror", (err) => pushConsole({ type: "error", text: `${err.name}: ${err.message}` }));
-    this.page.on("response", (res) => {
+    page.on("console", (msg) => pushConsole({ type: msg.type(), text: msg.text() }));
+    page.on("pageerror", (err) => pushConsole({ type: "error", text: `${err.name}: ${err.message}` }));
+    page.on("response", (res) => {
       const req = res.request();
       let body: Promise<string> | undefined;
-      this.networkRequests.push({
+      buf.network.push({
         method: req.method(),
         url: res.url(),
         status: res.status(),
         getBody: () => (body ??= res.text().catch(() => "")),
       });
-      if (this.networkRequests.length > NETWORK_LOG_CAP) this.networkRequests.shift();
+      if (buf.network.length > NETWORK_LOG_CAP) buf.network.shift();
+    });
+  }
+
+  /** Console + network buffers for a page (the active tab by default). */
+  private buffers(page: Page = this.activePage): {
+    console: ConsoleMessage[];
+    network: CapturedRequest[];
+  } {
+    let buf = this.pageBuffers.get(page);
+    if (!buf) {
+      buf = { console: [], network: [] };
+      this.pageBuffers.set(page, buf);
+    }
+    return buf;
+  }
+
+  /** Number of open tabs in the context — lets a click hint that one opened. */
+  tabCount(): number {
+    return this.context.pages().length;
+  }
+
+  /**
+   * Switches the active tab. With no glob, waits for and moves to the newest
+   * other tab (the one a click just opened). With a glob, waits for a tab whose
+   * URL matches it. Then waits for the tab to finish loading so the next
+   * snapshot/assert doesn't race the popup's about:blank → real-URL navigation.
+   */
+  async switchTab(urlGlob?: string): Promise<void> {
+    const target = urlGlob ? await this.findTabByUrl(urlGlob) : await this.newestOtherTab();
+    this.activePage = target;
+    await target.waitForLoadState("load").catch(() => {});
+    await target.bringToFront().catch(() => {});
+  }
+
+  /** The most recently opened tab other than the active one, waiting if none yet. */
+  private async newestOtherTab(): Promise<Page> {
+    const others = this.context.pages().filter((p) => p !== this.activePage);
+    if (others.length) return others[others.length - 1];
+    return this.context.waitForEvent("page", { timeout: STEP_TIMEOUT });
+  }
+
+  /**
+   * Resolves a tab whose URL matches the glob, tolerating the about:blank →
+   * real-URL transition of a freshly opened popup: it watches both already-open
+   * tabs and tabs opened later, re-checking on every navigation until one
+   * matches or the step timeout elapses.
+   */
+  private async findTabByUrl(urlGlob: string): Promise<Page> {
+    const re = globToRegex(urlGlob);
+    const found = (): Page | undefined => this.context.pages().find((p) => re.test(p.url()));
+    const existing = found();
+    if (existing) return existing;
+    return await new Promise<Page>((resolve, reject) => {
+      const check = (): void => {
+        const m = found();
+        if (m) {
+          cleanup();
+          resolve(m);
+        }
+      };
+      const onPage = (p: Page): void => {
+        p.on("framenavigated", check);
+        check();
+      };
+      const cleanup = (): void => {
+        clearTimeout(timer);
+        this.context.off("page", onPage);
+        for (const p of this.context.pages()) p.off("framenavigated", check);
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Nenhum tab com URL casando "${urlGlob}" em ${STEP_TIMEOUT}ms.`));
+      }, STEP_TIMEOUT);
+      this.context.on("page", onPage);
+      for (const p of this.context.pages()) p.on("framenavigated", check);
     });
   }
 
@@ -260,13 +364,13 @@ export class BrowserSession {
 
   /** Asserts an expected network call was observed. Throws with a reason on miss. */
   async assertNetwork(matcher: NetworkMatcher): Promise<void> {
-    const result = await matchNetwork(this.networkRequests, matcher);
+    const result = await matchNetwork(this.buffers().network, matcher);
     if (!result.ok) throw new Error(result.reason ?? "Asserção de rede falhou.");
   }
 
   /** Asserts no console errors (console.error + uncaught) except ignored substrings. */
   async assertNoConsoleErrors(ignore: string[] = []): Promise<void> {
-    const errors = findConsoleErrors(this.consoleMessages, ignore);
+    const errors = findConsoleErrors(this.buffers().console, ignore);
     if (errors.length) {
       const sample = errors.slice(0, 5).map((e) => e.text).join(" | ");
       throw new Error(`${errors.length} erro(s) no console do browser: ${sample}`);
@@ -275,13 +379,14 @@ export class BrowserSession {
 
   /** Compact dump of recent network + console activity for the agent to inspect. */
   formatLogs(): string {
-    const net = this.networkRequests.slice(-30).map((e) => `${e.method} ${e.status} ${e.url}`);
-    const logs = this.consoleMessages
+    const { console: consoleMessages, network: networkRequests } = this.buffers();
+    const net = networkRequests.slice(-30).map((e) => `${e.method} ${e.status} ${e.url}`);
+    const logs = consoleMessages
       .filter((m) => m.type === "error" || m.type === "warning" || m.type === "warn")
       .slice(-30)
       .map((m) => `[${m.type}] ${m.text}`);
     return [
-      `Network (${this.networkRequests.length} requests total, últimos ${net.length}):`,
+      `Network (${networkRequests.length} requests total, últimos ${net.length}):`,
       ...(net.length ? net.map((l) => `  ${l}`) : ["  (nenhum)"]),
       ``,
       `Console errors/warnings (${logs.length}):`,
@@ -325,6 +430,8 @@ export class BrowserSession {
         return this.assertNetwork(step);
       case "assertNoConsoleErrors":
         return this.assertNoConsoleErrors(step.ignore);
+      case "switchTab":
+        return this.switchTab(step.urlGlob);
       case "screenshot":
         return void (await this.screenshot(step.label));
     }
@@ -352,8 +459,9 @@ export class BrowserSession {
       trace = undefined;
     }
     // The Video handle must be captured before close(); the file is only
-    // finalized once the context is closed (hence close() is awaited).
-    const video = this.page.video();
+    // finalized once the context is closed (hence close() is awaited). The
+    // first page owns the context recording, even after switching tabs.
+    const video = this.firstPage.video();
     await this.context.close().catch(() => {});
     await this.browser.close().catch(() => {});
     let videoPath: string | undefined;

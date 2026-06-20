@@ -59,6 +59,7 @@ function fakeSession(): { session: BrowserSession; calls: string[] } {
     snapshot: async () => ({ url: "http://localhost:3000/login", title: "Login", text: "form", elements: [] }),
     formatSnapshot: () => "URL: http://localhost:3000/login",
     navigate: async (url: string) => void calls.push(`navigate:${url}`),
+    tabCount: () => 1,
     click: async (ref: number) => {
       calls.push(`click:${ref}`);
       return target("Entrar");
