@@ -233,7 +233,7 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_inspect_logs",
-      "Mostra o que o browser registrou: requests de rede (método, status, URL) e mensagens de console (errors/warnings). Use ANTES de browser_assert_network / browser_assert_no_console_errors para ver o que de fato aconteceu e escrever uma asserção tolerante (case por padrão de URL + status, não por valores voláteis).",
+      "Mostra o que o tab ATIVO registrou: requests de rede (método, status, URL) e mensagens de console — errors/warnings E outras (log/debug/info). Use ANTES de browser_assert_network / browser_assert_no_console_errors / browser_assert_console_message para ver o que de fato aconteceu e escrever uma asserção tolerante (case por padrão de URL + status ou por um trecho ESTÁVEL da mensagem, nunca por valores voláteis).",
       z.object({}),
       async () => {
         try {
@@ -284,6 +284,31 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
           await session.assertNoConsoleErrors(ignore);
           record({ kind: "assertNoConsoleErrors", ignore });
           return ok("Nenhum erro no console.");
+        } catch (e) {
+          return fail(e);
+        }
+      }
+    ),
+    define(
+      "browser_assert_console_message",
+      'Verifica que o console do tab ATIVO registrou uma mensagem contendo TODOS os trechos informados, casados numa MESMA mensagem (não espalhados). Rode browser_inspect_logs antes para ver o texto real e escolher trechos ESTÁVEIS (ex: o prefixo "DEBUG:[FEATURE/...]"), nunca valores voláteis. Opcionalmente restrinja por tipo. Vira teste determinístico.',
+      z.object({
+        includes: z
+          .array(z.string())
+          .min(1)
+          .describe("Trechos que devem TODOS aparecer numa mesma mensagem"),
+        type: z
+          .string()
+          .optional()
+          .describe("Tipo do console: log, debug, info, warning, error (omitido = qualquer)"),
+      }),
+      async ({ includes, type }) => {
+        try {
+          await session.assertConsoleMessage(includes, type);
+          record({ kind: "assertConsoleMessage", includes, ...(type ? { type } : {}) });
+          return ok(
+            `Asserção de console passou: mensagem contendo ${includes.join(" + ")}${type ? ` (tipo ${type})` : ""}.`
+          );
         } catch (e) {
           return fail(e);
         }

@@ -340,6 +340,7 @@ const INERT_BETWEEN_FILLS = new Set<Step["kind"]>([
   "assertUrl",
   "assertNetwork",
   "assertNoConsoleErrors",
+  "assertConsoleMessage",
   "screenshot",
 ]);
 

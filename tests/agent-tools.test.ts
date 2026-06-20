@@ -41,6 +41,8 @@ function fakeSession(overrides: Partial<Record<string, unknown>> = {}): {
     assertNetwork: async (m: { urlGlob: string }) => void calls.push(`assertNetwork:${m.urlGlob}`),
     assertNoConsoleErrors: async (ignore?: string[]) =>
       void calls.push(`assertNoConsoleErrors:${(ignore ?? []).join(",")}`),
+    assertConsoleMessage: async (includes: string[], type?: string) =>
+      void calls.push(`assertConsoleMessage:${includes.join("+")}:${type ?? "any"}`),
     tabCount: () => 1,
     switchTab: async (urlGlob?: string) => void calls.push(`switchTab:${urlGlob ?? "newest"}`),
     page: { url: () => "http://localhost:3000/x" },
@@ -80,6 +82,7 @@ test("exposes the browser tools plus scout_verdict", () => {
     tools.map((t) => t.name).sort(),
     [
       "browser_assert",
+      "browser_assert_console_message",
       "browser_assert_network",
       "browser_assert_no_console_errors",
       "browser_click",
@@ -229,4 +232,22 @@ test("browser_click hints when a click opens a new tab", async () => {
   });
   const res2 = await byName2("browser_click").handler({ ref: 1 });
   assert.match(res2.text, /novo tab\/aba foi aberto/);
+});
+
+test("browser_assert_console_message records an assertConsoleMessage step", async () => {
+  const { byName, steps, calls } = harness();
+
+  await byName("browser_assert_console_message").handler({
+    includes: ["DEBUG:[GAT]", "active"],
+    type: "log",
+  });
+  assert.deepEqual(steps, [
+    { kind: "assertConsoleMessage", includes: ["DEBUG:[GAT]", "active"], type: "log" },
+  ]);
+  assert.ok(calls.includes("assertConsoleMessage:DEBUG:[GAT]+active:log"));
+
+  // No type → omitted from the recorded step.
+  steps.length = 0;
+  await byName("browser_assert_console_message").handler({ includes: ["DEBUG"] });
+  assert.deepEqual(steps, [{ kind: "assertConsoleMessage", includes: ["DEBUG"] }]);
 });

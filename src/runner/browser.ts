@@ -377,20 +377,49 @@ export class BrowserSession {
     }
   }
 
+  /**
+   * Asserts the active tab logged at least one console message containing ALL
+   * of `includes` within a SINGLE message (not spread across messages),
+   * optionally constrained to a console `type` (log, debug, error, ...).
+   * Tolerant by design: a specific substring (e.g. a "DEBUG:[FEATURE/x]"
+   * prefix) won't match unrelated console noise.
+   */
+  async assertConsoleMessage(includes: string[], type?: string): Promise<void> {
+    const hit = this.buffers().console.find(
+      (m) => (!type || m.type === type) && includes.every((s) => m.text.includes(s))
+    );
+    if (!hit) {
+      const want = includes.map((s) => `"${s}"`).join(" + ");
+      throw new Error(
+        `Nenhuma mensagem de console${type ? ` do tipo "${type}"` : ""} continha ${want}.`
+      );
+    }
+  }
+
   /** Compact dump of recent network + console activity for the agent to inspect. */
   formatLogs(): string {
     const { console: consoleMessages, network: networkRequests } = this.buffers();
     const net = networkRequests.slice(-30).map((e) => `${e.method} ${e.status} ${e.url}`);
-    const logs = consoleMessages
-      .filter((m) => m.type === "error" || m.type === "warning" || m.type === "warn")
+    const isErrLike = (t: string): boolean => t === "error" || t === "warning" || t === "warn";
+    const errs = consoleMessages
+      .filter((m) => isErrLike(m.type))
+      .slice(-30)
+      .map((m) => `[${m.type}] ${m.text}`);
+    // Other messages (log/debug/info) are surfaced too so the agent can read a
+    // DEBUG line before asserting on it with browser_assert_console_message.
+    const other = consoleMessages
+      .filter((m) => !isErrLike(m.type))
       .slice(-30)
       .map((m) => `[${m.type}] ${m.text}`);
     return [
       `Network (${networkRequests.length} requests total, últimos ${net.length}):`,
       ...(net.length ? net.map((l) => `  ${l}`) : ["  (nenhum)"]),
       ``,
-      `Console errors/warnings (${logs.length}):`,
-      ...(logs.length ? logs.map((l) => `  ${l}`) : ["  (nenhum)"]),
+      `Console errors/warnings (${errs.length}):`,
+      ...(errs.length ? errs.map((l) => `  ${l}`) : ["  (nenhum)"]),
+      ``,
+      `Outras mensagens de console (${other.length}, p/ assert_console_message):`,
+      ...(other.length ? other.map((l) => `  ${l}`) : ["  (nenhum)"]),
     ].join("\n");
   }
 
@@ -430,6 +459,8 @@ export class BrowserSession {
         return this.assertNetwork(step);
       case "assertNoConsoleErrors":
         return this.assertNoConsoleErrors(step.ignore);
+      case "assertConsoleMessage":
+        return this.assertConsoleMessage(step.includes, step.type);
       case "switchTab":
         return this.switchTab(step.urlGlob);
       case "screenshot":

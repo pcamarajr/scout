@@ -17,6 +17,7 @@ const ASSERTION_KINDS = new Set<Step["kind"]>([
   "assertUrl",
   "assertNetwork",
   "assertNoConsoleErrors",
+  "assertConsoleMessage",
 ]);
 
 export interface PreviewReplayOutcome {
@@ -81,6 +82,8 @@ export function describeStep(step: Step): string {
       return `verificar request ${step.method ?? "ANY"} ${step.urlGlob}${step.status ? ` (status ${step.status})` : ""}${step.responseIncludes?.length ? ` contendo ${step.responseIncludes.join(", ")}` : ""}`;
     case "assertNoConsoleErrors":
       return `verificar ausência de erros no console${step.ignore?.length ? ` (ignorando ${step.ignore.join(", ")})` : ""}`;
+    case "assertConsoleMessage":
+      return `verificar mensagem de console contendo ${step.includes.map((s) => `"${s}"`).join(" + ")}${step.type ? ` (tipo ${step.type})` : ""}`;
     case "switchTab":
       return `trocar para o tab ${step.urlGlob ? `que casa "${step.urlGlob}"` : "mais recente"}`;
     case "screenshot":

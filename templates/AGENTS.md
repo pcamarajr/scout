@@ -96,6 +96,10 @@ When a click opens a new tab (a `target="_blank"` link or `window.open`), Scout'
 
 Console and network observers are **per-tab**: assertions (`browser_assert_no_console_errors`, `browser_assert_network`, and the console-log assertion) always read the **active tab**, so after switching you assert on the right page. The browser permission policy applies to every tab in the context, including popups.
 
+## Asserting a console log appeared
+
+Beyond *absence* of errors, you can assert a **specific log was emitted** (e.g. a `DEBUG:[...]` line gated behind a debug flag). `browser_assert_console_message` requires a message on the **active tab** that contains **all** of the given substrings **within a single message**, optionally constrained to a `type` (`log`, `debug`, `error`, …). Inspect first (`browser_inspect_logs` now also lists `log`/`debug`/`info` messages), then assert on a **stable** substring — a prefix like `DEBUG:[FEATURE/x]`, never a volatile value — so the check tolerates unrelated console noise. It becomes a recorded step that fails the deterministic replay if the log goes missing.
+
 ## Base URL and secrets
 
 There is a **default base URL** set at `scout init` (in `scout.config.json`). It can be **overridden per run** without editing the file:
