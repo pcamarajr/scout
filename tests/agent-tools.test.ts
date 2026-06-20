@@ -38,6 +38,10 @@ function fakeSession(overrides: Partial<Record<string, unknown>> = {}): {
     assertVisible: async (text: string) => void calls.push(`assertVisible:${text}`),
     assertNotVisible: async (text: string) => void calls.push(`assertNotVisible:${text}`),
     assertUrl: async (p: string) => void calls.push(`assertUrl:${p}`),
+    assertNetwork: async (m: { urlGlob: string }) => void calls.push(`assertNetwork:${m.urlGlob}`),
+    assertNoConsoleErrors: async (ignore?: string[]) =>
+      void calls.push(`assertNoConsoleErrors:${(ignore ?? []).join(",")}`),
+    formatLogs: () => "Network (0 requests total, últimos 0):\n  (nenhum)",
     screenshot: async (label: string) => {
       calls.push(`screenshot:${label}`);
       return `/runs/${label}.png`;
@@ -67,14 +71,17 @@ function harness(sessionOverrides?: Partial<Record<string, unknown>>) {
   return { tools, byName, steps, calls, getVerdict: () => verdict };
 }
 
-test("exposes the 9 browser tools plus scout_verdict", () => {
+test("exposes the browser tools plus scout_verdict", () => {
   const { tools } = harness();
   assert.deepEqual(
     tools.map((t) => t.name).sort(),
     [
       "browser_assert",
+      "browser_assert_network",
+      "browser_assert_no_console_errors",
       "browser_click",
       "browser_fill",
+      "browser_inspect_logs",
       "browser_navigate",
       "browser_press",
       "browser_screenshot",
@@ -122,6 +129,54 @@ test("browser_assert records one step per provided expectation", async () => {
     { kind: "assertVisible", text: "Welcome" },
     { kind: "assertUrl", pattern: "/home" },
   ]);
+});
+
+test("browser_assert_network records a network assertion with only the provided fields", async () => {
+  const { byName, steps, calls } = harness();
+  await byName("browser_assert_network").handler({
+    urlGlob: "**/api/checkout/**",
+    method: "POST",
+    status: "2xx",
+    responseIncludes: ["orderId"],
+  });
+  assert.deepEqual(calls, ["assertNetwork:**/api/checkout/**"]);
+  assert.deepEqual(steps, [
+    {
+      kind: "assertNetwork",
+      urlGlob: "**/api/checkout/**",
+      method: "POST",
+      status: "2xx",
+      responseIncludes: ["orderId"],
+    },
+  ]);
+});
+
+test("browser_assert_no_console_errors records a console assertion", async () => {
+  const { byName, steps, calls } = harness();
+  await byName("browser_assert_no_console_errors").handler({ ignore: ["favicon"] });
+  assert.deepEqual(calls, ["assertNoConsoleErrors:favicon"]);
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0].kind, "assertNoConsoleErrors");
+});
+
+test("browser_inspect_logs is read-only — returns the dump and records nothing", async () => {
+  const { byName, steps } = harness();
+  const r = await byName("browser_inspect_logs").handler({});
+  assert.equal(r.isError, undefined);
+  assert.match(r.text, /Network/);
+  assert.equal(steps.length, 0);
+});
+
+test("a failing network assertion is an isError result and records nothing", async () => {
+  const { byName, steps } = harness({
+    assertNetwork: async () => {
+      throw new Error("Nenhum request observado casou com POST **/api/x.");
+    },
+  });
+  const r = await byName("browser_assert_network").handler({ urlGlob: "**/api/x", method: "POST" });
+  assert.equal(r.isError, true);
+  assert.match(r.text, /Nenhum request observado/);
+  assert.equal(steps.length, 0);
 });
 
 test("scout_verdict feeds the verdict sink and records no step", async () => {

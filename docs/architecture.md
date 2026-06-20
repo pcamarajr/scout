@@ -22,7 +22,8 @@ src/
 ## Design decisions
 
 - **The agent never writes test code.** It acts in the browser; the script is recorded from actions that actually worked (`getByRole` + accessible name when unique on the page, CSS path as fallback). Eliminates hallucinated selectors.
-- **Assertions are tools.** The agent registers each expectation via `browser_assert` — that's what makes the replay a real test, not just a click macro.
+- **Assertions are tools.** The agent registers each expectation via `browser_assert` (DOM/URL), `browser_assert_network` (an API call happened, with tolerant method/URL/status/body matching) and `browser_assert_no_console_errors` — that's what makes the replay a real test, not just a click macro.
+- **Network/console assertions match shape, not values.** Listeners observe real traffic (`page.on('response')`/`'console'`/`'pageerror'`) — scout never mocks the network. Assertions match by method + URL glob + status class and optional stable body substrings, so they survive replay despite dynamic ids/timestamps.
 - **Recorded scripts are pruned before caching.** Agent retries (e.g. re-filling the same field) are deduplicated conservatively: an earlier `fill`/`select` is dropped only when a later one targets the same element and nothing in between (click/press/navigate) could have consumed the value. Clicks are never deduplicated.
 - **Trace for debugging, video for humans.** `trace.zip` is the deep-debug artifact; the opt-in preview video is a low-friction, GitHub-playable clip for PR review. See [artifacts](./artifacts.md).
 - **Scenarios are versioned source, not database rows.** One `.scout.md` per feature, reviewed in PRs like a `.test.ts`; the spec is a pure input a run never mutates (status derives from `.scout/runs/`). The recorded JSON script is a derived sidecar — clean diffs, no run noise.

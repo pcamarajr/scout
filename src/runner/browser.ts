@@ -1,6 +1,12 @@
 import path from "node:path";
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "playwright";
-import type { Step, Target } from "../types.js";
+import type { NetworkMatcher, Step, Target } from "../types.js";
+import {
+  findConsoleErrors,
+  matchNetwork,
+  type CapturedRequest,
+  type ConsoleMessage,
+} from "./network-match.js";
 
 export interface ElementInfo {
   ref: number;
@@ -35,6 +41,10 @@ const VIDEO_SIZE = { width: 390, height: 844 } as const;
 
 const STEP_TIMEOUT = 10_000;
 
+/** Cap the ring buffers so a long-running session can't grow them unbounded. */
+const NETWORK_LOG_CAP = 300;
+const CONSOLE_LOG_CAP = 500;
+
 /**
  * Thin Playwright wrapper shared by the AI runner and the replay runner.
  * Owns ref→element resolution, tracing and screenshots.
@@ -42,6 +52,9 @@ const STEP_TIMEOUT = 10_000;
 export class BrowserSession {
   private screenshotCount = 0;
   readonly screenshots: string[] = [];
+  /** Network responses + console messages observed since launch (ring-buffered). */
+  private networkRequests: CapturedRequest[] = [];
+  private consoleMessages: ConsoleMessage[] = [];
 
   private constructor(
     private browser: Browser,
@@ -65,7 +78,34 @@ export class BrowserSession {
     await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
     const page = await context.newPage();
     page.setDefaultTimeout(STEP_TIMEOUT);
-    return new BrowserSession(browser, context, page, opts, videoEpoch);
+    const session = new BrowserSession(browser, context, page, opts, videoEpoch);
+    session.attachObservers();
+    return session;
+  }
+
+  /**
+   * Passive observers for console + network. We only LISTEN (never `route()`),
+   * so the real app traffic is untouched — these feed the deterministic
+   * assertNetwork / assertNoConsoleErrors checks.
+   */
+  private attachObservers(): void {
+    const pushConsole = (msg: ConsoleMessage): void => {
+      this.consoleMessages.push(msg);
+      if (this.consoleMessages.length > CONSOLE_LOG_CAP) this.consoleMessages.shift();
+    };
+    this.page.on("console", (msg) => pushConsole({ type: msg.type(), text: msg.text() }));
+    this.page.on("pageerror", (err) => pushConsole({ type: "error", text: `${err.name}: ${err.message}` }));
+    this.page.on("response", (res) => {
+      const req = res.request();
+      let body: Promise<string> | undefined;
+      this.networkRequests.push({
+        method: req.method(),
+        url: res.url(),
+        status: res.status(),
+        getBody: () => (body ??= res.text().catch(() => "")),
+      });
+      if (this.networkRequests.length > NETWORK_LOG_CAP) this.networkRequests.shift();
+    });
   }
 
   resolveUrl(url: string): string {
@@ -186,6 +226,37 @@ export class BrowserSession {
     }
   }
 
+  /** Asserts an expected network call was observed. Throws with a reason on miss. */
+  async assertNetwork(matcher: NetworkMatcher): Promise<void> {
+    const result = await matchNetwork(this.networkRequests, matcher);
+    if (!result.ok) throw new Error(result.reason ?? "Asserção de rede falhou.");
+  }
+
+  /** Asserts no console errors (console.error + uncaught) except ignored substrings. */
+  async assertNoConsoleErrors(ignore: string[] = []): Promise<void> {
+    const errors = findConsoleErrors(this.consoleMessages, ignore);
+    if (errors.length) {
+      const sample = errors.slice(0, 5).map((e) => e.text).join(" | ");
+      throw new Error(`${errors.length} erro(s) no console do browser: ${sample}`);
+    }
+  }
+
+  /** Compact dump of recent network + console activity for the agent to inspect. */
+  formatLogs(): string {
+    const net = this.networkRequests.slice(-30).map((e) => `${e.method} ${e.status} ${e.url}`);
+    const logs = this.consoleMessages
+      .filter((m) => m.type === "error" || m.type === "warning" || m.type === "warn")
+      .slice(-30)
+      .map((m) => `[${m.type}] ${m.text}`);
+    return [
+      `Network (${this.networkRequests.length} requests total, últimos ${net.length}):`,
+      ...(net.length ? net.map((l) => `  ${l}`) : ["  (nenhum)"]),
+      ``,
+      `Console errors/warnings (${logs.length}):`,
+      ...(logs.length ? logs.map((l) => `  ${l}`) : ["  (nenhum)"]),
+    ].join("\n");
+  }
+
   async screenshot(label: string): Promise<string> {
     this.screenshotCount += 1;
     const safe = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40);
@@ -218,6 +289,10 @@ export class BrowserSession {
         return this.assertNotVisible(step.text);
       case "assertUrl":
         return this.assertUrl(step.pattern);
+      case "assertNetwork":
+        return this.assertNetwork(step);
+      case "assertNoConsoleErrors":
+        return this.assertNoConsoleErrors(step.ignore);
       case "screenshot":
         return void (await this.screenshot(step.label));
     }

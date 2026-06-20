@@ -9,6 +9,7 @@ Scout is self-healing browser QA. You write a scenario in one sentence; an AI ag
 
 - ✍️ **Author in one sentence** — no selectors, no code. Just the flow and what should happen.
 - 🤖 **Verified in a real browser** — an agent judges behavior ("the paywall must *not* appear"), not just clicks.
+- 🌐 **Sees console & network** — assert "no console errors" or "a POST to `/api/checkout` returned 2xx" — not just the visible DOM.
 - ⚡ **Replays for free** — recorded runs are pure Playwright. ~zero cost, seconds per scenario, CI-ready.
 - 🔧 **Self-heals** — when the UI changes, AI re-verifies and re-records; you review the diff.
 - 🧠 **Works with Claude, Gemini, or OpenAI** — zero-config with Claude Code; one env var for the rest.
