@@ -69,6 +69,7 @@ export type Step =
   | { kind: "assertUrl"; pattern: string }
   | ({ kind: "assertNetwork" } & NetworkMatcher)
   | { kind: "assertNoConsoleErrors"; ignore?: string[] }
+  | { kind: "switchTab"; urlGlob?: string }
   | { kind: "screenshot"; label: string };
 
 export type Verdict = "verified" | "failed" | "partial" | "blocked";

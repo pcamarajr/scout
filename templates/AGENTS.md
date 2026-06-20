@@ -90,6 +90,12 @@ Notes:
 - **Grant wins over deny:** a scenario that grants a permission overrides a file-level deny of the same permission (as in the example above).
 - `denyPermissions` matters mainly in **headed** runs (headless already denies silently). What changes behavior in CI is `grantPermissions` and a granted `geolocation` with coordinates.
 
+## New tabs / popups
+
+When a click opens a new tab (a `target="_blank"` link or `window.open`), Scout's `browser_click` result flags it. The agent then calls **`browser_switch_tab`** to move control to that tab; with no argument it switches to the newest tab, or pass a `urlGlob` (e.g. `**/booking**`) to target a specific one. The switch waits for the tab to finish loading, then becomes a recorded `switchTab` step that replays deterministically.
+
+Console and network observers are **per-tab**: assertions (`browser_assert_no_console_errors`, `browser_assert_network`, and the console-log assertion) always read the **active tab**, so after switching you assert on the right page. The browser permission policy applies to every tab in the context, including popups.
+
 ## Base URL and secrets
 
 There is a **default base URL** set at `scout init` (in `scout.config.json`). It can be **overridden per run** without editing the file:

@@ -79,3 +79,13 @@ test("returns the same array when nothing is pruned", () => {
   ];
   assert.equal(pruneSteps(steps), steps);
 });
+
+test("switchTab acts as a barrier: fills around it are not deduped", () => {
+  const steps: Step[] = [
+    { kind: "fill", target: field("Busca"), value: "a" },
+    { kind: "switchTab" },
+    { kind: "fill", target: field("Busca"), value: "a" },
+  ];
+  // The two fills target the "same" field but live on different tabs — keep both.
+  assert.deepEqual(pruneSteps(steps), steps);
+});

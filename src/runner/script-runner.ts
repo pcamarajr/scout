@@ -81,6 +81,8 @@ export function describeStep(step: Step): string {
       return `verificar request ${step.method ?? "ANY"} ${step.urlGlob}${step.status ? ` (status ${step.status})` : ""}${step.responseIncludes?.length ? ` contendo ${step.responseIncludes.join(", ")}` : ""}`;
     case "assertNoConsoleErrors":
       return `verificar ausência de erros no console${step.ignore?.length ? ` (ignorando ${step.ignore.join(", ")})` : ""}`;
+    case "switchTab":
+      return `trocar para o tab ${step.urlGlob ? `que casa "${step.urlGlob}"` : "mais recente"}`;
     case "screenshot":
       return `screenshot "${step.label}"`;
   }
