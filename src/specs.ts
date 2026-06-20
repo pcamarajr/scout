@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
 import { SCOUT_DIR } from "./config.js";
-import type { Scenario } from "./types.js";
+import type { GeoCoords, PermissionPolicy, Scenario } from "./types.js";
 
 /**
  * Scenario specs live as markdown files under `.scout/specs/**\/*.scout.md`.
@@ -19,7 +19,128 @@ import type { Scenario } from "./types.js";
 export const SPECS_DIR = "specs";
 const SPEC_EXT = ".scout.md";
 /** Per-scenario override keys allowed under a heading. */
-const OVERRIDE_KEYS = new Set(["profile", "notes", "tags"]);
+const OVERRIDE_KEYS = new Set([
+  "profile",
+  "notes",
+  "tags",
+  "grantPermissions",
+  "denyPermissions",
+  "geolocation",
+]);
+
+/**
+ * Browser permissions Scout can grant/deny per scenario. Curated (not a
+ * pass-through to Playwright) so a typo fails loudly at load time instead of
+ * silently becoming a no-op. `deny` is enforced with an init-script stub for
+ * the permissions that pop a native prompt (geolocation, notifications,
+ * camera, microphone); the rest are denied by the ephemeral context anyway.
+ */
+const PERMISSION_ALLOWLIST = new Set([
+  "geolocation",
+  "notifications",
+  "camera",
+  "microphone",
+  "clipboard-read",
+  "clipboard-write",
+  "midi",
+]);
+
+/** Parse a permission list from YAML (array/string) or a comma-separated override line. */
+function parsePermissionList(raw: unknown, ctx: string): string[] | undefined {
+  let items: string[] | undefined;
+  if (Array.isArray(raw)) items = raw.map(String);
+  else if (typeof raw === "string") {
+    const inner = raw.trim().replace(/^\[|\]$/g, "");
+    items = inner.split(",").map((t) => t.trim()).filter(Boolean);
+  }
+  if (!items?.length) return undefined;
+  for (const p of items) {
+    if (!PERMISSION_ALLOWLIST.has(p)) {
+      throw new Error(
+        `Unknown permission "${p}" in ${ctx}. Allowed: ${[...PERMISSION_ALLOWLIST].join(", ")}.`
+      );
+    }
+  }
+  return [...new Set(items)];
+}
+
+/** Parse geolocation coords from a YAML object or a "<lat>, <lng>" override line. */
+function parseGeolocation(raw: unknown, ctx: string): GeoCoords | undefined {
+  if (raw == null) return undefined;
+  let lat: number;
+  let lng: number;
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>;
+    lat = Number(o.latitude);
+    lng = Number(o.longitude);
+  } else if (typeof raw === "string") {
+    const parts = raw.split(",").map((t) => t.trim());
+    if (parts.length !== 2) {
+      throw new Error(`Invalid geolocation "${raw}" in ${ctx}. Expected "<latitude>, <longitude>".`);
+    }
+    lat = Number(parts[0]);
+    lng = Number(parts[1]);
+  } else {
+    throw new Error(`Invalid geolocation in ${ctx}. Expected "<latitude>, <longitude>".`);
+  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    throw new Error(`Invalid geolocation in ${ctx}: latitude and longitude must be numbers.`);
+  }
+  return { latitude: lat, longitude: lng };
+}
+
+/**
+ * Resolve the permission policy for one scenario: file frontmatter is the
+ * default, per-section keys override it, merged per-axis (a section that sets
+ * only `denyPermissions` still inherits the file's `grantPermissions`).
+ * Granting geolocation requires coordinates; supplying coordinates implies
+ * granting geolocation.
+ */
+function resolvePermissions(
+  data: Record<string, unknown>,
+  overrides: Record<string, string>,
+  ctx: string
+): PermissionPolicy | undefined {
+  const grant =
+    "grantPermissions" in overrides
+      ? parsePermissionList(overrides.grantPermissions, ctx)
+      : parsePermissionList(data.grantPermissions, ctx);
+  const deny =
+    "denyPermissions" in overrides
+      ? parsePermissionList(overrides.denyPermissions, ctx)
+      : parsePermissionList(data.denyPermissions, ctx);
+  const geolocation =
+    "geolocation" in overrides
+      ? parseGeolocation(overrides.geolocation, ctx)
+      : parseGeolocation(data.geolocation, ctx);
+
+  // Coords imply granting geolocation; granting geolocation needs coords.
+  let grantList = grant;
+  if (geolocation) {
+    grantList = grantList ? [...new Set([...grantList, "geolocation"])] : ["geolocation"];
+  }
+  if (grantList?.includes("geolocation") && !geolocation) {
+    throw new Error(
+      `Granting geolocation in ${ctx} requires coordinates: add a "geolocation: <latitude>, <longitude>" line.`
+    );
+  }
+  // Grant wins over deny so a scenario can grant a permission the file denies by
+  // default (e.g. file denies geolocation, one scenario grants it with coords).
+  // This also avoids a silent contradiction at launch, where the deny stub would
+  // otherwise override the grant at the JS-API layer.
+  let denyList = deny;
+  if (denyList && grantList) {
+    denyList = denyList.filter((p) => !grantList.includes(p));
+    if (!denyList.length) denyList = undefined;
+  }
+
+  if (!grantList && !denyList && !geolocation) return undefined;
+  const policy: PermissionPolicy = {};
+  if (grantList) policy.grant = grantList;
+  if (denyList) policy.deny = denyList;
+  if (geolocation) policy.geolocation = geolocation;
+  return policy;
+}
 
 export function slugify(name: string): string {
   return name
@@ -139,6 +260,7 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
     seen.add(scenarioSlug);
 
     const tags = parseTags(overrides.tags) ?? fileTags;
+    const permissions = resolvePermissions(data, overrides, `${relFile} → "${section.name}"`);
     scenarios.push({
       slug: `${fileSlug}/${scenarioSlug}`,
       name: section.name,
@@ -147,6 +269,7 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
       profile: overrides.profile ?? fileProfile,
       notes: overrides.notes,
       tags,
+      permissions,
       file: relFile,
     });
   }

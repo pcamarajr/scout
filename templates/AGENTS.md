@@ -53,9 +53,42 @@ Rules that matter when you author:
 
 - **Frontmatter** (YAML, optional): `feature` (defaults to the filename), `profile` (default auth profile), `tags`.
 - **Each `## heading` is one scenario.** Its logical slug is `<file-slug>/<scenario-slug>` (e.g. `paywall/free-user-hits-paywall-on-ep-3`) and must be unique across the suite. Duplicate headings in a file, or a scenario with no body text, are hard errors.
-- **Per-scenario overrides:** immediately under a heading you may place `profile:`, `notes:`, and `tags:` lines (before the prose) to override the file-level defaults.
+- **Per-scenario overrides:** immediately under a heading you may place `profile:`, `notes:`, `tags:`, `grantPermissions:`, `denyPermissions:`, and `geolocation:` lines (before the prose) to override the file-level defaults.
 - **Body = flow + expected behavior, in plain language.** Describe what the user does and what must (or must not) be true. No CSS selectors, no Playwright code — the agent discovers the real elements at run time and records them.
 - A `.scout.md` whose every `##` lives inside a fenced ```` ``` ```` block parses as **zero scenarios** (that is how `example.scout.md` documents the format without polluting the suite).
+
+## Browser permissions
+
+Some flows hit native browser permission prompts (geolocation, notifications, camera, microphone) that the agent cannot click — they live outside the page DOM. Declare a permission policy so Scout sets it at browser launch, for both the AI run and deterministic replay. Three states **per permission**:
+
+- **Not declared** → native browser behavior, untouched (a headed run may show the prompt).
+- **`grantPermissions:`** → granted explicitly.
+- **`denyPermissions:`** → blocked via an init-script stub, so no native prompt appears.
+
+Declarable in the **frontmatter** (default for every scenario in the file) and overridable **per scenario** (merged per-axis: a section that sets only `denyPermissions` still inherits the file's `grantPermissions`). Lists are comma-separated.
+
+```markdown
+---
+feature: Store Locator
+denyPermissions: [geolocation]      # file default: never prompt for location
+---
+
+## Search falls back to manual when location is blocked
+Open the store locator, search for "Merate", and confirm results appear.
+
+## Nearby stores with a fixed location
+grantPermissions: geolocation       # this scenario grants instead
+geolocation: 45.69, 9.43            # required when geolocation is granted (lat, lng)
+
+Open the store locator; the nearest store to the given coordinates is shown.
+```
+
+Notes:
+
+- Allowed permissions: `geolocation`, `notifications`, `camera`, `microphone`, `clipboard-read`, `clipboard-write`, `midi`. An unknown name fails the load with a clear error.
+- Granting `geolocation` **requires** a `geolocation: <latitude>, <longitude>` line; supplying coordinates implies granting it.
+- **Grant wins over deny:** a scenario that grants a permission overrides a file-level deny of the same permission (as in the example above).
+- `denyPermissions` matters mainly in **headed** runs (headless already denies silently). What changes behavior in CI is `grantPermissions` and a granted `geolocation` with coordinates.
 
 ## Base URL and secrets
 

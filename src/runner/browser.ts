@@ -1,6 +1,6 @@
 import path from "node:path";
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "playwright";
-import type { NetworkMatcher, Step, Target } from "../types.js";
+import type { NetworkMatcher, PermissionPolicy, Step, Target } from "../types.js";
 import {
   findConsoleErrors,
   matchNetwork,
@@ -35,6 +35,33 @@ export interface LaunchOptions {
   recordVideo?: boolean;
   /** Playwright slowMo (ms/action) — paces the preview replay for human viewing */
   slowMoMs?: number;
+  /** Browser permission policy resolved from the scenario spec (grant/deny/geo). */
+  permissions?: PermissionPolicy;
+}
+
+/**
+ * Builds an init-script that denies the permissions that would otherwise pop a
+ * native prompt (geolocation, notifications, camera, microphone), stubbing the
+ * Web APIs so the prompt never reaches the browser. Runs before any page
+ * script, in every page of the context (including popups). `deny` only matters
+ * in headed runs — headless already denies silently.
+ */
+export function denyPermissionsStub(deny: string[]): string {
+  return `(() => {
+    const denied = ${JSON.stringify(deny)};
+    if (denied.includes("geolocation") && navigator.geolocation) {
+      const fail = (_s, e) => { if (e) e({ code: 1, message: "User denied Geolocation", PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 }); };
+      navigator.geolocation.getCurrentPosition = fail;
+      navigator.geolocation.watchPosition = (s, e) => { fail(s, e); return 0; };
+    }
+    if (denied.includes("notifications") && "Notification" in window) {
+      try { Object.defineProperty(window.Notification, "permission", { configurable: true, get: () => "denied" }); } catch (_e) {}
+      window.Notification.requestPermission = () => Promise.resolve("denied");
+    }
+    if ((denied.includes("camera") || denied.includes("microphone")) && navigator.mediaDevices) {
+      navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException("Permission denied", "NotAllowedError"));
+    }
+  })();`;
 }
 
 const VIDEO_SIZE = { width: 390, height: 844 } as const;
@@ -68,12 +95,17 @@ export class BrowserSession {
 
   static async launch(opts: LaunchOptions): Promise<BrowserSession> {
     const browser = await chromium.launch({ headless: opts.headless, slowMo: opts.slowMoMs });
+    const perm = opts.permissions;
     const context = await browser.newContext({
       locale: opts.locale ?? "pt-BR",
       viewport: { ...VIDEO_SIZE }, // mobile-first; vertical video product
       storageState: opts.storageState,
+      ...(perm?.grant?.length ? { permissions: perm.grant } : {}),
+      ...(perm?.geolocation ? { geolocation: perm.geolocation } : {}),
       ...(opts.recordVideo ? { recordVideo: { dir: opts.runDir, size: { ...VIDEO_SIZE } } } : {}),
     });
+    // Deny stub must run before any page script and in every page (incl. popups).
+    if (perm?.deny?.length) await context.addInitScript(denyPermissionsStub(perm.deny));
     const videoEpoch = opts.recordVideo ? Date.now() : undefined;
     await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
     const page = await context.newPage();

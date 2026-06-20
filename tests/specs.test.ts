@@ -135,3 +135,143 @@ test("migrate slug contract: feature=old-slug yields <old-slug>/<name-slug>", ()
   assert.equal(slugify(oldSlug), oldSlug); // old slug is slug-stable
   assert.equal(created.slug, `${oldSlug}/free-user`);
 });
+
+test("parses browser permissions from frontmatter and per-scenario overrides", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "store-locator.scout.md",
+    `---
+feature: Store Locator
+denyPermissions: [geolocation]
+---
+
+## Manual fallback when location is blocked
+Open the store locator and search for Merate.
+
+## Nearby with fixed location
+grantPermissions: geolocation
+geolocation: 45.69, 9.43
+
+Open the store locator; the nearest store is shown.
+`
+  );
+
+  const [fallback, nearby] = loadScenarios(cwd);
+
+  // File-level default applies to the first scenario.
+  assert.deepEqual(fallback.permissions, { deny: ["geolocation"] });
+
+  // Per-axis merge: the section grants geolocation (with coords); the file's
+  // inherited deny of geolocation is overridden because grant wins over deny.
+  assert.deepEqual(nearby.permissions, {
+    grant: ["geolocation"],
+    geolocation: { latitude: 45.69, longitude: 9.43 },
+  });
+});
+
+test("section override replaces the file-level permission axis", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "perms.scout.md",
+    `---
+feature: Perms
+grantPermissions: [notifications]
+---
+
+## Camera instead
+grantPermissions: camera
+
+Body text for the scenario.
+`
+  );
+  const [s] = loadScenarios(cwd);
+  assert.deepEqual(s.permissions, { grant: ["camera"] });
+});
+
+test("rejects an unknown permission name", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "bad.scout.md",
+    `---
+feature: Bad
+---
+
+## Typo
+denyPermissions: geolocaton
+
+Body text.
+`
+  );
+  assert.throws(() => loadScenarios(cwd), /Unknown permission "geolocaton"/);
+});
+
+test("rejects granting geolocation without coordinates", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "geo.scout.md",
+    `---
+feature: Geo
+---
+
+## No coords
+grantPermissions: geolocation
+
+Body text.
+`
+  );
+  assert.throws(() => loadScenarios(cwd), /requires coordinates/);
+});
+
+test("supplying coordinates implies granting geolocation", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "geo2.scout.md",
+    `---
+feature: Geo2
+---
+
+## Coords only
+geolocation: 10, 20
+
+Body text.
+`
+  );
+  const [s] = loadScenarios(cwd);
+  assert.deepEqual(s.permissions, {
+    grant: ["geolocation"],
+    geolocation: { latitude: 10, longitude: 20 },
+  });
+});
+
+test("scenarios without permission keys have undefined permissions", () => {
+  const cwd = tmpProject();
+  writeSpec(cwd, "plain.scout.md", `---\nfeature: Plain\n---\n\n## Nothing\nJust prose.\n`);
+  const [s] = loadScenarios(cwd);
+  assert.equal(s.permissions, undefined);
+});
+
+test("grant wins over an inherited deny for the same permission", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "conflict.scout.md",
+    `---
+feature: Conflict
+denyPermissions: [notifications, camera]
+---
+
+## Grant overrides one denied permission
+grantPermissions: notifications
+
+Body text.
+`
+  );
+  const [s] = loadScenarios(cwd);
+  // notifications moves to grant; camera stays denied.
+  assert.deepEqual(s.permissions, { grant: ["notifications"], deny: ["camera"] });
+});

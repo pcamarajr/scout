@@ -31,6 +31,31 @@ export interface NetworkMatcher {
   responseIncludes?: string[];
 }
 
+/** Geographic coordinates for a granted geolocation permission. */
+export interface GeoCoords {
+  latitude: number;
+  longitude: number;
+}
+
+/**
+ * Browser permission policy resolved from a scenario's spec (file frontmatter
+ * is the default, per-section keys override it, merged per-axis). Three states
+ * per permission: absent = native browser behavior (untouched); granted =
+ * explicitly allowed; denied = explicitly blocked via an init-script stub so no
+ * native prompt appears. `deny` only matters in headed runs (headless already
+ * denies silently); `grant`/`geolocation` change behavior in both. Resolved
+ * fresh from the spec each run — never baked into the recorded script (it is a
+ * context-creation parameter, like storageState, not a replayable step).
+ */
+export interface PermissionPolicy {
+  /** Permissions to grant explicitly (Playwright newContext `permissions`). */
+  grant?: string[];
+  /** Permissions to block via an init-script stub (kills the native prompt). */
+  deny?: string[];
+  /** Coordinates for a granted geolocation permission. */
+  geolocation?: GeoCoords;
+}
+
 export type Step =
   | { kind: "navigate"; url: string }
   | { kind: "click"; target: Target }
@@ -69,6 +94,8 @@ export interface Scenario {
   notes?: string;
   /** Free-form tags (file-level + per-scenario, merged) */
   tags?: string[];
+  /** Browser permission policy (frontmatter default + per-section override). */
+  permissions?: PermissionPolicy;
   /** Source spec file, relative to the project root */
   file: string;
 }
