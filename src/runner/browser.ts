@@ -212,10 +212,18 @@ export class BrowserSession {
    * real-URL transition of a freshly opened popup: it watches both already-open
    * tabs and tabs opened later, re-checking on every navigation until one
    * matches or the step timeout elapses.
+   *
+   * When several tabs match (the glob is unanchored "contains", so a broad glob
+   * like `**\/it-it/**` can match both the opener and the popup), the MOST
+   * RECENTLY opened match wins — that is the tab a click just produced, not the
+   * opener at index 0.
    */
   private async findTabByUrl(urlGlob: string): Promise<Page> {
     const re = globToRegex(urlGlob);
-    const found = (): Page | undefined => this.context.pages().find((p) => re.test(p.url()));
+    const found = (): Page | undefined => {
+      const matches = this.context.pages().filter((p) => re.test(p.url()));
+      return matches[matches.length - 1];
+    };
     const existing = found();
     if (existing) return existing;
     return await new Promise<Page>((resolve, reject) => {
@@ -385,6 +393,12 @@ export class BrowserSession {
    * prefix) won't match unrelated console noise.
    */
   async assertConsoleMessage(includes: string[], type?: string): Promise<void> {
+    // An empty substring matches every message, so any "" would make the
+    // assertion always pass — false confidence on replay. Reject it here too,
+    // mirroring the tool schema, so a hand-edited or legacy script fails closed.
+    if (!includes.length || includes.some((s) => s.length === 0)) {
+      throw new Error("assertConsoleMessage requer trechos não-vazios.");
+    }
     const hit = this.buffers().console.find(
       (m) => (!type || m.type === type) && includes.every((s) => m.text.includes(s))
     );
