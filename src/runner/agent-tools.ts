@@ -294,9 +294,9 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
       'Verifica que o console do tab ATIVO registrou uma mensagem contendo TODOS os trechos informados, casados numa MESMA mensagem (não espalhados). Rode browser_inspect_logs antes para ver o texto real e escolher trechos ESTÁVEIS (ex: o prefixo "DEBUG:[FEATURE/...]"), nunca valores voláteis. Opcionalmente restrinja por tipo. Vira teste determinístico.',
       z.object({
         includes: z
-          .array(z.string())
+          .array(z.string().min(1))
           .min(1)
-          .describe("Trechos que devem TODOS aparecer numa mesma mensagem"),
+          .describe("Trechos NÃO-VAZIOS que devem TODOS aparecer numa mesma mensagem"),
         type: z
           .string()
           .optional()

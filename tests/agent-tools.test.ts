@@ -251,3 +251,10 @@ test("browser_assert_console_message records an assertConsoleMessage step", asyn
   await byName("browser_assert_console_message").handler({ includes: ["DEBUG"] });
   assert.deepEqual(steps, [{ kind: "assertConsoleMessage", includes: ["DEBUG"] }]);
 });
+
+test("browser_assert_console_message rejects an empty substring (no false-pass)", async () => {
+  const { byName } = harness();
+  // Schema rejects [""] and [] at the tool boundary (parse throws synchronously).
+  await assert.rejects(async () => byName("browser_assert_console_message").handler({ includes: [""] }));
+  await assert.rejects(async () => byName("browser_assert_console_message").handler({ includes: [] }));
+});
