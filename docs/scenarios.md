@@ -22,10 +22,38 @@ Logged-in subscriber opens ep 3; plays with no paywall.
 
 - Each `##` heading is one scenario. Its **logical slug** is `<file>/<scenario>` (e.g. `paywall/free-user-hits-paywall-on-ep-3`) and must be unique across the suite.
 - **Frontmatter** (YAML, optional): `feature` (defaults to the filename), `profile` (default auth profile for the file), `tags`.
-- **Per-scenario overrides:** `profile:`, `notes:`, and `tags:` lines placed immediately under a heading (before the prose) override the file-level defaults.
+- **Per-scenario overrides:** `profile:`, `notes:`, `tags:`, and the permission keys (`grantPermissions:`, `denyPermissions:`, `geolocation:`) placed immediately under a heading (before the prose) override the file-level defaults.
 - **Body = flow + expected behavior, in plain language.** Describe what the user does and what must (or must not) be true. No CSS selectors, no Playwright code — the agent discovers the real elements at run time and records them.
 - A `.scout.md` whose every `##` lives inside a fenced ```` ``` ```` block parses as **zero scenarios** (that's how `example.scout.md` documents the format without polluting the suite).
 - Duplicate headings in a file, or a scenario with no body text, are hard errors.
+
+## Browser permissions
+
+Flows that trigger a native permission prompt (geolocation, notifications, camera, microphone) can't be driven by the agent — the prompt lives outside the page. Declare a policy and scout sets it at browser launch, for both the AI run and replay. Three states **per permission**: not declared → native behavior (untouched); `grantPermissions` → granted; `denyPermissions` → blocked, so no prompt appears.
+
+Set it in the frontmatter (file default) and/or per scenario (overrides merge **per-axis**, and **grant wins over deny**):
+
+```markdown
+---
+feature: Store Locator
+denyPermissions: [geolocation]      # file default: never prompt for location
+---
+
+## Search falls back to manual when location is blocked
+Open the store locator, search for "Merate", confirm results appear.
+
+## Nearby stores with a fixed location
+grantPermissions: geolocation       # this scenario grants instead
+geolocation: 45.69, 9.43            # required when geolocation is granted (lat, lng)
+
+Open the store locator; the nearest store to the coordinates is shown.
+```
+
+Allowed: `geolocation`, `notifications`, `camera`, `microphone`, `clipboard-read`, `clipboard-write`, `midi` — an unknown name is a hard error. Granting `geolocation` requires coordinates (and coordinates imply granting it). `denyPermissions` matters mostly in **headed** runs (headless denies silently); `grantPermissions` and a granted `geolocation` change behavior in CI too.
+
+## Flows that open a new tab
+
+When a click opens a new tab or popup (a booking tool, an OAuth window), just describe it — the agent follows into the new tab and scout records the switch as a deterministic step. Console, network, and text assertions always run on the **active tab**, so a check after the switch verifies the new tab, not the one you came from.
 
 ## Asserting console logs & API calls
 
@@ -41,6 +69,15 @@ What the agent records:
 
 - **Network** — matched by method + URL pattern (glob with `*`/`**`) + status class (`2xx`), optionally requiring stable substrings in the response body (field names like `orderId`). It deliberately avoids volatile values (ids, timestamps), so the assertion survives replay.
 - **Console** — "no errors" covers `console.error` **and** uncaught exceptions. Known/expected noise can be ignored by substring (e.g. a third-party `favicon` 404).
+
+You can also assert a **specific log appeared** — handy for debug output gated behind a flag — not just the absence of errors:
+
+```markdown
+## Debug logging turns on with ?gat-debug=true
+Open the page with ?gat-debug=true. A console log containing "DEBUG:[GAT]" appears.
+```
+
+This records a positive console assertion that replay re-checks: it requires a single message containing your substring(s), so match on a **stable prefix** (`DEBUG:[GAT]`), never a volatile value — that keeps it tolerant of unrelated console noise.
 
 Keep these expectations about **shape, not exact values** — "a POST to `/api/checkout` returned 2xx with an `orderId`", not "orderId was `ord_42`". Pinning a volatile value is the main way a network assertion turns flaky.
 
