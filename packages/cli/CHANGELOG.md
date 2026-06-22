@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.8.0](https://github.com/pcamarajr/scout/compare/scout-v0.7.1...scout-v0.8.0) (2026-06-21)
+
+
+### Features
+
+* assert a console log appeared (browser_assert_console_message) ([#29](https://github.com/pcamarajr/scout/issues/29)) ([6e0f649](https://github.com/pcamarajr/scout/commit/6e0f649362c70c0b518f001c4e918735a0e60b75))
+* inspect browser console and network with deterministic assertions ([#25](https://github.com/pcamarajr/scout/issues/25)) ([4559094](https://github.com/pcamarajr/scout/commit/4559094f863e2469be2a693c4d82fd00d0d5c8eb))
+* multi-tab support — switch to and assert on popups/new tabs ([#28](https://github.com/pcamarajr/scout/issues/28)) ([41e088e](https://github.com/pcamarajr/scout/commit/41e088e522612b8598ea50bd9fbae1490bb23982))
+* per-scenario browser permission policy (grant/deny/geolocation) ([#27](https://github.com/pcamarajr/scout/issues/27)) ([74cc1d6](https://github.com/pcamarajr/scout/commit/74cc1d628120c8dca2fec4404a01c2f06c3b6950))
+
+
+### Bug Fixes
+
+* switchTab picks newest matching tab; reject empty console substrings ([#30](https://github.com/pcamarajr/scout/issues/30)) ([e0966f1](https://github.com/pcamarajr/scout/commit/e0966f146dc3f618fdacaade42a2777e50a68300))
+
 ## [0.7.1](https://github.com/pcamarajr/scout/compare/scout-v0.7.0...scout-v0.7.1) (2026-06-19)
 
 
