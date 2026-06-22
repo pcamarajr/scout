@@ -1,72 +1,30 @@
 {
-  "name": "@pcamarajr/scout",
-  "version": "0.7.1",
-  "description": "Self-healing browser QA: natural-language scenarios verified by an AI agent, replayed deterministically in CI",
+  "name": "@pcamarajr/scout-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Monorepo for @pcamarajr/scout (packages/cli) and its marketing + docs site (packages/site)",
   "type": "module",
   "license": "MIT",
-  "keywords": [
-    "qa",
-    "testing",
-    "browser",
-    "playwright",
-    "ai",
-    "self-healing",
-    "e2e",
-    "claude",
-    "mcp"
-  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pcamarajr/scout.git"
   },
   "author": "Pedro Camara Junior <eu@pcamarajr.dev>",
-  "publishConfig": {
-    "access": "public"
-  },
-  "bin": {
-    "scout": "dist/cli.js"
-  },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist",
-    "templates"
+  "workspaces": [
+    "packages/*"
   ],
   "scripts": {
-    "build": "tsc",
-    "dev": "tsx src/cli.ts",
-    "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts",
-    "smoke": "node scripts/smoke.mjs",
-    "prepublishOnly": "npm run build",
+    "build": "npm run build -w @pcamarajr/scout",
+    "dev": "npm run dev -w @pcamarajr/scout",
+    "typecheck": "npm run typecheck -w @pcamarajr/scout",
+    "test": "npm run test -w @pcamarajr/scout",
+    "smoke": "npm run smoke -w @pcamarajr/scout",
     "prepare": "husky"
-  },
-  "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.85",
-    "@ai-sdk/google": "^3.0.83",
-    "@ai-sdk/google-vertex": "^4.0.147",
-    "@ai-sdk/openai": "^3.0.73",
-    "@anthropic-ai/claude-agent-sdk": "^0.3.0",
-    "@modelcontextprotocol/sdk": "^1.12.0",
-    "ai": "^6.0.208",
-    "commander": "^13.1.0",
-    "gray-matter": "^4.0.3",
-    "playwright": "^1.52.0",
-    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.2",
     "@commitlint/config-conventional": "^21.0.2",
-    "@types/node": "^24.0.0",
-    "husky": "^9.1.7",
-    "tsx": "^4.19.0",
-    "typescript": "^5.8.0"
+    "husky": "^9.1.7"
   },
   "engines": {
     "node": ">=20"
