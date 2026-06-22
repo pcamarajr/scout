@@ -32,5 +32,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       # `--bin` makes the auto-comment show `npx`/install-as-CLI usage, which is
-      # the right hint for a CLI package like scout.
+      # the right hint for a CLI package like scout. Run from the package dir so
+      # pkg-pr-new publishes the CLI workspace, not the private monorepo root.
       - run: npx pkg-pr-new publish --bin
+        working-directory: packages/cli

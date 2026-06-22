@@ -47,6 +47,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm publish --access public
+        working-directory: packages/cli
 
   # --- @next release-candidate publish (label-gated, on the release PR) ---
   # Add the `publish-next` label to a PR (typically the release-please release
@@ -79,6 +80,7 @@ jobs:
       # `latest` release. Modifies package.json in CI only (uncommitted).
       - name: Compute and publish prerelease
         id: publish
+        working-directory: packages/cli
         run: |
           BASE=$(node -p "require('./package.json').version")
           SHORT=${GITHUB_SHA::7}

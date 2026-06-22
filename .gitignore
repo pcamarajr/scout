@@ -7,3 +7,6 @@ dist/
 # local Claude Code config (personal memory MCP, skills)
 /.claude/
 .cursor/
+
+# Generated at pack time from the root README (prepack) — the npm page mirrors the showcase
+packages/cli/README.md

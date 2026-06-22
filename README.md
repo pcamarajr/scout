@@ -115,4 +115,13 @@ The loop: you describe a flow → the agent writes the `.scout.md` → runs `sco
 
 ---
 
+## Repository
+
+This is an npm-workspaces monorepo:
+
+- [`packages/cli`](./packages/cli) — **`@pcamarajr/scout`**, the published CLI (this README is its npm page too).
+- `packages/site` — the marketing + docs site (Astro). _Coming soon._
+
+---
+
 Early but functional, and published on npm. Issues and PRs welcome — see [`docs/architecture.md`](./docs/architecture.md) for internals. MIT licensed.

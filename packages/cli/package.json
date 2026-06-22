@@ -1,0 +1,72 @@
+{
+  "name": "@pcamarajr/scout",
+  "version": "0.8.0",
+  "description": "Self-healing browser QA: natural-language scenarios verified by an AI agent, replayed deterministically in CI",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "qa",
+    "testing",
+    "browser",
+    "playwright",
+    "ai",
+    "self-healing",
+    "e2e",
+    "claude",
+    "mcp"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pcamarajr/scout.git",
+    "directory": "packages/cli"
+  },
+  "author": "Pedro Camara Junior <eu@pcamarajr.dev>",
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "scout": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "smoke": "node scripts/smoke.mjs",
+    "prepack": "node -e \"require('fs').copyFileSync('../../README.md','README.md')\"",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.85",
+    "@ai-sdk/google": "^3.0.83",
+    "@ai-sdk/google-vertex": "^4.0.147",
+    "@ai-sdk/openai": "^3.0.73",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.0",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "ai": "^6.0.208",
+    "commander": "^13.1.0",
+    "gray-matter": "^4.0.3",
+    "playwright": "^1.52.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
