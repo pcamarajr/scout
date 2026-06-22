@@ -1,0 +1,33 @@
+---
+title: "Introduction"
+description: "What Scout is, the problem it solves, and how a plain-language scenario becomes a verified, self-healing check."
+sidebarLabel: "Introduction"
+order: 1
+group: "Getting started"
+tags: ["overview", "concepts"]
+translationKey: "introduction"
+lang: en
+draft: false
+---
+
+Scout is self-healing browser QA. You describe a test in plain English; Scout verifies it in a real browser, records a deterministic path, and replays that path for free on every later run.
+
+## The bottleneck moved
+
+Code used to be the constraint. Agents now write it on demand, so code is the cheap part. What stays scarce is judgment: does the product actually do what you pictured?
+
+Scout is the quality gate for that question. You state what "done" looks like in one sentence, and Scout proves the product clears that bar — then re-checks itself, unattended, when the interface drifts.
+
+## How a scenario runs
+
+1. **Describe.** Write one plain-language scenario. There is no test file to own or maintain.
+2. **Verify.** On the first run, an agent drives a real browser and confirms the outcome.
+3. **Record.** Scout captures the path it took as a deterministic script.
+4. **Replay.** Later runs follow the recorded path without an agent.
+5. **Heal.** When the interface moves and a step breaks, Scout repairs the path at runtime — no human in the loop.
+
+## Where it fits
+
+Scout is built for developers and AI coding agents adopting browser QA into autonomous loops. The `scout report --check` command exits non-zero on any non-verified scenario, so it slots directly into CI as the gate for an automated fix-to-PR cycle.
+
+Pay once on the first run; replay is free.

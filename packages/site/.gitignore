@@ -1,0 +1,6 @@
+# build output
+dist/
+# generated types and cache
+.astro/
+# dependencies (hoisted to repo root by npm workspaces, but ignore any local)
+node_modules/

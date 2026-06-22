@@ -1,0 +1,17 @@
+---
+import type { GetStaticPaths } from "astro";
+import { getDocsByLang } from "@lib/content";
+import DocPageView from "@page-views/DocPageView.astro";
+
+export const getStaticPaths = (async () => {
+  const docs = await getDocsByLang("en");
+  return docs.map((entry) => ({
+    params: { slug: entry.id.replace(/^en\//, "") },
+    props: { entry },
+  }));
+}) satisfies GetStaticPaths;
+
+const { entry } = Astro.props;
+---
+
+<DocPageView entry={entry} />

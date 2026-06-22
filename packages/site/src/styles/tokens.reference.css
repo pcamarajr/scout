@@ -1,0 +1,101 @@
+/* =============================================================================
+   @pcamarajr/scout — Design Tokens (final)
+   Direction: "Bring it into focus — the calibrated instrument"
+   Spine: Lens 1 (Optical instrument / editorial-scientific)
+   Grafts: Lens 5 (quiet craft), Lens 3 (editorial verdicts), Lens 2 (machine),
+           Lens 4 (bold personality) — accents only, never averaged.
+
+   Selection: cross-critique aggregate 144/150 (top of 5). Unanimous accept (5/5).
+   See design/DESIGN_DIRECTION.md for the scoreboard, grafts, and vote record.
+
+   ROLE GRAMMAR (load-bearing — do not break):
+     - serif  → display headlines AND docs reading prose ("measured human reading")
+     - sans   → UI, labels, body chrome
+     - mono   → machine output ONLY (CLI, run log, code, gauges, verdict readouts)
+     - --lens (blue) is the ONLY focus signal; --failed (vermilion) is FAILED-only.
+     - One hot element at a time: {canvas focal field} OR {grid+flare atmosphere}
+       OR {motion} — never two at full intensity.
+   ============================================================================= */
+
+:root {
+  /* ground / ink ramp (cool observatory paper) */
+  --paper:        #F4F6F8;
+  --paper-2:      #ECEFF3;
+  --paper-3:      #E2E7ED;
+  --ink:          #11171D;
+  --ink-2:        #3C4651;
+  --ink-3:        #6B7681;
+  --line:         #CDD5DD;
+  --line-strong:  #AAB4BF;
+
+  /* optics blue (focus signal) */
+  --lens:         #1F6FEB;
+  --lens-deep:    #1454C4;
+  --lens-soft:    #DCE8FC;
+
+  /* brass calibration (instrument gold) */
+  --brass:        #C9A23A;
+  --brass-deep:   #9C7B1E;   /* use on light grounds for AA-safe small text */
+  --brass-soft:   #F0E6C6;
+
+  /* verdict ramp — vermilion is FAILED-only */
+  --verified:     #2E8B6F;
+  --failed:       #C2452F;
+  --partial:      #C9842B;
+  --blocked:      #6B7681;
+  --on-verified:  #F1F6F4;
+  --on-failed:    #FBF1EC;
+  --on-partial:   #2A2208;
+  --on-blocked:   #F4F6F8;
+
+  /* type — serif display + serif docs prose, humanist sans UI, surgical mono */
+  --display: "Iowan Old Style", "Palatino Linotype", "Charter", "Georgia", serif;
+  --serif:   "Iowan Old Style", "Palatino Linotype", "Charter", "Georgia", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Helvetica Neue", Arial, sans-serif;
+  --mono: "SF Mono", "JetBrains Mono", "IBM Plex Mono", ui-monospace, "Menlo", "Consolas", monospace;
+
+  /* type scale (1.28 optical) */
+  --t-mega: clamp(2.9rem, 6.2vw, 5.1rem);
+  --t-h1:   clamp(2.1rem, 4vw, 3.1rem);
+  --t-h2:   clamp(1.5rem, 2.6vw, 2rem);
+  --t-h3:   1.18rem;
+  --t-body: 1.0625rem;
+  --t-sm:   0.9375rem;
+  --t-cap:  0.78rem;
+  --t-mono: 0.86rem;
+
+  /* spacing (8-based, optical 4) */
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px;
+  --s6: 32px; --s7: 48px; --s8: 64px; --s9: 96px; --s10: 128px;
+
+  /* radii: machined, near-square */
+  --r-sm: 3px; --r-md: 6px; --r-lg: 10px; --r-pill: 999px;
+
+  /* shadows: low, precise, cool */
+  --sh-1: 0 1px 2px rgba(17,23,29,.06), 0 1px 1px rgba(17,23,29,.04);
+  --sh-2: 0 6px 20px rgba(17,23,29,.08), 0 2px 6px rgba(17,23,29,.05);
+  --sh-3: 0 24px 60px rgba(17,23,29,.14), 0 6px 18px rgba(17,23,29,.08);
+
+  /* motion */
+  --ease: cubic-bezier(.2,.7,.2,1);
+  --dur: .5s;
+
+  /* role bindings */
+  --ground: var(--paper);
+  --text: var(--ink);
+  --accent: var(--lens);
+}
+
+/* Night = a genuine "observation mode", not a tint flip */
+[data-mode="night"] {
+  --paper:#0B0F14; --paper-2:#11171E; --paper-3:#161E27;
+  --ink:#E8EDF2; --ink-2:#AEB9C4; --ink-3:#76828F;
+  --line:#222C36; --line-strong:#34414D;
+  --lens:#5B9CFF; --lens-deep:#3D7DE8; --lens-soft:#15243C;
+  --brass:#D8B65A; --brass-deep:#B7942F; --brass-soft:#2A2415;
+  --verified:#4FBF9B; --failed:#E5694F; --partial:#E0A24A; --blocked:#76828F;
+  --on-verified:#07140F; --on-failed:#1A0C08; --on-partial:#1C1404; --on-blocked:#0B0F14;
+  --sh-1: 0 1px 2px rgba(0,0,0,.5);
+  --sh-2: 0 8px 26px rgba(0,0,0,.55);
+  --sh-3: 0 30px 70px rgba(0,0,0,.6);
+}
