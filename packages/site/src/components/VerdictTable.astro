@@ -1,0 +1,89 @@
+---
+// Scout — VerdictTable
+//
+// The verdict → exit-code contract, rendered once and reused: the landing
+// "verdict system" section now, the docs "Verdicts & exit codes" page later
+// (CONTENT.md §4). Faithful port of `.vtable` from design/site.html. Each row
+// pairs a VerdictPlate with its stable exit code and meaning. Translations come
+// from this component's own translator, never from props (i18n convention).
+import VerdictPlate from "@components/VerdictPlate.astro";
+import { createTranslator } from "@lib/i18n";
+
+const tl = createTranslator(Astro.currentLocale);
+
+const ROWS = [
+  { verdict: "verified", exit: "0", meaning: tl("verdict.verifiedMeaning") },
+  { verdict: "partial", exit: "0", meaning: tl("verdict.partialMeaning") },
+  { verdict: "failed", exit: "1", meaning: tl("verdict.failedMeaning") },
+  { verdict: "blocked", exit: "2", meaning: tl("verdict.blockedMeaning") },
+] as const;
+---
+
+<table class="vtable">
+  <thead>
+    <tr>
+      <th scope="col">{tl("verdict.colVerdict")}</th>
+      <th scope="col" class="exit">{tl("verdict.colExit")}</th>
+      <th scope="col">{tl("verdict.colMeaning")}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {
+      ROWS.map((row) => (
+        <tr>
+          <td>
+            <VerdictPlate verdict={row.verdict} size="sm" />
+          </td>
+          <td class="code">{row.exit}</td>
+          <td class="desc">{row.meaning}</td>
+        </tr>
+      ))
+    }
+  </tbody>
+</table>
+
+<style>
+  .vtable {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+  }
+
+  th {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-text-subtle);
+    text-align: start;
+    padding: var(--space-sm) var(--space-md);
+    border-block-end: 1px solid var(--color-border);
+  }
+
+  th.exit {
+    text-align: center;
+  }
+
+  td {
+    padding: var(--space-md);
+    border-block-end: 1px solid var(--color-border);
+    vertical-align: top;
+  }
+
+  tbody tr:last-child td {
+    border-block-end: 0;
+  }
+
+  .code {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-muted);
+    text-align: center;
+  }
+
+  .desc {
+    color: var(--color-text-muted);
+    max-width: 48ch;
+  }
+</style>

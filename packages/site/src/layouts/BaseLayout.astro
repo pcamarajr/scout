@@ -124,7 +124,10 @@ const jsonLd =
     <header>
       <nav aria-label={tl("layout.mainNav")}>
         <a href={buildHomeUrl(locale)}>{tl("nav.home")}</a>
+        <a href={`${buildHomeUrl(locale)}#manifesto`}>{tl("nav.manifesto")}</a>
+        <a href={`${buildHomeUrl(locale)}#feature`}>{tl("nav.howItWorks")}</a>
         <a href={buildLocaleUrl(locale, "docs")}>{tl("nav.docs")}</a>
+        <a href="https://github.com/pcamarajr/scout" rel="noopener">{tl("nav.github")}</a>
         <ModeToggle />
       </nav>
     </header>
