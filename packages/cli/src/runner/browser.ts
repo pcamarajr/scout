@@ -38,6 +38,12 @@ export interface LaunchOptions {
   slowMoMs?: number;
   /** Browser permission policy resolved from the scenario spec (grant/deny/geo). */
   permissions?: PermissionPolicy;
+  /**
+   * Extra HTTP headers sent on every request in the context. Set from
+   * `scout.config.json` `headers` or `SCOUT_EXTRA_HEADERS`. The canonical use is
+   * reaching a protected deploy — e.g. Vercel's `x-vercel-protection-bypass`.
+   */
+  extraHeaders?: Record<string, string>;
 }
 
 /**
@@ -117,6 +123,7 @@ export class BrowserSession {
       locale: opts.locale ?? "pt-BR",
       viewport: { ...VIDEO_SIZE }, // mobile-first; vertical video product
       storageState: opts.storageState,
+      ...(opts.extraHeaders ? { extraHTTPHeaders: opts.extraHeaders } : {}),
       ...(perm?.grant?.length ? { permissions: perm.grant } : {}),
       ...(perm?.geolocation ? { geolocation: perm.geolocation } : {}),
       ...(opts.recordVideo ? { recordVideo: { dir: opts.runDir, size: { ...VIDEO_SIZE } } } : {}),
