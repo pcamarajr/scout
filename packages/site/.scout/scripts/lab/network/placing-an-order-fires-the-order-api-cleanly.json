@@ -1,0 +1,34 @@
+[
+  {
+    "kind": "navigate",
+    "url": "/lab"
+  },
+  {
+    "kind": "click",
+    "target": {
+      "role": "button",
+      "name": "Place order",
+      "description": "button \"Place order\""
+    }
+  },
+  {
+    "kind": "assertVisible",
+    "text": "Order ord_LAB_2291 confirmed"
+  },
+  {
+    "kind": "assertNetwork",
+    "urlGlob": "**/lab/api/order.json",
+    "method": "GET",
+    "status": 200,
+    "responseIncludes": [
+      "orderId"
+    ]
+  },
+  {
+    "kind": "assertNoConsoleErrors"
+  },
+  {
+    "kind": "screenshot",
+    "label": "order-confirmed"
+  }
+]

@@ -1,0 +1,41 @@
+[
+  {
+    "kind": "navigate",
+    "url": "/"
+  },
+  {
+    "kind": "navigate",
+    "url": "/lab/"
+  },
+  {
+    "kind": "fill",
+    "target": {
+      "css": "article#env-form > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) > form:nth-of-type(1) > label:nth-of-type(1) > input:nth-of-type(1)",
+      "description": "textbox \"FOCUS25\""
+    },
+    "value": "$ENV:LAB_COUPON"
+  },
+  {
+    "kind": "click",
+    "target": {
+      "role": "button",
+      "name": "Apply",
+      "description": "button \"Apply\""
+    }
+  },
+  {
+    "kind": "assertVisible",
+    "text": "Coupon FOCUS25 applied"
+  },
+  {
+    "kind": "assertNotVisible",
+    "text": "No coupon applied."
+  },
+  {
+    "kind": "screenshot",
+    "label": "coupon-focus25-applied"
+  },
+  {
+    "kind": "assertNoConsoleErrors"
+  }
+]

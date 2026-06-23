@@ -1,0 +1,28 @@
+[
+  {
+    "kind": "navigate",
+    "url": "/lab"
+  },
+  {
+    "kind": "click",
+    "target": {
+      "role": "button",
+      "name": "Run diagnostics",
+      "description": "button \"Run diagnostics\""
+    }
+  },
+  {
+    "kind": "assertConsoleMessage",
+    "includes": [
+      "DIAG:[scout-lab]"
+    ],
+    "type": "log"
+  },
+  {
+    "kind": "assertNoConsoleErrors"
+  },
+  {
+    "kind": "screenshot",
+    "label": "diagnostics-log-verified"
+  }
+]

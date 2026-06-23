@@ -100,7 +100,7 @@
   "lab.h1Focus": "and the spec that proves it",
   "lab.intro": "Each card below is a working surface you can exercise yourself, paired with the exact .scout.md scenario Scout replays against this very page. The spec on the page is the spec that runs — one file, no drift.",
   "lab.boardTitle": "Verdict board",
-  "lab.boardNote": "These verdicts come from Scout replaying the scenarios below against the deployed Lab. The board wires to the CI pipeline next — until then it reads the last recorded run.",
+  "lab.boardNote": "These verdicts come from Scout replaying the scenarios below against the deployed Lab on every pull request — the same run that gates the deploy. The board reads the latest result live; if it can't reach the store, it shows the last run recorded into the repo.",
   "lab.boardLineDefault": "Awaiting the first recorded run.",
   "lab.boardScenarios": "Scenarios",
   "lab.verdictPending": "pending",

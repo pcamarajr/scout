@@ -1,0 +1,125 @@
+# Dogfood gate — Scout verifies the Scout marketing site, on the real deploy.
+#
+# This is deliverable #2 of the marketing-site track (plan #435): Scout replays
+# the Lab's own `.scout.md` suite against the immutable Vercel deployment, as a
+# BLOCKING gate, and on the production-bound (main) deploy promotes the same
+# bytes to production — no rebuild.
+#
+# ── How it is wired ───────────────────────────────────────────────────────────
+# Trigger: Vercel posts a GitHub `deployment_status` for every deploy. We act on
+# the `success` ones and replay against `target_url` (the immutable URL of that
+# exact build). Because the run is keyed to the deployment's commit SHA, its
+# check appears on the PR and can be made a REQUIRED status check (branch
+# protection) so a red board blocks merge.
+#
+# Replay is `scout go --no-heal`: deterministic, ZERO LLM, no API key in CI. The
+# committed scripts under packages/site/.scout/scripts/lab/*.json are the source
+# of truth; they were recorded once by an AI run and replay against any base URL
+# (navigate steps are base-relative).
+#
+# ── Public board vs PR gate ───────────────────────────────────────────────────
+# Every successful preview is GATED (blocks the PR). Only the main-branch deploy
+# WRITES the public verdict board (the orphan `verdicts` branch the Lab island
+# reads) and PROMOTES to production — so the public board always reflects what is
+# shipped, never a transient PR preview.
+#
+# ── Required Vercel project settings (maintainer — one-time) ──────────────────
+#   • Disable automatic Production deployments on push to `main` (Settings →
+#     Git → Production Branch: turn off auto-deploy / "Ignored Build Step" so
+#     main deploys as a Preview). CI promotes the gated build instead — without
+#     this, prod would deploy twice.
+#   • Repository secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID.
+# Until those land, the promote step is a guarded no-op (it skips when
+# VERCEL_TOKEN is absent); the gate itself needs no secrets.
+name: dogfood
+
+on:
+  deployment_status:
+
+permissions:
+  contents: write # push the orphan `verdicts` branch
+  statuses: write # report the gate status on the commit
+
+concurrency:
+  group: dogfood-${{ github.event.deployment_status.target_url }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    # Only successful deploys carry a usable URL. Skip pending/error/failure.
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    env:
+      # The immutable URL of the exact build Vercel just finished.
+      SCOUT_BASE_URL: ${{ github.event.deployment_status.target_url }}
+      # The Lab's environment-interpolation surface resolves $ENV:LAB_COUPON.
+      LAB_COUPON: FOCUS25
+      # main-branch deploys are production-bound: they write the board + promote.
+      IS_MAIN: ${{ github.event.deployment.ref == 'main' || github.event.deployment.ref == 'refs/heads/main' }}
+      # Job-level so the promote step can gate on `env.VERCEL_TOKEN != ''` — a
+      # step cannot read a secret directly in its own `if:`. Absent until the
+      # maintainer adds the secrets, which makes promote a clean no-op.
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build the Scout CLI
+        run: npm run build -w @pcamarajr/scout
+
+      - name: Install the replay browser
+        run: npx playwright install --with-deps chromium
+        working-directory: packages/cli
+
+      - name: Replay the Lab suite against the deploy (no LLM)
+        id: replay
+        continue-on-error: true # capture the verdict; the gate step decides pass/fail
+        working-directory: packages/site
+        run: node ../cli/dist/cli.js go --no-heal
+
+      - name: Build the verdict report
+        if: always()
+        working-directory: packages/site
+        run: |
+          node ../cli/dist/cli.js report --json > verdicts.json
+          {
+            echo "## 🔭 Scout dogfood — replay against \`$SCOUT_BASE_URL\`"
+            echo
+            node ../cli/dist/cli.js report
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish the public board (main only)
+        if: always() && env.IS_MAIN == 'true'
+        working-directory: packages/site
+        run: |
+          tmp="$(mktemp -d)"
+          cp verdicts.json "$tmp/verdicts.json"
+          cd "$tmp"
+          git init -q
+          git checkout -q -b verdicts
+          git add verdicts.json
+          git -c user.email='github-actions[bot]@users.noreply.github.com' \
+              -c user.name='github-actions[bot]' \
+              commit -qm "chore(verdicts): ${GITHUB_SHA::12} on $(date -u +%FT%TZ)"
+          # Single-commit orphan branch — force-push keeps it tiny (board reads raw).
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" verdicts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote the gated build to production (main only, on green)
+        if: env.IS_MAIN == 'true' && steps.replay.outcome == 'success' && env.VERCEL_TOKEN != ''
+        run: npx vercel promote "$SCOUT_BASE_URL" --token="$VERCEL_TOKEN" --yes
+
+      - name: Gate — fail if any scenario is not verified
+        working-directory: packages/site
+        run: node ../cli/dist/cli.js report --check

@@ -575,9 +575,18 @@ const QUICKSTART = [
 
 <script>
   // ── verdict board island ──────────────────────────────────────────────
-  // Reads the CI contract (ReportData) from /lab/verdicts.json and rewrites
-  // each card's verdict plate + the board counts. On any failure the static
-  // "pending" plates stay — never a blank board.
+  // Reads the CI contract (ReportData = `scout report --json`) and rewrites
+  // each card's verdict plate + the board counts.
+  //
+  // Two tiers, so updating verdicts never triggers a site rebuild (plan #435):
+  //   1. LIVE — the mutable store the dogfood pipeline writes on every run: the
+  //      orphan `verdicts` branch, served raw + CORS-open by GitHub.
+  //   2. SEED — the build-time `/lab/verdicts.json` shipped in dist (the last
+  //      run recorded into the repo). Used when the live store is unreachable.
+  // If both fail, the static "pending" plates stay — never a blank board.
+  const VERDICTS_LIVE_URL =
+    "https://raw.githubusercontent.com/pcamarajr/scout/verdicts/verdicts.json";
+  const VERDICTS_SEED_URL = "/lab/verdicts.json";
   type Status = "verified" | "partial" | "failed" | "blocked" | "pending";
   const GLYPH: Record<Status, string> = {
     verified: "✅",
@@ -594,10 +603,21 @@ const QUICKSTART = [
     "plate--pending",
   ];
 
+  async function fetchVerdicts(url: string) {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`${url} → ${res.status}`);
+    return res.json();
+  }
+
   async function loadVerdicts() {
-    const res = await fetch("/lab/verdicts.json", { cache: "no-store" });
-    if (!res.ok) return;
-    const data = await res.json();
+    // Prefer the live store; fall back to the build-time seed. A throw from
+    // both lands in the .catch() below, leaving the static pending plates.
+    let data;
+    try {
+      data = await fetchVerdicts(VERDICTS_LIVE_URL);
+    } catch {
+      data = await fetchVerdicts(VERDICTS_SEED_URL);
+    }
 
     for (const s of data.scenarios ?? []) {
       const slot = document.querySelector<HTMLElement>(
