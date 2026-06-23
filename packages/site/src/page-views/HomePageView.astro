@@ -13,12 +13,12 @@ import VerdictPlate from "@components/VerdictPlate.astro";
 import VerdictTable from "@components/VerdictTable.astro";
 import BaseLayout from "@layouts/BaseLayout.astro";
 import { createTranslator } from "@lib/i18n";
-import { buildLocaleUrl } from "@lib/urls";
+import { buildDocsHomeUrl } from "@lib/urls";
 
 const locale = Astro.currentLocale ?? "en";
 const tl = createTranslator(Astro.currentLocale);
 
-const docsHref = buildLocaleUrl(locale, "docs");
+const docsHref = buildDocsHomeUrl(locale);
 
 // The "now" manifesto column carries the lens tint as the resolving step.
 const COLUMNS = [

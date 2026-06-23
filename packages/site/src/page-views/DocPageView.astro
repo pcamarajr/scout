@@ -10,7 +10,7 @@ import type { CollectionEntry } from "astro:content";
 import { render } from "astro:content";
 import DocsLayout from "@layouts/DocsLayout.astro";
 import { createTranslator } from "@lib/i18n";
-import { buildLocaleUrl } from "@lib/urls";
+import { buildDocsHomeUrl } from "@lib/urls";
 
 interface Props {
   entry: CollectionEntry<"docs">;
@@ -23,7 +23,7 @@ const locale = Astro.currentLocale ?? "en";
 const tl = createTranslator(Astro.currentLocale);
 
 const slug = entry.id.replace(/^[^/]+\//, "");
-const docsHref = buildLocaleUrl(locale, "docs");
+const docsHref = buildDocsHomeUrl(locale);
 const label = entry.data.sidebarLabel ?? entry.data.title;
 ---
 
