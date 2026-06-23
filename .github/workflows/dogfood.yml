@@ -114,6 +114,20 @@ jobs:
             {"x-vercel-protection-bypass":"${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}","x-vercel-set-bypass-cookie":"true"}
         run: node ../cli/dist/cli.js go --no-heal
 
+      - name: Validate the promote credentials (read-only, non-blocking)
+        # Runs on every gate (incl. PR previews) when the promote secrets are
+        # present, so we confirm VERCEL_TOKEN/ORG_ID/PROJECT_ID resolve BEFORE a
+        # main merge depends on them — a stalled promote would otherwise freeze
+        # prod silently. Read-only: `vercel pull` just fetches project config.
+        if: always() && env.VERCEL_TOKEN != ''
+        continue-on-error: true
+        run: |
+          if npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN" >/dev/null 2>&1; then
+            echo "✓ promote credentials resolve (token + org + project)"
+          else
+            echo "::warning::Promote credentials did NOT resolve — check VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID. Promote on main would fail and prod would not update."
+          fi
+
       - name: Build the verdict report
         if: always()
         working-directory: packages/site
