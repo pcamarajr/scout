@@ -38,6 +38,13 @@ export interface ScoutConfig {
    * ai-sdk for other providers).
    */
   engine?: "agent-sdk" | "ai-sdk";
+  /**
+   * Extra HTTP headers sent on every browser request (AI runs and replay
+   * alike). Use to reach a protected target — e.g. a Vercel preview behind
+   * Deployment Protection needs `x-vercel-protection-bypass`. Override per
+   * CI/worktree with SCOUT_EXTRA_HEADERS (a JSON object string).
+   */
+  headers?: Record<string, string>;
   profiles: Record<string, ScoutProfile>;
 }
 
@@ -61,6 +68,32 @@ export interface ConfigOverrides {
   recordVideo?: boolean;
 }
 
+/**
+ * Parse SCOUT_EXTRA_HEADERS — a JSON object of header→value, all strings.
+ * Throws on malformed input or non-string values so a typo fails loud rather
+ * than silently dropping the bypass header (and leaving the run hitting a login
+ * wall). An empty object is valid and yields no headers.
+ */
+export function parseHeadersEnv(raw: string): Record<string, string> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(`SCOUT_EXTRA_HEADERS must be a JSON object, e.g. '{"x-vercel-protection-bypass":"…"}'. Got: ${raw}`);
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`SCOUT_EXTRA_HEADERS must be a JSON object of string values, not ${Array.isArray(parsed) ? "an array" : typeof parsed}.`);
+  }
+  const headers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value !== "string") {
+      throw new Error(`SCOUT_EXTRA_HEADERS["${key}"] must be a string, got ${typeof value}.`);
+    }
+    headers[key] = value;
+  }
+  return headers;
+}
+
 /** Precedence: overrides (flag) > env (SCOUT_*) > scout.config.json > defaults. */
 export function loadConfig(cwd = process.cwd(), overrides: ConfigOverrides = {}): ScoutConfig {
   const file = path.join(cwd, CONFIG_FILE);
@@ -75,6 +108,9 @@ export function loadConfig(cwd = process.cwd(), overrides: ConfigOverrides = {})
   if (process.env.SCOUT_RECORD_VIDEO === "1") merged.recordVideo = true;
   if (process.env.SCOUT_ENGINE === "agent-sdk" || process.env.SCOUT_ENGINE === "ai-sdk") {
     merged.engine = process.env.SCOUT_ENGINE;
+  }
+  if (process.env.SCOUT_EXTRA_HEADERS) {
+    merged.headers = { ...merged.headers, ...parseHeadersEnv(process.env.SCOUT_EXTRA_HEADERS) };
   }
   if (overrides.baseUrl) merged.baseUrl = overrides.baseUrl;
   if (overrides.recordVideo) merged.recordVideo = true;

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { CONFIG_FILE, loadConfig } from "../src/config.js";
+import { CONFIG_FILE, loadConfig, parseHeadersEnv } from "../src/config.js";
 
 function tmpProject(config?: object): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "scout-config-"));
@@ -78,4 +78,32 @@ test("recordVideo defaults off; SCOUT_RECORD_VIDEO and --record-video enable it"
 test("videoSpeed defaults to 0.4 and is overridable via config file", () => {
   assert.equal(loadConfig(tmpProject()).videoSpeed, 0.4);
   assert.equal(loadConfig(tmpProject({ videoSpeed: 1 })).videoSpeed, 1);
+});
+
+test("headers default to undefined; config file sets them", () => {
+  withEnv({ SCOUT_EXTRA_HEADERS: undefined }, () => {
+    assert.equal(loadConfig(tmpProject()).headers, undefined);
+    assert.deepEqual(loadConfig(tmpProject({ headers: { "x-vercel-protection-bypass": "s3cret" } })).headers, {
+      "x-vercel-protection-bypass": "s3cret",
+    });
+  });
+});
+
+test("SCOUT_EXTRA_HEADERS merges over (and wins against) the config file", () => {
+  withEnv({ SCOUT_EXTRA_HEADERS: '{"x-vercel-protection-bypass":"from-env","x-extra":"e"}' }, () => {
+    const config = loadConfig(tmpProject({ headers: { "x-vercel-protection-bypass": "from-file", "x-keep": "k" } }));
+    assert.deepEqual(config.headers, {
+      "x-vercel-protection-bypass": "from-env", // env wins
+      "x-keep": "k", // file-only header preserved
+      "x-extra": "e", // env-only header added
+    });
+  });
+});
+
+test("parseHeadersEnv accepts an object of strings and rejects malformed input", () => {
+  assert.deepEqual(parseHeadersEnv('{"a":"1","b":"2"}'), { a: "1", b: "2" });
+  assert.deepEqual(parseHeadersEnv("{}"), {});
+  assert.throws(() => parseHeadersEnv("not json"), /must be a JSON object/);
+  assert.throws(() => parseHeadersEnv('["a","b"]'), /must be a JSON object/);
+  assert.throws(() => parseHeadersEnv('{"a":1}'), /must be a string/);
 });
