@@ -10,7 +10,8 @@
 //   - `translationKey` links the same entry across locales.
 //   - `tags: string[]` stays flexible — never a fixed category enum.
 //   - `draft: true` keeps an entry out of listings, feeds, and sitemaps.
-import { defineCollection, z } from "astro:content";
+import { defineCollection } from "astro:content";
+import { z } from "astro:schema";
 import { glob } from "astro/loaders";
 
 // Single source of truth for the lang enum — mirror of astro.config.ts locales.

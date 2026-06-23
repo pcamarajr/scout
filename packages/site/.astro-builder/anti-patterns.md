@@ -40,7 +40,6 @@ These OVERRIDE or extend the canonical list for this monorepo and this site:
 | Hardcoding the origin (`https://scout.pcamarajr.dev`) anywhere but `astro.config.ts` | Derive absolute URLs from `Astro.site` in `BaseLayout` |
 | Touching the repo-root `CLAUDE.md`, root `package.json` scripts, `commitlint.config.js`, `.husky/`, or `packages/cli/` | Keep all site work under `packages/site/` |
 | Adding an SSR adapter | Keep `output: "static"` — a Vercel static build needs no adapter; the future verdict-board island is a client-side fetch (static-compatible) |
-| Importing `src/styles/tokens.reference.css` | It is a non-imported reference copy of `design/tokens.css` for the F0b graft step |
 | Selling determinism / "0 LLM on replay" as the moat | Pitch the real moat combination (see `style-guide.md` honesty guardrails) |
 | Verdict color as a general accent; mono as the identity typeface; warm/dark ground | See the design anti-patterns in `design-system.md` |
 

@@ -122,8 +122,6 @@ All CSS work follows the **`css-conventions` skill** from the `astro-builder` pl
   CSS custom properties in `src/styles/global.css`. No raw hex/rgb/px values in component CSS.
 - **Single global stylesheet:** `src/styles/global.css` with `@layer reset, tokens, base,
   utilities`. No other global CSS files. No CSS Modules, no `<style is:global>`.
-  (`src/styles/tokens.reference.css` is a non-imported reference copy of `design/tokens.css`
-  for the F0b faithful-graft step — never import it.)
 - **Component CSS** lives in Astro scoped `<style>` blocks only.
 - **No Tailwind, no utility-class libraries, no CSS-in-JS, no preprocessors.**
 - **Interactivity ladder:** before adding `client:*`, walk CSS → vanilla `<script>` → island.

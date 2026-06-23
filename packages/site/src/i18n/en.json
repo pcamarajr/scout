@@ -7,6 +7,7 @@
   "footer.docs": "Documentation",
   "footer.npm": "npm",
   "footer.github": "GitHub",
+  "footer.builtWith": "Built with",
   "home.eyebrow": "Self-healing browser QA",
   "home.title": "Delegate the build. Keep the outcome in focus.",
   "home.intro": "Code got cheap — agents write it on demand. What stays scarce is judgment: does the product do what you pictured? Scout is the gate that proves it, from one plain-language sentence, and re-checks itself when the UI moves.",
