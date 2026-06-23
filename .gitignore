@@ -10,3 +10,5 @@ dist/
 
 # Generated at pack time from the root README (prepack) — the npm page mirrors the showcase
 packages/cli/README.md
+.vercel
+.env*
