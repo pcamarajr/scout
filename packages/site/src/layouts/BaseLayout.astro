@@ -21,7 +21,7 @@
 import "../styles/global.css";
 import ModeToggle from "@components/ModeToggle.astro";
 import { createTranslator } from "@lib/i18n";
-import { buildDocsHomeUrl, buildHomeUrl } from "@lib/urls";
+import { buildDocsHomeUrl, buildHomeUrl, buildLocaleUrl } from "@lib/urls";
 
 interface Props {
   title: string;
@@ -142,7 +142,7 @@ const jsonLd =
           <a href={`${buildHomeUrl(locale)}#manifesto`}>{tl("nav.manifesto")}</a>
           <a href={`${buildHomeUrl(locale)}#feature`}>{tl("nav.howItWorks")}</a>
           <a href={buildLocaleUrl(locale, "lab")}>{tl("nav.lab")}</a>
-          <a href={buildLocaleUrl(locale, "docs")}>{tl("nav.docs")}</a>
+          <a href={buildDocsHomeUrl(locale)}>{tl("nav.docs")}</a>
           <a href="https://github.com/pcamarajr/scout" rel="noopener">{tl("nav.github")}</a>
           <ModeToggle />
         </nav>
@@ -155,7 +155,7 @@ const jsonLd =
       <div class="wrap footer-inner">
         <p class="tagline">{tl("footer.tagline")}</p>
         <nav aria-label={tl("footer.docs")} class="footer-nav">
-          <a href={buildLocaleUrl(locale, "docs")}>{tl("footer.docs")}</a>
+          <a href={buildDocsHomeUrl(locale)}>{tl("footer.docs")}</a>
           <a href={buildLocaleUrl(locale, "lab")}>{tl("footer.lab")}</a>
           <a href="https://www.npmjs.com/package/@pcamarajr/scout">{tl("footer.npm")}</a>
           <a href="https://github.com/pcamarajr/scout">{tl("footer.github")}</a>
