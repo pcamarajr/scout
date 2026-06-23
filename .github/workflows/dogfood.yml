@@ -28,9 +28,12 @@
 #     Git → Production Branch: turn off auto-deploy / "Ignored Build Step" so
 #     main deploys as a Preview). CI promotes the gated build instead — without
 #     this, prod would deploy twice.
-#   • Repository secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID.
-# Until those land, the promote step is a guarded no-op (it skips when
-# VERCEL_TOKEN is absent); the gate itself needs no secrets.
+#   • Repository secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID (promote)
+#     and VERCEL_AUTOMATION_BYPASS_SECRET (the gate — so Scout gets past
+#     Deployment Protection; generate it in Vercel → Settings → Deployment
+#     Protection → Protection Bypass for Automation).
+# Until VERCEL_TOKEN lands the promote step is a guarded no-op. Until the bypass
+# secret lands the gate replays against the login wall and (correctly) fails.
 name: dogfood
 
 on:
@@ -85,6 +88,15 @@ jobs:
         id: replay
         continue-on-error: true # capture the verdict; the gate step decides pass/fail
         working-directory: packages/site
+        # The deploy sits behind Vercel Deployment Protection (the site is gated
+        # until launch). Scout sends the bypass header so it reaches the app
+        # instead of the login wall; the cookie variant covers popups/new tabs.
+        # Needs the VERCEL_AUTOMATION_BYPASS_SECRET repo secret (generate it in
+        # Vercel → Settings → Deployment Protection → Protection Bypass for
+        # Automation). Requires the CLI header support from #41.
+        env:
+          SCOUT_EXTRA_HEADERS: >-
+            {"x-vercel-protection-bypass":"${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}","x-vercel-set-bypass-cookie":"true"}
         run: node ../cli/dist/cli.js go --no-heal
 
       - name: Build the verdict report
