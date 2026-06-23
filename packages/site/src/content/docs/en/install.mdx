@@ -1,0 +1,52 @@
+---
+title: "Install"
+description: "Add Scout to a project in three commands: install the package, scaffold the config and agent files with scout init, and confirm your AI credentials with scout doctor."
+sidebarLabel: "Install"
+order: 2
+group: "Getting started"
+tags: ["install", "setup", "getting-started"]
+translationKey: "install"
+lang: en
+draft: false
+---
+
+Scout drops into an existing project with `npm i` and two files. There is no service to sign up for and no dashboard to host — the suite lives in your repo, next to the code it guards.
+
+## 1. Install the package
+
+```bash
+npm i -D @pcamarajr/scout
+```
+
+It's a dev dependency: Scout runs in development and CI, never in your shipped app.
+
+## 2. Scaffold with `scout init`
+
+```bash
+scout init            # prompts for your app's base URL on a TTY
+scout init --base-url http://localhost:3000 --yes   # or skip the prompt
+```
+
+`init` writes everything Scout and your coding agent need:
+
+- **`scout.config.json`** — base URL, model, auth profiles. See the [config file reference](/docs/config/) for every key.
+- **`.scout/`** — where specs, recorded scripts, and run artifacts live.
+- **`AGENTS.md`** + a Claude Code skill + a Cursor rule — so the agent that builds your features knows how to drive Scout. See [AI agents & MCP](/docs/ai-agents/).
+
+It's idempotent: re-run `scout init` anytime to upgrade the scaffolded agent files. It never overwrites an existing `scout.config.json`.
+
+## 3. Confirm credentials with `scout doctor`
+
+The first verification of a scenario (and any self-heal) is driven by an AI agent, so Scout needs one provider configured. Deterministic replay afterward needs none.
+
+```bash
+scout doctor
+```
+
+If you've signed into Claude Code, this should report ✓ with nothing else to set — that's the zero-config happy path. Otherwise it prints exactly which key to export. Full detail in [Providers & credentials](/docs/providers/).
+
+---
+
+That's the whole setup. You've added a quality gate that costs one sentence per scenario and re-checks itself when the UI moves — now point it at your first flow.
+
+**Next:** [Your first scenario →](/docs/first-scenario/)

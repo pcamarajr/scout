@@ -1,0 +1,40 @@
+---
+title: "How verification works"
+description: "The mental model behind Scout: an agent verifies your intent once, records the path it took, replays it deterministically, and re-aims when the UI drifts. Why a runner failure is never an app verdict."
+sidebarLabel: "How verification works"
+order: 6
+group: "Core concepts"
+tags: ["concepts", "self-healing", "replay", "determinism"]
+translationKey: "how-verification-works"
+lang: en
+draft: false
+---
+
+Code used to be the constraint; agents now write it on demand, so code is the cheap part. What stays scarce is judgment — does the product actually do what you pictured? Scout is the gate for that question. Here is the loop that answers it, run after run.
+
+## The loop
+
+1. **Verify.** On the first run, an agent drives a real browser and confirms your plain-language intent holds. It judges behavior — "the paywall must *not* appear" — not just clicks.
+2. **Record.** Scout captures the path the agent actually took as a deterministic script: the steps that worked, plus the assertions that made it a real test.
+3. **Replay.** Every later run follows that recorded path with no agent in the loop — fast, free, identical.
+4. **Heal.** When the UI drifts and a step stops holding, the agent returns, re-verifies the intent, re-records the path, and hands you a `partial` to review.
+
+The intent — your sentence — is the fixed point. The script underneath it is allowed to change, because Scout can always re-derive a working path from the outcome you asked for.
+
+## Self-healing and re-aim
+
+A broken step is not a failed test by default — it's a signal that the page moved. Rather than fail the run, Scout re-aims: it brings the agent back to re-verify the same intent against the new UI and records a fresh script. The result comes back as `partial` so a human signs off on the new path before trusting it — the heal is automatic, the approval is not.
+
+This is what makes Scout safe to point at code an agent just wrote: the suite repairs itself when the interface changes, instead of demanding someone hand-patch selectors.
+
+## Recorded scripts
+
+The script is a derived sidecar, never something you author. Because it's recorded from actions that actually worked — accessible roles and names when unique, a CSS path as fallback — there are no hallucinated selectors. Assertions are recorded as tools (DOM/URL, network shape, console), so a replay re-checks behavior rather than just re-clicking. Scout prunes redundant agent retries before caching, so the committed script is a clean, reviewable diff. See [Architecture](/docs/architecture/) for the recording internals.
+
+## Determinism, in its place
+
+Replaying without an LLM makes later runs fast, free, and repeatable — a genuine convenience, and what lets Scout sit in CI as a cheap gate. But determinism is the *consequence* of the loop, not the pitch: plenty of tools replay deterministically. What's different here is the combination — you describe the outcome in one sentence, the suite verifies it in a real browser, and it heals itself when the UI moves. Determinism is how replay stays cheap; it isn't why Scout is worth having.
+
+## A runner failure is never an app verdict
+
+If an AI run dies for an infrastructure reason — the agent runs out of turns, the SDK errors, a subprocess goes dead — Scout never reports that as a judgment about your app. It first forces a verdict from what was already observed, then retries the whole run once with a fresh browser, and only if that still fails reports `blocked` with the cause named in `result.json`. A `blocked` means "Scout never got to observe," not "your feature is broken." The details are in [Architecture](/docs/architecture/); the verdicts themselves are in [Verdicts & exit codes](/docs/verdicts/).

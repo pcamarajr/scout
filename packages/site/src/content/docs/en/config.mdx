@@ -1,0 +1,56 @@
+---
+title: "Config file"
+description: "Every key in scout.config.json in one place — baseUrl, model, engine, profiles, recordVideo, videoSpeed — plus the environment variables that override them at run time."
+sidebarLabel: "Config file"
+order: 11
+group: "Reference"
+tags: ["config", "reference", "scout.config.json"]
+translationKey: "config"
+lang: en
+draft: false
+---
+
+`scout.config.json` lives at your project root and is created by [`scout init`](/docs/install/). It holds the few things Scout needs that aren't a scenario: where your app runs, which model to verify with, and the auth profiles your flows use.
+
+```jsonc
+// scout.config.json
+{
+  "baseUrl": "http://localhost:3000",
+  "model": "claude-sonnet-4-6",
+  "engine": "agent-sdk",
+  "recordVideo": false,
+  "videoSpeed": 0.4,
+  "profiles": {
+    "anon": { "description": "Logged-out session" },
+    "subscriber": {
+      "description": "User with active subscription",
+      "env": ["QA_SUB_EMAIL", "QA_SUB_PASSWORD"]
+    }
+  }
+}
+```
+
+## Keys
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `baseUrl` | string | — | The URL every scenario is relative to. Overridable per run (see precedence below). |
+| `model` | string | `claude-sonnet-4-6` | The model used for verification and healing. Scout infers the provider and engine from it — see [Providers & credentials](/docs/providers/). |
+| `engine` | `"agent-sdk"` \| `"ai-sdk"` | inferred | Forces the run engine. Anthropic defaults to `agent-sdk`; Google/OpenAI use `ai-sdk`. Usually best left unset. |
+| `recordVideo` | boolean | `false` | When `true`, a verified scenario also produces a paced preview MP4. Needs `ffmpeg`. See [Run artifacts](/docs/artifacts/). |
+| `videoSpeed` | number `(0,1]` | `0.4` | Playback pacing for the preview video. `0.4` is slower (easier to watch); `1` is natural speed. |
+| `profiles` | object | — | Named auth profiles. Each has a `description` and an optional `env` array naming the env vars its login needs. See [Auth profiles & secrets](/docs/auth/). |
+
+## Environment overrides
+
+Some keys can be overridden at run time without editing the file — handy for CI and parallel worktrees:
+
+| Variable | Overrides | Notes |
+|---|---|---|
+| `SCOUT_BASE_URL` | `baseUrl` | Precedence: `--base-url` flag > `SCOUT_BASE_URL` > config. |
+| `SCOUT_ENGINE` | `engine` | `agent-sdk` or `ai-sdk`. Note: `ai-sdk` can't reuse a Claude Code session — Anthropic then needs `ANTHROPIC_API_KEY`. |
+| `SCOUT_RECORD_VIDEO` | `recordVideo` | Set to `1` to enable for one run. |
+| `FFMPEG_PATH` | — | Path to `ffmpeg` if it isn't on `PATH`. |
+| `SCOUT_VIDEO_FONT` | — | Path to a `.ttf` for the burned-in video captions (otherwise autodetected). |
+
+Never put a literal secret in the config. Application secrets belong in `profiles.<name>.env` and `$ENV:` placeholders — see [Auth profiles & secrets](/docs/auth/).

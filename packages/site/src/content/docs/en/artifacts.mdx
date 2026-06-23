@@ -1,4 +1,14 @@
-# Run artifacts
+---
+title: "Run artifacts"
+description: "What each run records — trace, screenshots, report, structured result, transcript — and the opt-in preview video that turns a verified flow into a GitHub-playable clip for PR review."
+sidebarLabel: "Run artifacts"
+order: 17
+group: "Reference"
+tags: ["artifacts", "trace", "video"]
+translationKey: "artifacts"
+lang: en
+draft: false
+---
 
 Each run records in `.scout/runs/<timestamp>-<slug>/` (gitignored):
 
@@ -20,7 +30,7 @@ Opt-in, off by default (zero overhead otherwise). When enabled, a **verified** s
 - Pacing via `videoSpeed` in `scout.config.json` (`(0,1]`, default `0.4` = slower; `1` = natural speed).
 - **A verified scenario never yields zero video:** if the paced replay trips on timing the authoritative run handled fine, Scout records a non-paced fallback clip instead. The verdict is never affected.
 - Requires `ffmpeg` on `PATH` (or `FFMPEG_PATH`). Missing it isn't fatal — Scout keeps the raw `.webm` and warns with an install hint. Font is autodetected, or set `SCOUT_VIDEO_FONT` to a `.ttf`.
-- Enable per-run with `--record-video`, via `SCOUT_RECORD_VIDEO=1`, or `"recordVideo": true` in the config.
+- Enable per-run with `--record-video`, via `SCOUT_RECORD_VIDEO=1`, or `"recordVideo": true` in the config (see the [config file reference](/docs/config/)).
 
 ## Trace vs video
 

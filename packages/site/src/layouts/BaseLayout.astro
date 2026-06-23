@@ -121,30 +121,152 @@ const jsonLd =
   </head>
   <body>
     <a href="#main" class="skip-link">{tl("layout.skipToContent")}</a>
-    <header>
-      <nav aria-label={tl("layout.mainNav")}>
-        <a href={buildHomeUrl(locale)}>{tl("nav.home")}</a>
-        <a href={`${buildHomeUrl(locale)}#manifesto`}>{tl("nav.manifesto")}</a>
-        <a href={`${buildHomeUrl(locale)}#feature`}>{tl("nav.howItWorks")}</a>
-        <a href={buildLocaleUrl(locale, "docs")}>{tl("nav.docs")}</a>
-        <a href="https://github.com/pcamarajr/scout" rel="noopener">{tl("nav.github")}</a>
-        <ModeToggle />
-      </nav>
+    <header class="topbar">
+      <div class="wrap topbar-inner">
+        <a class="brand" href={buildHomeUrl(locale)} aria-label="Scout home">
+          {/* Calibrated-instrument glyph — semantic tokens for the lens/brass
+              signal, decorative geometry literal (matches HeroInstrument). */}
+          <svg class="glyph" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <circle cx="14" cy="14" r="12.5" stroke="var(--color-primary)" stroke-width="1.2"></circle>
+            <circle cx="14" cy="14" r="7" stroke="var(--color-text-subtle)" stroke-width="1"></circle>
+            <circle cx="14" cy="14" r="2.2" fill="var(--color-brass)"></circle>
+            <line x1="14" y1="0" x2="14" y2="5" stroke="var(--color-text-subtle)" stroke-width="1"></line>
+            <line x1="14" y1="23" x2="14" y2="28" stroke="var(--color-text-subtle)" stroke-width="1"></line>
+            <line x1="0" y1="14" x2="5" y2="14" stroke="var(--color-text-subtle)" stroke-width="1"></line>
+            <line x1="23" y1="14" x2="28" y2="14" stroke="var(--color-text-subtle)" stroke-width="1"></line>
+          </svg>
+          <span class="wordmark">Scout</span>
+        </a>
+        <nav aria-label={tl("layout.mainNav")} class="topnav">
+          <a href={buildHomeUrl(locale)}>{tl("nav.home")}</a>
+          <a href={`${buildHomeUrl(locale)}#manifesto`}>{tl("nav.manifesto")}</a>
+          <a href={`${buildHomeUrl(locale)}#feature`}>{tl("nav.howItWorks")}</a>
+          <a href={buildLocaleUrl(locale, "docs")}>{tl("nav.docs")}</a>
+          <a href="https://github.com/pcamarajr/scout" rel="noopener">{tl("nav.github")}</a>
+          <ModeToggle />
+        </nav>
+      </div>
     </header>
     <main id="main">
       <slot />
     </main>
-    <footer>
-      <p>{tl("footer.tagline")}</p>
-      <nav aria-label={tl("footer.docs")}>
-        <a href={buildLocaleUrl(locale, "docs")}>{tl("footer.docs")}</a>
-        <a href="https://www.npmjs.com/package/@pcamarajr/scout">{tl("footer.npm")}</a>
-        <a href="https://github.com/pcamarajr/scout">{tl("footer.github")}</a>
-      </nav>
-      <p class="colophon">
-        {tl("footer.builtWith")}{" "}
-        <a href="https://github.com/pcamarajr/content-stack" rel="noopener">astro-builder</a>
-      </p>
+    <footer class="site-footer">
+      <div class="wrap footer-inner">
+        <p class="tagline">{tl("footer.tagline")}</p>
+        <nav aria-label={tl("footer.docs")} class="footer-nav">
+          <a href={buildLocaleUrl(locale, "docs")}>{tl("footer.docs")}</a>
+          <a href="https://www.npmjs.com/package/@pcamarajr/scout">{tl("footer.npm")}</a>
+          <a href="https://github.com/pcamarajr/scout">{tl("footer.github")}</a>
+        </nav>
+        <p class="colophon">
+          {tl("footer.builtWith")}{" "}
+          <a href="https://github.com/pcamarajr/content-stack" rel="noopener">astro-builder</a>
+        </p>
+      </div>
     </footer>
   </body>
 </html>
+
+<style>
+  /* ── topbar ── sticky, paper-toned, aligned to the shared .wrap column */
+  .topbar {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+    backdrop-filter: saturate(1.4) blur(8px);
+    border-block-end: 1px solid var(--color-border);
+  }
+
+  .topbar-inner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-lg);
+    block-size: 60px;
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-sm);
+    color: var(--color-text);
+    text-decoration: none;
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    letter-spacing: -0.01em;
+  }
+
+  .brand:hover {
+    color: var(--color-text);
+    text-decoration: none;
+  }
+
+  .glyph {
+    inline-size: 26px;
+    block-size: 26px;
+    flex: none;
+  }
+
+  .topnav {
+    display: flex;
+    align-items: center;
+    gap: var(--space-lg);
+    margin-inline-start: auto;
+  }
+
+  .topnav a {
+    color: var(--color-text-muted);
+    text-decoration: none;
+    font-size: var(--text-sm);
+  }
+
+  .topnav a:hover {
+    color: var(--color-text);
+    text-decoration: none;
+  }
+
+  @media (max-width: 720px) {
+    .topnav {
+      gap: var(--space-md);
+    }
+    .topnav a {
+      font-size: var(--text-xs);
+    }
+  }
+
+  /* ── footer ── */
+  .site-footer {
+    margin-block-start: var(--space-3xl);
+    border-block-start: 1px solid var(--color-border);
+    padding-block: var(--space-2xl);
+  }
+
+  .footer-inner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+  }
+
+  .tagline {
+    margin: 0;
+    max-width: 42ch;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+
+  .footer-nav {
+    display: flex;
+    gap: var(--space-md);
+    font-size: var(--text-sm);
+  }
+
+  .colophon {
+    margin: 0;
+    margin-inline-start: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.06em;
+    color: var(--color-text-subtle);
+  }
+</style>

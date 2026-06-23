@@ -1,4 +1,14 @@
-# CLI reference
+---
+title: "CLI reference"
+description: "Every Scout command and flag — init, create, list, go, report, doctor, migrate, login, mcp — with the report --json shape and the --check gate primitive."
+sidebarLabel: "CLI reference"
+order: 10
+group: "Reference"
+tags: ["cli", "commands", "reference"]
+translationKey: "cli"
+lang: en
+draft: false
+---
 
 ```
 scout init [--base-url <url>] [-y|--yes]   # bootstrap: scout.config.json, .scout/, AI agent files
@@ -14,7 +24,7 @@ scout mcp                                  # MCP server (stdio)
 
 ## `scout init`
 
-Creates `scout.config.json` (prompts for the base URL on a TTY; `--base-url` or `--yes` skip the prompt) and `.scout/`, and scaffolds the AI agent files (`AGENTS.md`, the Claude skill, the Cursor rule). Idempotent — re-run it to upgrade the scaffolded files. Never overwrites an existing `scout.config.json`.
+Creates `scout.config.json` (prompts for the base URL on a TTY; `--base-url` or `--yes` skip the prompt) and `.scout/`, and scaffolds the AI agent files (`AGENTS.md`, the Claude skill, the Cursor rule). Idempotent — re-run it to upgrade the scaffolded files. Never overwrites an existing `scout.config.json`. See [Install](/docs/install/) for the full bootstrap.
 
 ## `scout go`
 
@@ -24,12 +34,12 @@ Runs scenarios: cached-script replay, AI on the first run or when the script bre
 - `--ai` — force an AI-driven run (re-records the script).
 - `--no-heal` — don't fall back to AI when replay fails (cheap CI; failure becomes ❌).
 - `--headed` — visible browser (local debug).
-- `--record-video` — paced MP4 preview of each verified replay (needs `ffmpeg`; see [artifacts](./artifacts.md)).
+- `--record-video` — paced MP4 preview of each verified replay (needs `ffmpeg`; see [run artifacts](/docs/artifacts/)).
 - `--base-url <url>` — target for this run (precedence: flag > `SCOUT_BASE_URL` > config).
 
 ## `scout doctor`
 
-Diagnoses AI credentials for the model in `scout.config.json`: prints the model, inferred provider, and engine; runs a network-free detection ladder; then does a live one-step ping to confirm the credentials actually work. Exit `0` = valid, `1` = missing/invalid (with copy-pasteable remediation). See [Providers & credentials](./providers).
+Diagnoses AI credentials for the model in `scout.config.json`: prints the model, inferred provider, and engine; runs a network-free detection ladder; then does a live one-step ping to confirm the credentials actually work. Exit `0` = valid, `1` = missing/invalid (with copy-pasteable remediation). See [Providers & credentials](/docs/providers/).
 
 ## `scout report`
 
@@ -50,3 +60,5 @@ scout report --json --check   # prints JSON AND sets the exit code
   "summary": { "total": 4, "verified": 3, "failed": 1, "partial": 0, "blocked": 0, "pending": 0 }
 }
 ```
+
+The `status` of each scenario maps to a stable exit code — see [Verdicts & exit codes](/docs/verdicts/) for the contract `--check` enforces.

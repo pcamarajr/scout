@@ -1,0 +1,56 @@
+---
+title: "Your first scenario"
+description: "Write a test as one English sentence, let the agent verify it in a real browser, and watch Scout record a deterministic script you can replay forever — without an LLM."
+sidebarLabel: "Your first scenario"
+order: 3
+group: "Getting started"
+tags: ["getting-started", "scenarios", "walkthrough"]
+translationKey: "first-scenario"
+lang: en
+draft: false
+---
+
+Write a test as one English sentence, let the agent verify it in a real browser, and watch Scout record a deterministic script you can replay forever. You state the outcome you care about; Scout proves the product clears that bar — and re-checks itself when the UI moves.
+
+This walkthrough assumes you've [installed Scout](/docs/install/) and `scout doctor` reports ✓.
+
+## 1. Describe the flow
+
+A scenario is a heading and a plain-language sentence. Write what a user does and what must be true — never selectors or waits. Create `.scout/specs/search.scout.md`:
+
+```markdown
+---
+feature: Search
+---
+
+## Homepage search returns results
+On the homepage, search for "shoes" and a list of results appears.
+```
+
+That's the whole test. No fixtures, no `data-testid`, nothing to keep in sync with the markup — the agent discovers the real elements at run time. (Prefer not to hand-write it? Your coding agent can author a richer spec straight from repo context — see [AI agents & MCP](/docs/ai-agents/).)
+
+## 2. Run it
+
+```bash
+scout go
+```
+
+On this first run an agent drives a real browser, confirms the outcome holds, and **records exactly what it did** as a deterministic script. The recording is born from actions that actually worked — not from a guess about your DOM.
+
+## 3. Read the verdict
+
+```bash
+scout report
+```
+
+Every run resolves to a single verdict — `verified`, `partial`, `failed`, or `blocked` — each mapped to a stable exit code. `verified` means the flow held and a script is now cached. See [Verdicts & exit codes](/docs/verdicts/) for the full contract.
+
+## 4. Replay is free
+
+Run `scout go` again. This time there is **no agent and no API call** — Scout replays the recorded script in milliseconds. You pay for judgment once, on the first run; every run after is pure, fast, deterministic replay.
+
+When the UI later drifts and a step breaks, Scout re-aims itself: the agent returns, re-verifies your intent, re-records the path, and hands you a `partial` to sign off. No human babysitting the suite. That unattended heal is what makes Scout safe to point at code an agent just wrote.
+
+---
+
+**Next:** make it a CI gate with [Environments & CI](/docs/environments/), or go deeper on the format in [Writing scenarios](/docs/scenarios/).

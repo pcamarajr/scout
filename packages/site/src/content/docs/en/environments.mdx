@@ -1,4 +1,14 @@
-# Environments & CI
+---
+title: "Environments & CI"
+description: "Target any base URL per run, run worktrees in parallel without collisions, and gate a pull request on Scout with a single non-zero exit — no AI credentials required for replay."
+sidebarLabel: "Environments & CI"
+order: 5
+group: "Getting started"
+tags: ["ci", "environments", "gate"]
+translationKey: "environments"
+lang: en
+draft: false
+---
 
 ## Targeting a base URL
 
@@ -16,7 +26,7 @@ Recorded scripts store navigation **relative to the base URL in effect at record
 
 ## CI (GitHub Actions)
 
-Deterministic replay uses **no LLM**, so the gate needs no AI credentials.
+Deterministic replay uses **no LLM**, so the gate needs no AI credentials. That is what makes Scout safe to drop into an autonomous fix-to-PR loop: the agent that wrote the feature proves the outcome holds, and the gate that re-checks it costs nothing per run.
 
 ```yaml
 qa-browser:
@@ -42,7 +52,7 @@ qa-browser:
 npx scout report --check   # exit 1 if ANY scenario is not `verified`, exit 0 otherwise
 ```
 
-`--check` is the gate primitive — no grepping markdown for emojis. A scenario passes only with status `verified`; `failed`, `partial`, `blocked`, and `pending` all fail the check. An empty suite passes vacuously (test `summary.total` if you require scenarios). See the [CLI reference](./cli.md) for `--json`.
+`--check` is the gate primitive — no grepping markdown for emojis. A scenario passes only with status `verified`; `failed`, `partial`, `blocked`, and `pending` all fail the check. An empty suite passes vacuously (test `summary.total` if you require scenarios). See the [CLI reference](/docs/cli/) for `--json`, and [Verdicts & exit codes](/docs/verdicts/) for what each status means.
 
 ### Healing in CI
 

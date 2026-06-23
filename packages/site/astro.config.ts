@@ -16,6 +16,20 @@ export default defineConfig({
   // client-side verdict-board fetch island stays static-compatible.
   output: "static",
 
+  // The docs entry. /docs has no page of its own — the sidebar IS the docs
+  // nav — so it redirects into the first reading page, where the vision is
+  // reinforced first. Astro emits a static HTML redirect for this at build.
+  redirects: {
+    "/docs": "/docs/introduction/",
+  },
+
+  // Code blocks in docs prose ship dark, on-brand. Shiki's github-dark theme
+  // matches the design's dark `.codeblock`; the reading column stays light
+  // paper while code stands apart in a dark slab (DocPageView styles the frame).
+  markdown: {
+    shikiConfig: { theme: "github-dark" },
+  },
+
   i18n: {
     defaultLocale: "en",
     locales: ["en"],

@@ -1,6 +1,16 @@
-# AI agents & MCP
+---
+title: "AI agents & MCP"
+description: "Scout is built to be driven by the agent that wrote the feature: it scaffolds onboarding files for coding agents, runs a co-author loop, and exposes an MCP server — with a verification-integrity rule that forbids claiming a pass without a real run."
+sidebarLabel: "AI agents & MCP"
+order: 8
+group: "Core concepts"
+tags: ["agents", "mcp", "integration"]
+translationKey: "ai-agents"
+lang: en
+draft: false
+---
 
-Scout's main flow is meant to be driven **by the agent that built the feature**: the agent writes the scenario in natural language (never the script — the script is born from the verified execution) and triggers verification.
+Scout's main flow is meant to be driven **by the agent that built the feature**: the agent writes the scenario in natural language (never the script — the script is born from the verified execution) and triggers verification. This is the loop closing on itself — the same agent that produces the code is held to the outcome it promised.
 
 ## What `scout init` scaffolds
 
