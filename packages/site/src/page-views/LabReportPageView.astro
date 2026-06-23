@@ -1,0 +1,53 @@
+---
+// Scout — Lab report page-view
+//
+// The multi-tab target: the Lab's "Open the report in a new tab" button opens
+// this page in a new tab. It exists so the multi-tab scenario has a real,
+// themed page to follow into and assert on ("Report ready"). Kept deliberately
+// minimal — it is a verification target, not a content page.
+import VerdictPlate from "@components/VerdictPlate.astro";
+import BaseLayout from "@layouts/BaseLayout.astro";
+import { createTranslator } from "@lib/i18n";
+import { buildLocaleUrl } from "@lib/urls";
+
+const locale = Astro.currentLocale ?? "en";
+const tl = createTranslator(Astro.currentLocale);
+const labHref = buildLocaleUrl(locale, "lab");
+---
+
+<BaseLayout title={tl("lab.reportTitle")} description={tl("lab.reportBody")}>
+  <section class="report wrap">
+    <VerdictPlate verdict="verified" size="lg" />
+    <h1>{tl("lab.reportTitle")}</h1>
+    <p>{tl("lab.reportBody")}</p>
+    <a class="back" href={labHref}>{tl("lab.reportBack")} <span aria-hidden="true">→</span></a>
+  </section>
+</BaseLayout>
+
+<style>
+  .report {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-md);
+    padding-block: var(--space-3xl);
+  }
+
+  .report h1 {
+    font-size: var(--text-3xl);
+    letter-spacing: -0.015em;
+  }
+
+  .report p {
+    max-width: 52ch;
+    font-size: var(--text-lg);
+    color: var(--color-text-muted);
+  }
+
+  .back {
+    margin-block-start: var(--space-md);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--color-primary);
+  }
+</style>

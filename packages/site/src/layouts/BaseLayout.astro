@@ -141,6 +141,7 @@ const jsonLd =
           <a href={buildHomeUrl(locale)}>{tl("nav.home")}</a>
           <a href={`${buildHomeUrl(locale)}#manifesto`}>{tl("nav.manifesto")}</a>
           <a href={`${buildHomeUrl(locale)}#feature`}>{tl("nav.howItWorks")}</a>
+          <a href={buildLocaleUrl(locale, "lab")}>{tl("nav.lab")}</a>
           <a href={buildLocaleUrl(locale, "docs")}>{tl("nav.docs")}</a>
           <a href="https://github.com/pcamarajr/scout" rel="noopener">{tl("nav.github")}</a>
           <ModeToggle />
@@ -155,6 +156,7 @@ const jsonLd =
         <p class="tagline">{tl("footer.tagline")}</p>
         <nav aria-label={tl("footer.docs")} class="footer-nav">
           <a href={buildLocaleUrl(locale, "docs")}>{tl("footer.docs")}</a>
+          <a href={buildLocaleUrl(locale, "lab")}>{tl("footer.lab")}</a>
           <a href="https://www.npmjs.com/package/@pcamarajr/scout">{tl("footer.npm")}</a>
           <a href="https://github.com/pcamarajr/scout">{tl("footer.github")}</a>
         </nav>
