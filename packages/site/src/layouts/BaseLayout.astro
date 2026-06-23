@@ -19,6 +19,7 @@
 // while only one locale ships; they return when a second locale is added. RSS
 // <link> is omitted until the dated collection + feed lands in phase 2.
 import "../styles/global.css";
+import ModeToggle from "@components/ModeToggle.astro";
 import { createTranslator } from "@lib/i18n";
 import { buildHomeUrl, buildLocaleUrl } from "@lib/urls";
 
@@ -74,6 +75,17 @@ const jsonLd =
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {/* Pre-paint observation-mode init — apply the stored choice before first
+        paint so there is no flash. No stored value = follow the OS (CSS). */}
+    <script is:inline>
+      (function () {
+        try {
+          var m = localStorage.getItem("scout-mode");
+          if (m === "day" || m === "night")
+            document.documentElement.setAttribute("data-mode", m);
+        } catch (e) {}
+      })();
+    </script>
     <meta name="generator" content={Astro.generator} />
     <title>{pageTitle}</title>
     <meta name="description" content={description} />
@@ -113,6 +125,7 @@ const jsonLd =
       <nav aria-label={tl("layout.mainNav")}>
         <a href={buildHomeUrl(locale)}>{tl("nav.home")}</a>
         <a href={buildLocaleUrl(locale, "docs")}>{tl("nav.docs")}</a>
+        <ModeToggle />
       </nav>
     </header>
     <main id="main">

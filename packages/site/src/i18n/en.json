@@ -16,6 +16,7 @@
   "home.statFilesLabel": "test files to own",
   "home.statSentenceLabel": "per scenario",
   "home.statHealLabel": "unattended",
+  "home.verdictLegendLabel": "Verdict ramp — the outcomes Scout reports",
   "docs.title": "Documentation",
   "docs.description": "Guides and reference for running Scout.",
   "docs.onThisPage": "On this page",

@@ -1,0 +1,88 @@
+---
+// Scout — VerdictPlate
+//
+// The signature visual primitive: a solid verdict plate, reused from the landing
+// hero legend to the docs exit-code table. Faithful port of `.plate` from
+// design/site.html. Each verdict pairs a solid background with its dedicated
+// --color-on-* foreground so text stays AA in both day and observation modes —
+// never reuse --color-text on a plate (anti-pattern #7).
+//
+// Verdict ramp is closed: vermilion (failed) is failed-only; lens-blue is never
+// a verdict color. The glyph is decorative (aria-hidden) — the label carries the
+// accessible meaning.
+type Verdict = "verified" | "partial" | "failed" | "blocked";
+type Size = "sm" | "md" | "lg";
+
+interface Props {
+  verdict: Verdict;
+  /** Plate scale. Default "md". */
+  size?: Size;
+  /** Override the visible label. Defaults to the verdict word. */
+  label?: string;
+}
+
+const VERDICTS: Record<Verdict, { glyph: string; label: string }> = {
+  verified: { glyph: "✅", label: "verified" },
+  partial: { glyph: "⚠️", label: "partial" },
+  failed: { glyph: "❌", label: "failed" },
+  blocked: { glyph: "🚫", label: "blocked" },
+};
+
+const { verdict, size = "md", label } = Astro.props;
+const { glyph, label: defaultLabel } = VERDICTS[verdict];
+---
+
+<span class:list={["plate", `plate--${size}`, `plate--${verdict}`]}>
+  <span class="glyph" aria-hidden="true">{glyph}</span>
+  {label ?? defaultLabel}
+</span>
+
+<style>
+  .plate {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    border-radius: var(--radius-full);
+  }
+
+  .glyph {
+    font-size: 1.05em;
+  }
+
+  /* sizes — sm/lg are 1:1 with design/site.html; md is the default between them */
+  .plate--sm {
+    font-size: 0.72rem;
+    padding: 0.34rem 0.7rem;
+  }
+  .plate--md {
+    font-size: 0.82rem;
+    padding: 0.48rem 0.9rem;
+  }
+  .plate--lg {
+    font-size: 0.92rem;
+    padding: 0.62rem 1.05rem;
+  }
+
+  /* verdict ramp — each background carries its paired --color-on-* foreground */
+  .plate--verified {
+    background: var(--color-verified);
+    color: var(--color-on-verified);
+  }
+  .plate--partial {
+    background: var(--color-partial);
+    color: var(--color-on-partial);
+  }
+  .plate--failed {
+    background: var(--color-failed);
+    color: var(--color-on-failed);
+  }
+  .plate--blocked {
+    background: var(--color-blocked);
+    color: var(--color-on-blocked);
+  }
+</style>

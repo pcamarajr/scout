@@ -1,0 +1,116 @@
+---
+// Scout — ModeToggle (day / observation mode)
+//
+// The header control for the designed "observation mode". Faithful port of
+// `.mode-btn` from design/site.html. Behaviour beyond the static mock:
+//   - default follows the OS (prefers-color-scheme), no stored choice required;
+//   - a click sets an explicit choice on <html data-mode> and persists it to
+//     localStorage, which then wins over the OS (see global.css resolution order);
+//   - the pre-paint init lives in BaseLayout's <head> (no flash); this script
+//     only handles the click + keeps the label in sync with the effective mode.
+//
+// The brass dot is the day "calibration mark"; at night it becomes the lens-blue
+// focus glow — the one cosmetic that follows the mode.
+---
+
+<button
+  type="button"
+  class="mode-btn"
+  data-mode-toggle
+  aria-label="Toggle observation mode"
+  aria-pressed="false"
+>
+  <span class="dot" aria-hidden="true"></span>
+  <span data-mode-label>Day</span>
+</button>
+
+<script>
+  const STORAGE_KEY = "scout-mode";
+  const root = document.documentElement;
+  const btn = document.querySelector<HTMLButtonElement>("[data-mode-toggle]");
+  const label = btn?.querySelector<HTMLElement>("[data-mode-label]");
+
+  const systemNight = () =>
+    window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+  // Effective mode = explicit override if set, else the OS preference.
+  const effectiveNight = () => {
+    const forced = root.getAttribute("data-mode");
+    if (forced === "night") return true;
+    if (forced === "day") return false;
+    return systemNight();
+  };
+
+  const sync = () => {
+    const night = effectiveNight();
+    if (label) label.textContent = night ? "Night" : "Day";
+    btn?.setAttribute("aria-pressed", String(night));
+  };
+
+  btn?.addEventListener("click", () => {
+    const next = effectiveNight() ? "day" : "night";
+    root.setAttribute("data-mode", next);
+    try {
+      localStorage.setItem(STORAGE_KEY, next);
+    } catch {
+      /* storage may be unavailable (private mode) — the choice is still live */
+    }
+    sync();
+  });
+
+  // Track OS changes only while no explicit choice is in effect.
+  window
+    .matchMedia("(prefers-color-scheme: dark)")
+    .addEventListener("change", () => {
+      if (!root.getAttribute("data-mode")) sync();
+    });
+
+  sync();
+</script>
+
+<style>
+  .mode-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    padding: 7px 12px;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition:
+      border-color 0.2s var(--ease),
+      color 0.2s var(--ease);
+  }
+
+  .mode-btn:hover {
+    border-color: var(--color-primary);
+    color: var(--color-text);
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-brass);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brass) 22%, transparent);
+  }
+
+  /* At night the calibration dot becomes the lens-blue focus glow — for both the
+     explicit override and the OS-driven default (mirrors the token resolution). */
+  :global(html[data-mode="night"]) .dot {
+    background: var(--color-primary);
+    box-shadow: 0 0 8px var(--color-primary);
+  }
+  @media (prefers-color-scheme: dark) {
+    :global(html:not([data-mode="day"])) .dot {
+      background: var(--color-primary);
+      box-shadow: 0 0 8px var(--color-primary);
+    }
+  }
+</style>
