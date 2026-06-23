@@ -64,12 +64,13 @@ export interface LabFeature {
 
 /**
  * The Lab gallery, in display order. Each entry's `slug` mirrors the logical
- * slug scout derives (`<file>/<github-slugged-heading>`) and must stay in sync
- * with verdicts.json and the heading in the matching spec file.
+ * slug scout derives (`<specs-relative-dir>/<github-slugged-heading>`) and must
+ * stay in sync with verdicts.json and the heading in the matching spec file.
+ * The specs live under `.scout/specs/lab/`, so the dir segment is `lab/<file>`.
  */
 export const LAB_FEATURES: LabFeature[] = [
   {
-    slug: "multi-tab/a-new-tab-opens-with-the-report-ready",
+    slug: "lab/multi-tab/a-new-tab-opens-with-the-report-ready",
     file: "multi-tab",
     surface: "multiTab",
     eyebrow: "Multi-tab follows",
@@ -81,7 +82,7 @@ export const LAB_FEATURES: LabFeature[] = [
     spec: specFor("multi-tab"),
   },
   {
-    slug: "env-form/a-coupon-from-the-environment-applies",
+    slug: "lab/env-form/a-coupon-from-the-environment-applies",
     file: "env-form",
     surface: "envForm",
     eyebrow: "Environment interpolation",
@@ -93,7 +94,7 @@ export const LAB_FEATURES: LabFeature[] = [
     spec: specFor("env-form"),
   },
   {
-    slug: "network/placing-an-order-fires-the-order-api-cleanly",
+    slug: "lab/network/placing-an-order-fires-the-order-api-cleanly",
     file: "network",
     surface: "network",
     eyebrow: "Network assertions",
@@ -105,7 +106,7 @@ export const LAB_FEATURES: LabFeature[] = [
     spec: specFor("network"),
   },
   {
-    slug: "console/diagnostics-log-the-calibration-marker",
+    slug: "lab/console/diagnostics-log-the-calibration-marker",
     file: "console",
     surface: "console",
     eyebrow: "Console assertions",
@@ -117,7 +118,7 @@ export const LAB_FEATURES: LabFeature[] = [
     spec: specFor("console"),
   },
   {
-    slug: "auth/a-signed-in-user-reaches-the-calibration-panel",
+    slug: "lab/auth/a-signed-in-user-reaches-the-calibration-panel",
     file: "auth",
     surface: "auth",
     eyebrow: "Auth profiles",

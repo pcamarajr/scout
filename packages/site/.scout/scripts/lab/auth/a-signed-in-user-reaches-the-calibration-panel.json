@@ -1,0 +1,52 @@
+[
+  {
+    "kind": "navigate",
+    "url": "/"
+  },
+  {
+    "kind": "click",
+    "target": {
+      "css": "body:nth-of-type(1) > header:nth-of-type(1) > div:nth-of-type(1) > nav:nth-of-type(1) > a:nth-of-type(4)",
+      "description": "link \"Lab\""
+    }
+  },
+  {
+    "kind": "fill",
+    "target": {
+      "css": "article#auth > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) > form:nth-of-type(1) > label:nth-of-type(2) > input:nth-of-type(1)",
+      "description": "textbox \"\""
+    },
+    "value": "qa"
+  },
+  {
+    "kind": "click",
+    "target": {
+      "role": "button",
+      "name": "Sign in",
+      "description": "button \"Sign in\""
+    }
+  },
+  {
+    "kind": "screenshot",
+    "label": "pos-login"
+  },
+  {
+    "kind": "assertVisible",
+    "text": "Signed in as qa"
+  },
+  {
+    "kind": "assertUrl",
+    "pattern": "/lab/"
+  },
+  {
+    "kind": "assertVisible",
+    "text": "Sign out"
+  },
+  {
+    "kind": "assertNoConsoleErrors"
+  },
+  {
+    "kind": "screenshot",
+    "label": "calibration-panel-signed-in"
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "baseUrl": "https://scout.pcamarajr.dev",
+  "model": "claude-sonnet-4-6",
+  "headless": true,
+  "maxTurns": 40,
+  "locale": "en-US",
+  "profiles": {
+    "qa": {
+      "description": "A QA user who signs into the Lab calibration panel. The Lab login is a known-good form, so the scenario records the sign-in itself — no stored storageState is needed for deterministic replay."
+    }
+  }
+}

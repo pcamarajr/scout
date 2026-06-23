@@ -1,10 +1,52 @@
 {
   "scenarios": [
-    { "slug": "multi-tab/a-new-tab-opens-with-the-report-ready", "name": "A new tab opens with the report ready", "feature": "Multi-tab follows", "profile": null, "status": "pending", "lastRun": null },
-    { "slug": "env-form/a-coupon-from-the-environment-applies", "name": "A coupon from the environment applies", "feature": "Environment interpolation", "profile": null, "status": "pending", "lastRun": null },
-    { "slug": "network/placing-an-order-fires-the-order-api-cleanly", "name": "Placing an order fires the order API cleanly", "feature": "Network assertions", "profile": null, "status": "pending", "lastRun": null },
-    { "slug": "console/diagnostics-log-the-calibration-marker", "name": "Diagnostics log the calibration marker", "feature": "Console assertions", "profile": null, "status": "pending", "lastRun": null },
-    { "slug": "auth/a-signed-in-user-reaches-the-calibration-panel", "name": "A signed-in user reaches the calibration panel", "feature": "Auth profiles", "profile": "qa", "status": "pending", "lastRun": null }
+    {
+      "slug": "lab/auth/a-signed-in-user-reaches-the-calibration-panel",
+      "name": "A signed-in user reaches the calibration panel",
+      "feature": "Auth profiles",
+      "profile": "qa",
+      "status": "verified",
+      "lastRun": "2026-06-23T13:47:48.645Z"
+    },
+    {
+      "slug": "lab/console/diagnostics-log-the-calibration-marker",
+      "name": "Diagnostics log the calibration marker",
+      "feature": "Console assertions",
+      "profile": null,
+      "status": "verified",
+      "lastRun": "2026-06-23T13:47:49.331Z"
+    },
+    {
+      "slug": "lab/env-form/a-coupon-from-the-environment-applies",
+      "name": "A coupon from the environment applies",
+      "feature": "Environment interpolation",
+      "profile": null,
+      "status": "verified",
+      "lastRun": "2026-06-23T13:47:49.561Z"
+    },
+    {
+      "slug": "lab/multi-tab/a-new-tab-opens-with-the-report-ready",
+      "name": "A new tab opens with the report ready",
+      "feature": "Multi-tab follows",
+      "profile": null,
+      "status": "verified",
+      "lastRun": "2026-06-23T13:47:50.842Z"
+    },
+    {
+      "slug": "lab/network/placing-an-order-fires-the-order-api-cleanly",
+      "name": "Placing an order fires the order API cleanly",
+      "feature": "Network assertions",
+      "profile": null,
+      "status": "verified",
+      "lastRun": "2026-06-23T13:47:51.183Z"
+    }
   ],
-  "summary": { "total": 5, "verified": 0, "failed": 0, "partial": 0, "blocked": 0, "pending": 5 }
+  "summary": {
+    "total": 5,
+    "verified": 5,
+    "failed": 0,
+    "partial": 0,
+    "blocked": 0,
+    "pending": 0
+  }
 }

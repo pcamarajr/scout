@@ -4,6 +4,15 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "astro",
+  "github": {
+    "autoAlias": false
+  },
+  "rewrites": [
+    {
+      "source": "/lab/verdicts.live.json",
+      "destination": "https://raw.githubusercontent.com/pcamarajr/scout/verdicts/verdicts.json"
+    }
+  ],
   "redirects": [
     {
       "source": "/docs",
