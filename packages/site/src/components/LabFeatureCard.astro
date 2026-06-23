@@ -111,7 +111,7 @@ const docHref = `${buildDocUrl(feature.docSlug, locale)}${feature.docHash ? `#${
 
   .card-body {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     gap: var(--space-lg);
     margin-block-start: var(--space-lg);
   }
@@ -182,8 +182,8 @@ const docHref = `${buildDocUrl(feature.docSlug, locale)}${feature.docHash ? `#${
     font-size: var(--text-mono);
     line-height: 1.7;
     color: var(--color-text-muted);
-    overflow-x: auto;
-    white-space: pre;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
     tab-size: 2;
   }
 
@@ -259,11 +259,5 @@ const docHref = `${buildDocUrl(feature.docSlug, locale)}${feature.docHash ? `#${
   .plate--blocked {
     background: var(--color-blocked);
     color: var(--color-on-blocked);
-  }
-
-  @media (max-width: 52rem) {
-    .card-body {
-      grid-template-columns: 1fr;
-    }
   }
 </style>
