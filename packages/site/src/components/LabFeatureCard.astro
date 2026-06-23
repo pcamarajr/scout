@@ -1,0 +1,263 @@
+---
+// Scout — Lab feature card
+//
+// One feature of the gallery: header (eyebrow + live verdict), title, blurb,
+// then a two-column body pairing the interactive surface (default slot) with
+// the EXACT `.scout.md` scenario CI runs against it. A docs link closes it.
+//
+// The verdict plate is a DYNAMIC slot: it renders "pending" at build time and
+// the LabPageView island rewrites it from /lab/verdicts.json at runtime (the
+// CI contract, ReportData shape). It degrades to the static "pending" plate
+// when JS is off or the fetch fails — never a blank. The plate ramp here is a
+// runtime-mutable mirror of VerdictPlate's (which is build-time only).
+import { createTranslator } from "@lib/i18n";
+import type { LabFeature } from "@lib/lab";
+import { buildDocUrl } from "@lib/urls";
+
+interface Props {
+  feature: LabFeature;
+}
+
+const { feature } = Astro.props;
+const locale = Astro.currentLocale ?? "en";
+const tl = createTranslator(Astro.currentLocale);
+
+const docHref = `${buildDocUrl(feature.docSlug, locale)}${feature.docHash ? `#${feature.docHash}` : ""}`;
+---
+
+<article class="card" id={feature.file}>
+  <header class="card-head">
+    <p class="eyebrow">{feature.eyebrow}</p>
+    <span
+      class="plate plate--pending"
+      data-verdict-slot={feature.slug}
+      role="status"
+    >
+      <span class="glyph" aria-hidden="true" data-verdict-glyph>⏳</span>
+      <span data-verdict-label>{tl("lab.verdictPending")}</span>
+    </span>
+  </header>
+
+  <h3>{feature.title}</h3>
+  <p class="blurb">{feature.blurb}</p>
+
+  <div class="card-body">
+    <section class="surface" aria-label={tl("lab.tryItLabel")}>
+      <p class="panel-label">{tl("lab.tryIt")}</p>
+      <div class="surface-stage">
+        <slot />
+      </div>
+    </section>
+
+    <section class="spec">
+      <div class="spec-head">
+        <span class="file">{feature.file}.scout.md</span>
+        <span class="tag">{tl("lab.specTag")}</span>
+      </div>
+      <pre class="spec-body"><code>{feature.spec}</code></pre>
+    </section>
+  </div>
+
+  <a class="doc-link" href={docHref}>
+    {tl("lab.readDocs")} <span class="arr" aria-hidden="true">→</span>
+  </a>
+</article>
+
+<style>
+  .card {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-bg);
+    padding: var(--space-xl);
+    scroll-margin-block-start: 80px;
+  }
+
+  .card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-sm);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-brass-deep);
+  }
+
+  .eyebrow::before {
+    content: "";
+    width: 22px;
+    height: 1px;
+    background: currentColor;
+  }
+
+  .card h3 {
+    font-size: var(--text-xl);
+    letter-spacing: -0.01em;
+    margin-block: var(--space-md) var(--space-sm);
+  }
+
+  .blurb {
+    max-width: 62ch;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+
+  .card-body {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-lg);
+    margin-block-start: var(--space-lg);
+  }
+
+  .panel-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-text-subtle);
+    margin-block-end: var(--space-sm);
+  }
+
+  /* ── live surface ── */
+  .surface-stage {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    align-items: flex-start;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    padding: var(--space-lg);
+    min-block-size: 9.5rem;
+  }
+
+  /* ── spec panel ── the exact .scout.md, source of truth ── */
+  .spec {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .spec-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding: 0.5rem 0.8rem;
+    border: 1px solid var(--color-border);
+    border-block-end: 0;
+    border-start-start-radius: var(--radius-md);
+    border-start-end-radius: var(--radius-md);
+    background: var(--color-surface-sunken);
+  }
+
+  .spec-head .file {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+
+  .spec-head .tag {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-brass-deep);
+  }
+
+  .spec-body {
+    flex: 1;
+    margin: 0;
+    padding: var(--space-md);
+    border: 1px solid var(--color-border);
+    border-end-start-radius: var(--radius-md);
+    border-end-end-radius: var(--radius-md);
+    background: var(--color-surface);
+    font-size: var(--text-mono);
+    line-height: 1.7;
+    color: var(--color-text-muted);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    tab-size: 2;
+  }
+
+  .spec-body code {
+    font-family: var(--font-mono);
+  }
+
+  /* ── docs link ── */
+  .doc-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-block-start: var(--space-lg);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+  }
+
+  .doc-link:hover {
+    text-decoration: none;
+  }
+
+  .doc-link:hover .arr {
+    transform: translateX(3px);
+  }
+
+  .doc-link .arr {
+    transition: transform var(--dur) var(--ease);
+  }
+
+  /* ── verdict plate (runtime-mutable mirror of VerdictPlate, sm) ── */
+  .plate {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    border-radius: var(--radius-full);
+    font-size: 0.72rem;
+    padding: 0.34rem 0.7rem;
+  }
+
+  .plate .glyph {
+    font-size: 1.05em;
+  }
+
+  .plate--pending {
+    background: var(--color-brass-soft);
+    color: var(--color-brass-deep);
+    border: 1px solid color-mix(in oklch, var(--color-brass) 40%, transparent);
+  }
+
+  .plate--verified {
+    background: var(--color-verified);
+    color: var(--color-on-verified);
+  }
+
+  .plate--partial {
+    background: var(--color-partial);
+    color: var(--color-on-partial);
+  }
+
+  .plate--failed {
+    background: var(--color-failed);
+    color: var(--color-on-failed);
+  }
+
+  .plate--blocked {
+    background: var(--color-blocked);
+    color: var(--color-on-blocked);
+  }
+</style>

@@ -1,0 +1,731 @@
+---
+// Scout — Lab page-view
+//
+// The live demo surface (plan #435). Three things, once per feature:
+//   1. a working interactive surface you can exercise in the browser,
+//   2. the EXACT .scout.md scenario CI replays against this page (read verbatim
+//      from .scout/specs/lab/ — single source, no drift), and
+//   3. a live verdict plate fed by /lab/verdicts.json (the `scout report --json`
+//      ReportData contract).
+// Plus a verdict board up top and a quickstart so a visitor can point their own
+// Scout at this page — a known-good target.
+//
+// Honesty (#333): the board reflects recorded runs; cheap deterministic replay
+// is a supporting nicety, never sold here as the moat. In F3 the seed verdicts
+// are `pending` — the board wires to the CI pipeline in F4, which writes the
+// real verdicts.json. The island degrades to the static pending plates when JS
+// is off or the fetch fails.
+import LabFeatureCard from "@components/LabFeatureCard.astro";
+import BaseLayout from "@layouts/BaseLayout.astro";
+import { createTranslator } from "@lib/i18n";
+import { LAB_FEATURES } from "@lib/lab";
+import { buildLocaleUrl } from "@lib/urls";
+
+const locale = Astro.currentLocale ?? "en";
+const tl = createTranslator(Astro.currentLocale);
+
+const firstScenarioHref = buildLocaleUrl(locale, "docs", "first-scenario");
+
+// The quickstart commands, one source for the rendered block and the copy.
+const QUICKSTART = [
+  "npm i -D @pcamarajr/scout",
+  'npx scout create demo -c "Open the report in a new tab; the new tab shows Report ready"',
+  "npx scout go --base-url https://scout.pcamarajr.dev/lab",
+].join("\n");
+---
+
+<BaseLayout title={tl("lab.title")} description={tl("lab.description")}>
+  {/* ── hero ─────────────────────────────────────────────────── */}
+  <section class="lab-hero">
+    <div class="wrap">
+      <p class="eyebrow">{tl("lab.eyebrow")}</p>
+      <h1>{tl("lab.h1Lead")}<br /><span class="focus">{tl("lab.h1Focus")}</span>.</h1>
+      <p class="intro">{tl("lab.intro")}</p>
+    </div>
+  </section>
+
+  {/* ── verdict board ────────────────────────────────────────── */}
+  <section class="board marker" id="board">
+    <div class="wrap">
+      <span class="marker-tag">// <b>{tl("lab.tag")}</b></span>
+      <div class="board-grid">
+        <div class="board-head">
+          <h2>{tl("lab.boardTitle")}</h2>
+          <p class="board-line" data-board-line>{tl("lab.boardLineDefault")}</p>
+          <p class="board-note">{tl("lab.boardNote")}</p>
+        </div>
+        <ul class="counts" data-board-counts aria-label={tl("lab.boardScenarios")}>
+          <li><span class="n" data-count="verified">0</span> verified</li>
+          <li><span class="n" data-count="partial">0</span> partial</li>
+          <li><span class="n" data-count="failed">0</span> failed</li>
+          <li><span class="n" data-count="blocked">0</span> blocked</li>
+          <li><span class="n" data-count="pending">5</span> pending</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  {/* ── feature gallery ──────────────────────────────────────── */}
+  <section class="gallery-band marker" id="features">
+    <div class="wrap">
+      <span class="marker-tag">// <b>features</b></span>
+      <div class="gallery">
+        {
+          LAB_FEATURES.map((feature) => (
+            <LabFeatureCard feature={feature}>
+              {feature.surface === "multiTab" && (
+                <>
+                  <button type="button" class="lab-btn" data-lab="multi-tab-open">
+                    {tl("lab.multiTabBtn")}
+                  </button>
+                  <p class="surface-hint">{tl("lab.multiTabHint")}</p>
+                </>
+              )}
+
+              {feature.surface === "envForm" && (
+                <>
+                  <form class="lab-form" data-lab="coupon-form">
+                    <label class="lab-field">
+                      <span>{tl("lab.couponLabel")}</span>
+                      <input
+                        type="text"
+                        data-lab="coupon-input"
+                        placeholder={tl("lab.couponPlaceholder")}
+                        autocomplete="off"
+                      />
+                    </label>
+                    <button type="submit" class="lab-btn">{tl("lab.couponApply")}</button>
+                  </form>
+                  <output
+                    class="lab-output"
+                    data-lab="coupon-output"
+                    data-tpl={tl("lab.couponResult")}
+                    data-idle={tl("lab.couponIdle")}
+                  >
+                    {tl("lab.couponIdle")}
+                  </output>
+                  <p class="surface-hint">{tl("lab.couponHint")}</p>
+                </>
+              )}
+
+              {feature.surface === "network" && (
+                <>
+                  <button type="button" class="lab-btn" data-lab="order-btn">
+                    {tl("lab.networkBtn")}
+                  </button>
+                  <output
+                    class="lab-output"
+                    data-lab="order-output"
+                    data-tpl={tl("lab.networkResult")}
+                    data-error={tl("lab.networkError")}
+                    data-idle={tl("lab.networkIdle")}
+                  >
+                    {tl("lab.networkIdle")}
+                  </output>
+                  <p class="surface-hint">{tl("lab.networkHint")}</p>
+                </>
+              )}
+
+              {feature.surface === "console" && (
+                <>
+                  <button type="button" class="lab-btn" data-lab="diag-btn">
+                    {tl("lab.consoleBtn")}
+                  </button>
+                  <output
+                    class="lab-output"
+                    data-lab="diag-output"
+                    data-done={tl("lab.consoleResult")}
+                  >
+                    {tl("lab.consoleIdle")}
+                  </output>
+                  <p class="surface-hint">{tl("lab.consoleHint")}</p>
+                </>
+              )}
+
+              {feature.surface === "auth" && (
+                <>
+                  <form class="lab-form" data-lab="auth-form">
+                    <label class="lab-field">
+                      <span>{tl("lab.authUserLabel")}</span>
+                      <input type="text" data-lab="auth-user" value="qa" autocomplete="off" />
+                    </label>
+                    <label class="lab-field">
+                      <span>{tl("lab.authPassLabel")}</span>
+                      <input type="password" data-lab="auth-pass" value="calibrate" autocomplete="off" />
+                    </label>
+                    <button type="submit" class="lab-btn">{tl("lab.authSignIn")}</button>
+                  </form>
+                  <div class="lab-panel" data-lab="auth-panel" hidden>
+                    <p class="panel-title">{tl("lab.authPanelTitle")}</p>
+                    <p class="lab-output" data-lab="auth-greeting" data-tpl={tl("lab.authResult")}></p>
+                    <button type="button" class="lab-link" data-lab="auth-signout">
+                      {tl("lab.authSignOut")}
+                    </button>
+                  </div>
+                  <p class="surface-hint">{tl("lab.authHint")}</p>
+                </>
+              )}
+            </LabFeatureCard>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  {/* ── quickstart ───────────────────────────────────────────── */}
+  <section class="quickstart marker" id="quickstart">
+    <div class="wrap">
+      <span class="marker-tag">// <b>{tl("lab.quickTag")}</b></span>
+      <div class="quick-grid">
+        <div class="quick-copy-col">
+          <p class="eyebrow">{tl("lab.quickEyebrow")}</p>
+          <h2>{tl("lab.quickTitleLead")} <em>{tl("lab.quickTitleEmph")}</em></h2>
+          <p class="lede">{tl("lab.quickBody")}</p>
+          <a class="quick-cta" href={firstScenarioHref}>
+            {tl("lab.quickCta")} <span class="arr" aria-hidden="true">→</span>
+          </a>
+        </div>
+        <figure class="cmd">
+          <div class="cmd-head">
+            <span class="lamps"><i></i><i></i><i></i></span>
+            <button
+              type="button"
+              class="copy"
+              data-quick-copy
+              data-cmd={QUICKSTART}
+              data-copied-label={tl("lab.quickCopiedLabel")}
+              aria-label={tl("lab.quickCopyAria")}
+            >
+              <span data-quick-copy-label>{tl("lab.quickCopyLabel")}</span>
+            </button>
+          </div>
+          <pre class="cmd-body"><code>{QUICKSTART.split("\n").map((line) => (
+            <span class="ln"><span class="c-prompt">$</span> {line}</span>
+          ))}</code></pre>
+        </figure>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .wrap {
+    max-width: 72rem;
+    margin-inline: auto;
+    padding-inline: var(--space-lg);
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-sm);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-brass-deep);
+  }
+
+  .eyebrow::before {
+    content: "";
+    width: 22px;
+    height: 1px;
+    background: currentColor;
+  }
+
+  /* ── markers (mirror of HomePageView) ── */
+  .marker {
+    position: relative;
+    border-block-start: 1px solid var(--color-border);
+    padding-block: var(--space-3xl);
+  }
+
+  .marker-tag {
+    position: absolute;
+    inset-block-start: -1px;
+    inset-inline-start: var(--space-lg);
+    transform: translateY(-50%);
+    background: var(--color-bg);
+    padding-inline: var(--space-md);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-subtle);
+  }
+
+  .marker-tag b {
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+
+  /* ── hero ── */
+  .lab-hero {
+    padding-block: var(--space-3xl) var(--space-2xl);
+  }
+
+  .lab-hero h1 {
+    font-size: var(--text-mega);
+    line-height: 1.02;
+    letter-spacing: -0.018em;
+    margin-block-start: var(--space-md);
+  }
+
+  .focus {
+    font-style: italic;
+    color: var(--color-primary);
+  }
+
+  .intro {
+    max-width: 56ch;
+    margin-block-start: var(--space-lg);
+    font-size: var(--text-lg);
+    line-height: 1.55;
+    color: var(--color-text-muted);
+  }
+
+  /* ── verdict board ── */
+  .board-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: var(--space-2xl);
+    align-items: center;
+  }
+
+  .board-head h2 {
+    font-size: var(--text-3xl);
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+  }
+
+  .board-line {
+    margin-block-start: var(--space-sm);
+    font-family: var(--font-mono);
+    font-size: var(--text-lg);
+    color: var(--color-text);
+  }
+
+  .board-note {
+    margin-block-start: var(--space-md);
+    max-width: 54ch;
+    font-size: var(--text-sm);
+    color: var(--color-text-subtle);
+  }
+
+  .counts {
+    list-style: none;
+    margin: 0;
+    padding: var(--space-lg);
+    display: grid;
+    gap: var(--space-sm);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+
+  .counts .n {
+    display: inline-block;
+    min-width: 1.6em;
+    font-size: var(--text-lg);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text);
+  }
+
+  /* ── gallery ── */
+  .gallery {
+    display: grid;
+    gap: var(--space-xl);
+    margin-block-start: var(--space-lg);
+  }
+
+  /* ── live surface controls ── */
+  .lab-btn {
+    align-self: flex-start;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-on-failed);
+    background: var(--color-primary);
+    border-radius: var(--radius-md);
+    padding: 0.6rem 1rem;
+    box-shadow: var(--shadow-sm);
+    transition:
+      transform var(--dur) var(--ease),
+      background-color var(--dur) var(--ease);
+  }
+
+  .lab-btn:hover {
+    background: var(--color-primary-dark);
+    transform: translateY(-1px);
+  }
+
+  .lab-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-sm);
+  }
+
+  .lab-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-subtle);
+  }
+
+  .lab-field input {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--color-text);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 0.5rem 0.6rem;
+    min-inline-size: 9rem;
+  }
+
+  .lab-field input:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 1px;
+  }
+
+  .lab-output {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+
+  .lab-output[data-state="ok"] {
+    color: var(--color-verified);
+  }
+
+  .lab-output[data-state="error"] {
+    color: var(--color-failed);
+  }
+
+  .surface-hint {
+    font-size: var(--text-xs);
+    color: var(--color-text-subtle);
+    max-width: 46ch;
+  }
+
+  .lab-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    align-items: flex-start;
+    inline-size: 100%;
+  }
+
+  .lab-panel .panel-title {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-brass-deep);
+  }
+
+  .lab-panel[hidden] {
+    display: none;
+  }
+
+  .lab-link {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+  }
+
+  /* ── quickstart ── */
+  .quick-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2xl);
+    align-items: center;
+  }
+
+  .quick-copy-col h2 {
+    font-size: var(--text-3xl);
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    margin-block-start: var(--space-sm);
+  }
+
+  .quick-copy-col h2 em {
+    font-style: italic;
+    color: var(--color-brass-deep);
+  }
+
+  .quick-copy-col .lede {
+    margin-block-start: var(--space-md);
+    max-width: 48ch;
+    font-size: var(--text-lg);
+    color: var(--color-text-muted);
+  }
+
+  .quick-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-block-start: var(--space-lg);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-primary);
+  }
+
+  .quick-cta:hover {
+    text-decoration: none;
+  }
+
+  .quick-cta:hover .arr {
+    transform: translateX(3px);
+  }
+
+  .quick-cta .arr {
+    transition: transform var(--dur) var(--ease);
+  }
+
+  .cmd {
+    margin: 0;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+  }
+
+  .cmd-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.7rem var(--space-md);
+    border-block-end: 1px solid var(--color-border);
+    background: var(--color-surface-sunken);
+  }
+
+  .lamps {
+    display: inline-flex;
+    gap: 6px;
+  }
+
+  .lamps i {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--color-border-strong);
+  }
+
+  .cmd-head .copy {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-subtle);
+    transition: color var(--dur) var(--ease);
+  }
+
+  .cmd-head .copy:hover,
+  .cmd-head .copy:focus-visible {
+    color: var(--color-primary);
+  }
+
+  .cmd-body {
+    margin: 0;
+    padding: var(--space-md);
+    font-family: var(--font-mono);
+    font-size: var(--text-mono);
+    line-height: 1.9;
+    color: var(--color-text-muted);
+    overflow-x: auto;
+  }
+
+  .cmd-body .ln {
+    display: block;
+    white-space: pre;
+  }
+
+  .cmd-body .c-prompt {
+    color: var(--color-brass);
+  }
+
+  /* ── responsive ── */
+  @media (max-width: 60rem) {
+    .board-grid,
+    .quick-grid {
+      grid-template-columns: 1fr;
+      gap: var(--space-xl);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lab-btn:hover {
+      transform: none;
+    }
+  }
+</style>
+
+<script>
+  // ── verdict board island ──────────────────────────────────────────────
+  // Reads the CI contract (ReportData) from /lab/verdicts.json and rewrites
+  // each card's verdict plate + the board counts. On any failure the static
+  // "pending" plates stay — never a blank board.
+  type Status = "verified" | "partial" | "failed" | "blocked" | "pending";
+  const GLYPH: Record<Status, string> = {
+    verified: "✅",
+    partial: "⚠️",
+    failed: "❌",
+    blocked: "🚫",
+    pending: "⏳",
+  };
+  const PLATE_CLASSES = [
+    "plate--verified",
+    "plate--partial",
+    "plate--failed",
+    "plate--blocked",
+    "plate--pending",
+  ];
+
+  async function loadVerdicts() {
+    const res = await fetch("/lab/verdicts.json", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+
+    for (const s of data.scenarios ?? []) {
+      const slot = document.querySelector<HTMLElement>(
+        `[data-verdict-slot="${s.slug}"]`,
+      );
+      if (!slot) continue;
+      const status = s.status as Status;
+      slot.classList.remove(...PLATE_CLASSES);
+      slot.classList.add(`plate--${status}`);
+      const glyph = slot.querySelector<HTMLElement>("[data-verdict-glyph]");
+      const label = slot.querySelector<HTMLElement>("[data-verdict-label]");
+      if (glyph) glyph.textContent = GLYPH[status] ?? "⏳";
+      if (label) label.textContent = status;
+    }
+
+    const summary = data.summary;
+    if (summary) {
+      for (const key of Object.keys(GLYPH) as Status[]) {
+        const cell = document.querySelector<HTMLElement>(`[data-count="${key}"]`);
+        if (cell && typeof summary[key] === "number") {
+          cell.textContent = String(summary[key]);
+        }
+      }
+      const line = document.querySelector<HTMLElement>("[data-board-line]");
+      if (line && typeof summary.verified === "number" && typeof summary.total === "number") {
+        line.textContent = `${summary.verified}/${summary.total} verified`;
+      }
+    }
+  }
+
+  loadVerdicts().catch(() => {
+    /* keep the static pending plates */
+  });
+
+  // ── live surfaces ─────────────────────────────────────────────────────
+
+  // multi-tab: follow the click into a new tab (a real /lab/report/ page).
+  document
+    .querySelector<HTMLButtonElement>('[data-lab="multi-tab-open"]')
+    ?.addEventListener("click", () => {
+      window.open("/lab/report/", "_blank", "noopener");
+    });
+
+  // env interpolation: echo whatever was typed (Scout types $ENV:LAB_COUPON).
+  const couponForm = document.querySelector<HTMLFormElement>('[data-lab="coupon-form"]');
+  couponForm?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = couponForm.querySelector<HTMLInputElement>('[data-lab="coupon-input"]');
+    const out = document.querySelector<HTMLOutputElement>('[data-lab="coupon-output"]');
+    if (!input || !out) return;
+    const value = input.value.trim();
+    if (!value) {
+      out.textContent = out.dataset.idle ?? "";
+      out.removeAttribute("data-state");
+      return;
+    }
+    out.textContent = (out.dataset.tpl ?? "{value}").replace("{value}", value);
+    out.dataset.state = "ok";
+  });
+
+  // network assertion: fire a real GET that returns 2xx with an orderId.
+  document
+    .querySelector<HTMLButtonElement>('[data-lab="order-btn"]')
+    ?.addEventListener("click", async () => {
+      const out = document.querySelector<HTMLOutputElement>('[data-lab="order-output"]');
+      if (!out) return;
+      try {
+        const res = await fetch("/lab/api/order.json", { cache: "no-store" });
+        if (!res.ok) throw new Error(String(res.status));
+        const body = await res.json();
+        out.textContent = (out.dataset.tpl ?? "{orderId}").replace("{orderId}", body.orderId);
+        out.dataset.state = "ok";
+      } catch {
+        out.textContent = out.dataset.error ?? "Error";
+        out.dataset.state = "error";
+      }
+    });
+
+  // console assertion: log a stable, calibration-marked line.
+  document
+    .querySelector<HTMLButtonElement>('[data-lab="diag-btn"]')
+    ?.addEventListener("click", () => {
+      const out = document.querySelector<HTMLOutputElement>('[data-lab="diag-output"]');
+      console.log("DIAG:[scout-lab] focus 1.00 · drift 0.0px");
+      if (out) {
+        out.textContent = out.dataset.done ?? "Logged.";
+        out.dataset.state = "ok";
+      }
+    });
+
+  // auth profile: a fake sign-in revealing the calibration panel.
+  const authForm = document.querySelector<HTMLFormElement>('[data-lab="auth-form"]');
+  const authPanel = document.querySelector<HTMLElement>('[data-lab="auth-panel"]');
+  authForm?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const user =
+      authForm.querySelector<HTMLInputElement>('[data-lab="auth-user"]')?.value.trim() || "qa";
+    const greeting = document.querySelector<HTMLElement>('[data-lab="auth-greeting"]');
+    if (greeting) {
+      greeting.textContent = (greeting.dataset.tpl ?? "Signed in as {user}").replace("{user}", user);
+      greeting.dataset.state = "ok";
+    }
+    authForm.hidden = true;
+    if (authPanel) authPanel.hidden = false;
+  });
+  document
+    .querySelector<HTMLButtonElement>('[data-lab="auth-signout"]')
+    ?.addEventListener("click", () => {
+      if (authPanel) authPanel.hidden = true;
+      if (authForm) authForm.hidden = false;
+    });
+
+  // ── quickstart copy ───────────────────────────────────────────────────
+  const qBtn = document.querySelector<HTMLButtonElement>("[data-quick-copy]");
+  const qLabel = document.querySelector<HTMLElement>("[data-quick-copy-label]");
+  if (qBtn && qLabel) {
+    const idle = qLabel.textContent ?? "Copy";
+    const done = qBtn.dataset.copiedLabel ?? "Copied";
+    qBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(qBtn.dataset.cmd ?? "");
+        qLabel.textContent = done;
+        window.setTimeout(() => {
+          qLabel.textContent = idle;
+        }, 1600);
+      } catch {
+        /* clipboard blocked — leave the label */
+      }
+    });
+  }
+</script>
