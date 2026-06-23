@@ -1,0 +1,455 @@
+---
+// Scout — HeroInstrument
+//
+// The hero's single kinetic moment: the calibrated optical instrument from the
+// locked design (design/site.html §hero), lens-blue + brass, with a live
+// verdict reading. Faithful port of `.stage`/`.instrument`.
+//
+// Token policy: every *semantic* color routes through a design token
+// (--color-primary = lens, --color-brass = calibration, --color-verified =
+// the reading). The literal values that remain are decorative *geometry* and
+// *glass* — lens highlights, inset ring shadows, 3D offsets — which have no
+// token equivalent; tokenizing them would be meaningless. Kept 1:1 with the
+// locked reference.
+//
+// Motion: a pointer-parallax tilt and a canvas "focal field" are progressive
+// enhancements wired in a plain <script> (interactivity ladder: no island).
+// Both bail out under prefers-reduced-motion; the instrument is decorative
+// (aria-hidden) with an accessible verdict label carried in text.
+import { createTranslator } from "@lib/i18n";
+
+const tl = createTranslator(Astro.currentLocale);
+---
+
+<div class="stage" aria-hidden="true">
+  <canvas class="focal-field" data-focal-field></canvas>
+  <div class="instrument" data-instrument>
+    <div class="brass">
+      <span class="engraved">SCOUT · CALIBRATED</span>
+    </div>
+
+    <div class="lens">
+      <span class="coat"></span>
+      <span class="reticle">
+        <span class="ln vx"></span>
+        <span class="ln hz"></span>
+        <span class="ring"></span>
+        <span class="tk t1"></span>
+        <span class="tk t2"></span>
+        <span class="tk t3"></span>
+        <span class="tk t4"></span>
+      </span>
+    </div>
+
+    <div class="dial"></div>
+
+    <div class="legend-c">
+      <span><i class="dot d-ok"></i>verified</span>
+      <span><i class="dot d-part"></i>partial</span>
+      <span><i class="dot d-fail"></i>failed</span>
+      <span><i class="dot d-block"></i>blocked</span>
+    </div>
+
+    <div class="verdict-card">
+      <span class="tick">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+          <path
+            d="M5 12.5 10 17.5 19 7"
+            stroke="currentColor"
+            stroke-width="2.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            pathLength="1"
+            class="check"></path>
+        </svg>
+      </span>
+      <span class="vtxt">
+        {tl("home.instrumentVerdict")}
+        <small>{tl("home.instrumentVerdictNote")}</small>
+      </span>
+    </div>
+  </div>
+</div>
+
+<style>
+  .stage {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    perspective: 1400px;
+    min-height: 22rem;
+  }
+
+  .focal-field {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .instrument {
+    position: relative;
+    width: min(100%, 420px);
+    aspect-ratio: 1 / 0.98;
+    transform-style: preserve-3d;
+    transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+    transition: transform 0.4s var(--ease);
+    z-index: 1;
+  }
+
+  /* brass body plate */
+  .brass {
+    position: absolute;
+    inset: 4%;
+    border-radius: 24px;
+    transform: translateZ(-40px);
+    background:
+      linear-gradient(
+        158deg,
+        color-mix(in oklch, var(--color-brass) 75%, white 25%),
+        var(--color-brass) 42%,
+        var(--color-brass-deep) 100%
+      );
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+  }
+
+  .engraved {
+    position: absolute;
+    inset-block-end: 7%;
+    inset-inline: 0;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: color-mix(in oklch, var(--color-brass-deep) 70%, black 30%);
+  }
+
+  /* the lens — glass highlights are decorative literals */
+  .lens {
+    position: absolute;
+    inset-inline-start: 50%;
+    inset-block-start: 44%;
+    width: 62%;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%) translateZ(34px);
+    border-radius: 50%;
+    background:
+      radial-gradient(120% 120% at 32% 26%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 42%),
+      radial-gradient(140% 140% at 70% 80%, color-mix(in oklch, var(--color-primary) 30%, transparent), transparent 55%),
+      radial-gradient(circle at 50% 50%, color-mix(in oklch, var(--color-primary) 14%, var(--color-surface)), var(--color-surface));
+    box-shadow:
+      inset 0 0 0 2px rgba(221, 200, 144, 0.9),
+      inset 0 0 0 9px rgba(133, 104, 48, 0.35),
+      inset 0 12px 30px rgba(255, 255, 255, 0.4),
+      inset 0 -16px 36px rgba(17, 23, 29, 0.28),
+      var(--shadow-md);
+  }
+
+  .coat {
+    position: absolute;
+    inset: 17%;
+    border-radius: 50%;
+    filter: blur(4px);
+    opacity: 0.5;
+    background: conic-gradient(
+      from 0deg,
+      color-mix(in oklch, var(--color-primary) 60%, transparent),
+      color-mix(in oklch, var(--color-verified) 55%, transparent),
+      color-mix(in oklch, var(--color-primary) 60%, transparent)
+    );
+    animation: coat 22s linear infinite;
+  }
+
+  /* reticle / crosshair */
+  .reticle {
+    position: absolute;
+    inset: 0;
+  }
+
+  .ln {
+    position: absolute;
+    background: color-mix(in oklch, var(--color-primary) 55%, transparent);
+  }
+
+  .ln.vx {
+    inset-inline-start: 50%;
+    inset-block: 14%;
+    width: 1px;
+  }
+
+  .ln.hz {
+    inset-block-start: 50%;
+    inset-inline: 14%;
+    height: 1px;
+  }
+
+  .ring {
+    position: absolute;
+    inset: 30%;
+    border: 1px solid var(--color-primary-soft);
+    border-radius: 50%;
+  }
+
+  .tk {
+    position: absolute;
+    width: 1px;
+    height: 7px;
+    background: var(--color-primary);
+  }
+
+  .tk.t1 { inset-block-start: 11%; inset-inline-start: 50%; }
+  .tk.t2 { inset-block-end: 11%; inset-inline-start: 50%; }
+  .tk.t3 { inset-block-start: 50%; inset-inline-start: 11%; width: 7px; height: 1px; }
+  .tk.t4 { inset-block-start: 50%; inset-inline-end: 11%; width: 7px; height: 1px; }
+
+  /* calibration dial */
+  .dial {
+    position: absolute;
+    inset-inline-end: -3%;
+    inset-block-start: 50%;
+    transform: translateY(-50%) translateZ(40px);
+    width: 24px;
+    height: 46%;
+    border-radius: 7px;
+    background:
+      repeating-linear-gradient(
+        var(--color-brass-deep) 0 2px,
+        color-mix(in oklch, var(--color-brass) 80%, white 20%) 2px 6px
+      );
+    box-shadow: inset 0 0 0 1px rgba(17, 23, 29, 0.2), var(--shadow-sm);
+  }
+
+  .dial::after {
+    content: "";
+    position: absolute;
+    inset-inline-start: 50%;
+    inset-block-start: 50%;
+    transform: translate(-50%, -50%);
+    width: 13px;
+    height: 2px;
+    background: var(--color-primary);
+    box-shadow: 0 0 6px var(--color-primary);
+  }
+
+  /* floating legend chip */
+  .legend-c {
+    position: absolute;
+    inset-inline-end: -4%;
+    inset-block-start: 4%;
+    transform: translateZ(54px);
+    display: grid;
+    gap: 4px;
+    padding: var(--space-sm) var(--space-md);
+    background: color-mix(in oklch, var(--color-surface) 86%, transparent);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-md);
+    backdrop-filter: blur(6px);
+    animation: rise 0.7s var(--ease) 1.05s both;
+  }
+
+  .legend-c span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    color: var(--color-text-muted);
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+
+  .d-ok { background: var(--color-verified); }
+  .d-part { background: var(--color-partial); }
+  .d-fail { background: var(--color-failed); }
+  .d-block { background: var(--color-blocked); }
+
+  /* the live verdict reading */
+  .verdict-card {
+    position: absolute;
+    inset-inline-start: -6%;
+    inset-block-end: 6%;
+    transform: translateZ(70px);
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.85rem 1.1rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    box-shadow: var(--shadow-lg);
+    animation: rise 0.7s var(--ease) 0.85s both;
+  }
+
+  .verdict-card .tick {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    color: var(--color-on-verified);
+    background: radial-gradient(
+      circle at 35% 30%,
+      color-mix(in oklch, var(--color-verified) 80%, white 20%),
+      var(--color-verified)
+    );
+    box-shadow: var(--shadow-sm);
+  }
+
+  .check {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: draw 0.6s var(--ease) 1.3s forwards;
+  }
+
+  .vtxt {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.95rem;
+    line-height: 1.2;
+    color: var(--color-text);
+  }
+
+  .vtxt small {
+    display: block;
+    margin-block-start: 3px;
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 0.72rem;
+    color: var(--color-text-subtle);
+  }
+
+  @keyframes coat {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateZ(54px) translateY(10px);
+    }
+  }
+
+  @keyframes draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .instrument {
+      transition: none;
+    }
+    .coat {
+      animation: none;
+    }
+    .legend-c,
+    .verdict-card {
+      animation: none;
+    }
+    .check {
+      stroke-dashoffset: 0;
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  // Progressive enhancement only: pointer-parallax tilt + a canvas "focal
+  // field" of collimation rings and a crosshair. Both are skipped under
+  // reduced-motion, and the canvas reads live token colors so it adapts to the
+  // day/observation mode toggle.
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const inst = document.querySelector<HTMLElement>("[data-instrument]");
+  const stage = inst?.parentElement;
+
+  if (inst && stage && !reduce) {
+    let raf = 0;
+    const onMove = (e: PointerEvent) => {
+      const rect = stage.getBoundingClientRect();
+      const px = (e.clientX - rect.left) / rect.width - 0.5;
+      const py = (e.clientY - rect.top) / rect.height - 0.5;
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        inst.style.setProperty("--ry", `${px * 14}deg`);
+        inst.style.setProperty("--rx", `${py * -10}deg`);
+      });
+    };
+    const reset = () => {
+      cancelAnimationFrame(raf);
+      inst.style.setProperty("--ry", "0deg");
+      inst.style.setProperty("--rx", "0deg");
+    };
+    stage.addEventListener("pointermove", onMove);
+    stage.addEventListener("pointerleave", reset);
+  }
+
+  const canvas = document.querySelector<HTMLCanvasElement>("[data-focal-field]");
+  if (canvas) {
+    const ctx = canvas.getContext("2d");
+    const root = document.documentElement;
+
+    const draw = () => {
+      if (!ctx || !canvas.parentElement) return;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const { clientWidth: w, clientHeight: h } = canvas.parentElement;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+
+      const cs = getComputedStyle(root);
+      const lens = cs.getPropertyValue("--color-primary").trim() || "#1f6feb";
+      const brass = cs.getPropertyValue("--color-brass").trim() || "#c9a23a";
+      const cx = w / 2;
+      const cy = h / 2;
+      const max = Math.min(w, h) * 0.46;
+
+      // collimation rings
+      for (let i = 1; i <= 5; i++) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, (max / 5) * i, 0, Math.PI * 2);
+        ctx.strokeStyle = i % 2 ? lens : brass;
+        ctx.globalAlpha = 0.12;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+
+      // crosshair compass + ticks
+      ctx.globalAlpha = 0.18;
+      ctx.strokeStyle = lens;
+      ctx.beginPath();
+      ctx.moveTo(cx - max, cy);
+      ctx.lineTo(cx + max, cy);
+      ctx.moveTo(cx, cy - max);
+      ctx.lineTo(cx, cy + max);
+      ctx.stroke();
+
+      ctx.globalAlpha = 1;
+    };
+
+    draw();
+    window.addEventListener("resize", draw);
+
+    // redraw when the day/observation mode changes (token colors flip)
+    new MutationObserver(draw).observe(root, {
+      attributes: true,
+      attributeFilter: ["data-mode"],
+    });
+    window
+      .matchMedia("(prefers-color-scheme: dark)")
+      .addEventListener("change", draw);
+  }
+</script>
