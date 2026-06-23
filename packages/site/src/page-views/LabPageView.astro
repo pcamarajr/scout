@@ -580,12 +580,16 @@ const QUICKSTART = [
   //
   // Two tiers, so updating verdicts never triggers a site rebuild (plan #435):
   //   1. LIVE — the mutable store the dogfood pipeline writes on every run: the
-  //      orphan `verdicts` branch, served raw + CORS-open by GitHub.
+  //      orphan `verdicts` branch. Served SAME-ORIGIN via a Vercel rewrite
+  //      (vercel.json: /lab/verdicts.live.json → the branch's raw URL). Same
+  //      origin matters: the dogfood gate runs with Vercel bypass headers on
+  //      the whole context, and custom headers on a *cross-origin* fetch force
+  //      a CORS preflight that raw.githubusercontent can't answer — so we keep
+  //      this fetch same-origin and let Vercel proxy to GitHub server-side.
   //   2. SEED — the build-time `/lab/verdicts.json` shipped in dist (the last
   //      run recorded into the repo). Used when the live store is unreachable.
   // If both fail, the static "pending" plates stay — never a blank board.
-  const VERDICTS_LIVE_URL =
-    "https://raw.githubusercontent.com/pcamarajr/scout/verdicts/verdicts.json";
+  const VERDICTS_LIVE_URL = "/lab/verdicts.live.json";
   const VERDICTS_SEED_URL = "/lab/verdicts.json";
   type Status = "verified" | "partial" | "failed" | "blocked" | "pending";
   const GLYPH: Record<Status, string> = {

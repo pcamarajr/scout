@@ -84,6 +84,21 @@ jobs:
         run: npx playwright install --with-deps chromium
         working-directory: packages/cli
 
+      - name: Preflight — the bypass header reaches the app, not the 401 wall
+        # A protected deploy returns 401 "Authentication Required" inline when
+        # the bypass secret is missing/wrong; without this guard the replay just
+        # times out on every click against the challenge page — a confusing
+        # signal. Fail fast with the real cause instead.
+        run: |
+          code="$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "x-vercel-protection-bypass: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}" \
+            "$SCOUT_BASE_URL/lab/")"
+          echo "GET /lab/ → HTTP $code"
+          if [ "$code" = "401" ] || [ "$code" = "403" ]; then
+            echo "::error::Deploy is protected and the bypass was rejected. Set the VERCEL_AUTOMATION_BYPASS_SECRET repo secret to the value from Vercel → Settings → Deployment Protection → Protection Bypass for Automation."
+            exit 1
+          fi
+
       - name: Replay the Lab suite against the deploy (no LLM)
         id: replay
         continue-on-error: true # capture the verdict; the gate step decides pass/fail
