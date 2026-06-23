@@ -3,5 +3,17 @@
   "installCommand": "npm install --ignore-scripts",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "framework": "astro"
+  "framework": "astro",
+  "redirects": [
+    {
+      "source": "/docs",
+      "destination": "/docs/introduction/",
+      "permanent": false
+    },
+    {
+      "source": "/docs/",
+      "destination": "/docs/introduction/",
+      "permanent": false
+    }
+  ]
 }
