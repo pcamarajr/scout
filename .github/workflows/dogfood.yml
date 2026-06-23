@@ -1,47 +1,48 @@
 # Dogfood gate — Scout verifies the Scout marketing site, on the real deploy.
 #
-# This is deliverable #2 of the marketing-site track (plan #435): Scout replays
-# the Lab's own `.scout.md` suite against the immutable Vercel deployment, as a
-# BLOCKING gate, and on the production-bound (main) deploy promotes the same
+# Deliverable #2 of the marketing-site track (plan #435): Scout replays the
+# Lab's own `.scout.md` suite against the immutable Vercel deployment as a
+# BLOCKING gate, then on a production-bound (main) deploy promotes the same
 # bytes to production — no rebuild.
 #
 # ── How it is wired ───────────────────────────────────────────────────────────
 # Trigger: Vercel posts a GitHub `deployment_status` for every deploy. We act on
 # the `success` ones and replay against `target_url` (the immutable URL of that
-# exact build). Because the run is keyed to the deployment's commit SHA, its
-# check appears on the PR and can be made a REQUIRED status check (branch
-# protection) so a red board blocks merge.
+# exact build). Replay is `scout go --no-heal`: deterministic, ZERO LLM, no API
+# key. The committed scripts under packages/site/.scout/scripts/lab/*.json are
+# the source of truth (recorded once; navigate steps are base-relative).
 #
-# Replay is `scout go --no-heal`: deterministic, ZERO LLM, no API key in CI. The
-# committed scripts under packages/site/.scout/scripts/lab/*.json are the source
-# of truth; they were recorded once by an AI run and replay against any base URL
-# (navigate steps are base-relative).
+# ── Security model (deployment_status runs the DEFAULT-branch workflow with full
+#    repo secrets, against an arbitrary deployment SHA) ───────────────────────
+# To keep untrusted code away from high-value secrets, the work is split:
+#   • `gate` runs the checked-out SHA (npm ci + build + replay). It holds ONLY
+#     the low-value bypass secret (it merely views a pre-launch preview), runs
+#     `npm ci --ignore-scripts` (no install lifecycle hooks), and has a
+#     READ-ONLY GITHUB_TOKEN. No VERCEL_TOKEN, no write token here.
+#   • `promote` runs ONLY on trusted main deploys, needs `gate`, and holds the
+#     severe secrets (VERCEL_TOKEN, write GITHUB_TOKEN). It executes NO checked-
+#     out code — no SHA checkout, no `npm ci` — only an artifact download + git
+#     push + `npx vercel promote`. So a malicious SHA can never reach them.
+# This also relies on Vercel's Git Fork Protection (default ON): fork-PR
+# previews are not auto-deployed, so an untrusted SHA never reaches a `success`
+# deployment_status without per-deploy maintainer authorization.
 #
-# ── Public board vs PR gate ───────────────────────────────────────────────────
-# Every successful preview is GATED (blocks the PR). Only the main-branch deploy
-# WRITES the public verdict board (the orphan `verdicts` branch the Lab island
-# reads) and PROMOTES to production — so the public board always reflects what is
-# shipped, never a transient PR preview.
-#
-# ── Required Vercel project settings (maintainer — one-time) ──────────────────
-#   • Disable automatic Production deployments on push to `main` (Settings →
-#     Git → Production Branch: turn off auto-deploy / "Ignored Build Step" so
-#     main deploys as a Preview). CI promotes the gated build instead — without
-#     this, prod would deploy twice.
+# ── Maintainer one-time setup ─────────────────────────────────────────────────
+#   • vercel.json sets `github.autoAlias: false` so a main merge builds but does
+#     NOT auto-publish to prod; this workflow promotes the gated build instead
+#     (no double deploy).
 #   • Repository secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID (promote)
-#     and VERCEL_AUTOMATION_BYPASS_SECRET (the gate — so Scout gets past
-#     Deployment Protection; generate it in Vercel → Settings → Deployment
-#     Protection → Protection Bypass for Automation).
-# Until VERCEL_TOKEN lands the promote step is a guarded no-op. Until the bypass
-# secret lands the gate replays against the login wall and (correctly) fails.
+#     and VERCEL_AUTOMATION_BYPASS_SECRET (gate — Vercel → Settings → Deployment
+#     Protection → Protection Bypass for Automation). Treat the bypass secret as
+#     low-sensitivity and rotate it at launch.
 name: dogfood
 
 on:
   deployment_status:
 
+# Minimal by default; only the promote job widens to contents: write.
 permissions:
-  contents: write # push the orphan `verdicts` branch
-  statuses: write # report the gate status on the commit
+  contents: read
 
 concurrency:
   group: dogfood-${{ github.event.deployment_status.target_url }}
@@ -52,19 +53,13 @@ jobs:
     # Only successful deploys carry a usable URL. Skip pending/error/failure.
     if: github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # runs the untrusted SHA — no write power, no severe secrets
     env:
       # The immutable URL of the exact build Vercel just finished.
       SCOUT_BASE_URL: ${{ github.event.deployment_status.target_url }}
       # The Lab's environment-interpolation surface resolves $ENV:LAB_COUPON.
       LAB_COUPON: FOCUS25
-      # main-branch deploys are production-bound: they write the board + promote.
-      IS_MAIN: ${{ github.event.deployment.ref == 'main' || github.event.deployment.ref == 'refs/heads/main' }}
-      # Job-level so the promote step can gate on `env.VERCEL_TOKEN != ''` — a
-      # step cannot read a secret directly in its own `if:`. Absent until the
-      # maintainer adds the secrets, which makes promote a clean no-op.
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -75,7 +70,11 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      # --ignore-scripts: do not run install lifecycle hooks from the checked-out
+      # SHA. The CLI build is tsc and the replay browser is installed explicitly
+      # below, so nothing here needs postinstall (Vercel builds the site the same
+      # way). Keeps an untrusted SHA from running install-time code.
+      - run: npm ci --ignore-scripts
 
       - name: Build the Scout CLI
         run: npm run build -w @pcamarajr/scout
@@ -87,15 +86,16 @@ jobs:
       - name: Preflight — the bypass header reaches the app, not the 401 wall
         # A protected deploy returns 401 "Authentication Required" inline when
         # the bypass secret is missing/wrong; without this guard the replay just
-        # times out on every click against the challenge page — a confusing
-        # signal. Fail fast with the real cause instead.
+        # times out on every click against the challenge page. Fail fast instead.
+        env:
+          BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           code="$(curl -s -o /dev/null -w '%{http_code}' \
-            -H "x-vercel-protection-bypass: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}" \
+            -H "x-vercel-protection-bypass: $BYPASS" \
             "$SCOUT_BASE_URL/lab/")"
           echo "GET /lab/ → HTTP $code"
           if [ "$code" = "401" ] || [ "$code" = "403" ]; then
-            echo "::error::Deploy is protected and the bypass was rejected. Set the VERCEL_AUTOMATION_BYPASS_SECRET repo secret to the value from Vercel → Settings → Deployment Protection → Protection Bypass for Automation."
+            echo "::error::Deploy is protected and the bypass was rejected. Set the VERCEL_AUTOMATION_BYPASS_SECRET repo secret (Vercel → Settings → Deployment Protection → Protection Bypass for Automation)."
             exit 1
           fi
 
@@ -103,30 +103,13 @@ jobs:
         id: replay
         continue-on-error: true # capture the verdict; the gate step decides pass/fail
         working-directory: packages/site
-        # The deploy sits behind Vercel Deployment Protection (the site is gated
-        # until launch). Scout sends the bypass header so it reaches the app
-        # instead of the login wall; the cookie variant covers popups/new tabs.
-        # Needs the VERCEL_AUTOMATION_BYPASS_SECRET repo secret (generate it in
-        # Vercel → Settings → Deployment Protection → Protection Bypass for
-        # Automation). Requires the CLI header support from #41.
+        # Scout sends the bypass header so it reaches the app instead of the login
+        # wall; the cookie variant covers popups/new tabs. Requires the CLI header
+        # support (SCOUT_EXTRA_HEADERS) shipped in #41.
         env:
           SCOUT_EXTRA_HEADERS: >-
             {"x-vercel-protection-bypass":"${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}","x-vercel-set-bypass-cookie":"true"}
         run: node ../cli/dist/cli.js go --no-heal
-
-      - name: Validate the promote credentials (read-only, non-blocking)
-        # Runs on every gate (incl. PR previews) when the promote secrets are
-        # present, so we confirm VERCEL_TOKEN/ORG_ID/PROJECT_ID resolve BEFORE a
-        # main merge depends on them — a stalled promote would otherwise freeze
-        # prod silently. Read-only: `vercel pull` just fetches project config.
-        if: always() && env.VERCEL_TOKEN != ''
-        continue-on-error: true
-        run: |
-          if npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN" >/dev/null 2>&1; then
-            echo "✓ promote credentials resolve (token + org + project)"
-          else
-            echo "::warning::Promote credentials did NOT resolve — check VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID. Promote on main would fail and prod would not update."
-          fi
 
       - name: Build the verdict report
         if: always()
@@ -139,9 +122,49 @@ jobs:
             node ../cli/dist/cli.js report
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Publish the public board (main only)
-        if: always() && env.IS_MAIN == 'true'
+      # Hand the verdicts to the promote job, which never touches the SHA's code.
+      - name: Upload the verdict report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verdicts
+          path: packages/site/verdicts.json
+          retention-days: 7
+
+      - name: Gate — fail if any scenario is not verified
         working-directory: packages/site
+        run: node ../cli/dist/cli.js report --check
+
+  # Trusted job: severe secrets live here, and it runs NO checked-out code.
+  publish-and-promote:
+    needs: gate
+    # main deploys only; runs even if the gate failed (to publish a red board),
+    # but promote is gated on the gate passing (see the promote step).
+    if: >-
+      ${{ !cancelled()
+      && github.event.deployment_status.state == 'success'
+      && (github.event.deployment.ref == 'main' || github.event.deployment.ref == 'refs/heads/main') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the orphan `verdicts` branch
+    env:
+      SCOUT_BASE_URL: ${{ github.event.deployment_status.target_url }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - name: Download the verdict report
+        uses: actions/download-artifact@v4
+        with:
+          name: verdicts
+          path: .
+
+      - name: Publish the public board
+        # No SHA checkout, no npm — just the artifact + a force-pushed orphan
+        # branch the Lab island reads. Runs green or red, so the public board
+        # reflects the latest main result.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tmp="$(mktemp -d)"
           cp verdicts.json "$tmp/verdicts.json"
@@ -152,15 +175,8 @@ jobs:
           git -c user.email='github-actions[bot]@users.noreply.github.com' \
               -c user.name='github-actions[bot]' \
               commit -qm "chore(verdicts): ${GITHUB_SHA::12} on $(date -u +%FT%TZ)"
-          # Single-commit orphan branch — force-push keeps it tiny (board reads raw).
           git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" verdicts
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Promote the gated build to production (main only, on green)
-        if: env.IS_MAIN == 'true' && steps.replay.outcome == 'success' && env.VERCEL_TOKEN != ''
+      - name: Promote the gated build to production (on green)
+        if: needs.gate.result == 'success' && env.VERCEL_TOKEN != ''
         run: npx vercel promote "$SCOUT_BASE_URL" --token="$VERCEL_TOKEN" --yes
-
-      - name: Gate — fail if any scenario is not verified
-        working-directory: packages/site
-        run: node ../cli/dist/cli.js report --check
