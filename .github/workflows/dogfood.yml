@@ -55,12 +55,31 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read # runs the untrusted SHA — no write power, no severe secrets
+    outputs:
+      # Whether this deploy is the current tip of main (the production-bound one).
+      # Vercel labels every deploy `environment=Preview` and sets the GitHub
+      # deployment `ref` to the SHA (not "main") — with autoAlias:false there is
+      # no "Production" env to key on — so we resolve it by comparing the deploy
+      # SHA to main's HEAD. Computed in this read-only job; the promote job keys
+      # its severe-secret work on this output.
+      is_main: ${{ steps.detect.outputs.is_main }}
     env:
       # The immutable URL of the exact build Vercel just finished.
       SCOUT_BASE_URL: ${{ github.event.deployment_status.target_url }}
       # The Lab's environment-interpolation surface resolves $ENV:LAB_COUPON.
       LAB_COUPON: FOCUS25
     steps:
+      - name: Is this deploy the current tip of main?
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"
+          deploy_sha="${{ github.event.deployment.sha }}"
+          if [ "$main_sha" = "$deploy_sha" ]; then is_main=true; else is_main=false; fi
+          echo "deploy=$deploy_sha main=$main_sha is_main=$is_main"
+          echo "is_main=$is_main" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.deployment.sha }}
@@ -138,12 +157,9 @@ jobs:
   # Trusted job: severe secrets live here, and it runs NO checked-out code.
   publish-and-promote:
     needs: gate
-    # main deploys only; runs even if the gate failed (to publish a red board),
-    # but promote is gated on the gate passing (see the promote step).
-    if: >-
-      ${{ !cancelled()
-      && github.event.deployment_status.state == 'success'
-      && (github.event.deployment.ref == 'main' || github.event.deployment.ref == 'refs/heads/main') }}
+    # main-tip deploys only; runs even if the gate failed (to publish a red
+    # board), but promote is gated on the gate passing (see the promote step).
+    if: ${{ !cancelled() && needs.gate.outputs.is_main == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write # push the orphan `verdicts` branch
