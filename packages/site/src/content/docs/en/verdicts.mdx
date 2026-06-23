@@ -1,0 +1,32 @@
+---
+title: "Verdicts & exit codes"
+description: "Every run resolves to exactly one verdict, and each verdict maps to a stable process exit code — the contract that lets scout report --check gate a pipeline without parsing output."
+sidebarLabel: "Verdicts & exit codes"
+order: 7
+group: "Core concepts"
+tags: ["verdicts", "exit-codes", "ci", "concepts"]
+translationKey: "verdicts"
+lang: en
+draft: false
+---
+
+import VerdictTable from "@components/VerdictTable.astro";
+
+Every run resolves to exactly one verdict, and each verdict maps to a stable process exit code. That mapping is the contract: it lets `scout report --check` gate a pipeline without anyone grepping markdown for emojis, and it stays fixed across versions so dashboards and CI rules don't break under you.
+
+<VerdictTable />
+
+## Reading the verdicts
+
+- **`verified`** — the flow held. A deterministic script was recorded (first run) or replayed (every run after). This is the only status that passes `--check`.
+- **`partial`** — Scout healed a broken step on its own and re-recorded the path. The run is reported as `partial` on purpose: the heal is automatic, but you sign off on the new path before trusting it. See [self-healing](/docs/how-verification-works/#self-healing-and-re-aim).
+- **`failed`** — a step no longer holds and could not be healed. The diff tells you which one.
+- **`blocked`** — Scout never got to observe: the app wouldn't start, the page wouldn't load, or an AI run died for an infrastructure reason. It is never a judgment about your app — see [a runner failure is never an app verdict](/docs/how-verification-works/).
+
+## The `--check` gate
+
+```bash
+scout report --check   # exit 1 if ANY scenario is not `verified`, exit 0 otherwise
+```
+
+`--check` is the gate primitive. A scenario passes only with status `verified`; `failed`, `partial`, `blocked`, and `pending` all fail the check — so a self-healed `partial` deliberately blocks the pipeline until a human reviews the new path. An empty suite passes vacuously; test `summary.total` from `--json` if you require scenarios to exist. Wiring it into GitHub Actions is covered in [Environments & CI](/docs/environments/).

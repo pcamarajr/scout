@@ -1,0 +1,267 @@
+---
+// Scout — docs shell
+//
+// The reading-surface chrome that wraps every docs page: a 248px grouped
+// sidebar on the left (brass-bulleted group labels, the provider guides nested
+// under "Providers & credentials"), the reading column in the middle (the
+// slot — the page-view owns the breadcrumb, h1, and prose), and an "On this
+// page" TOC on the right built from the entry's headings. Sits inside
+// BaseLayout, which still owns <html>, the topbar, and the footer.
+import DocSearch from "@components/DocSearch.astro";
+import BaseLayout from "@layouts/BaseLayout.astro";
+import { getDocsNav } from "@lib/content";
+import { createTranslator } from "@lib/i18n";
+import { buildDocUrl } from "@lib/urls";
+
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  title: string;
+  description: string;
+  /** Bare slug of the current page (no locale folder), for the active state. */
+  activeSlug: string;
+  /** Headings of the rendered entry — drives the "On this page" TOC. */
+  headings: Heading[];
+}
+
+const { title, description, activeSlug, headings } = Astro.props;
+
+const locale = Astro.currentLocale ?? "en";
+const tl = createTranslator(Astro.currentLocale);
+
+const nav = await getDocsNav(locale);
+const bare = (id: string) => id.replace(/^[^/]+\//, "");
+
+// Only h2/h3 land in the TOC — h1 is the page title, deeper levels are noise.
+const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
+---
+
+<BaseLayout title={title} description={description} type="article">
+  <div class="docs-shell">
+    <aside class="docnav" aria-label={tl("docs.title")}>
+      <DocSearch />
+      {
+        nav.map((group) => (
+          <div class="group">
+            <p class="group-label">{group.label}</p>
+            <ul>
+              {group.items.map((item) => {
+                const slug = bare(item.entry.id);
+                return (
+                  <li>
+                    <a
+                      href={buildDocUrl(item.entry.id, locale)}
+                      class:list={["doc-link", { active: slug === activeSlug }]}
+                      aria-current={slug === activeSlug ? "page" : undefined}
+                    >
+                      {item.entry.data.sidebarLabel ?? item.entry.data.title}
+                    </a>
+                    {item.children.length > 0 && (
+                      <ul class="children">
+                        {item.children.map((child) => {
+                          const cslug = bare(child.id);
+                          return (
+                            <li>
+                              <a
+                                href={buildDocUrl(child.id, locale)}
+                                class:list={[
+                                  "doc-link",
+                                  { active: cslug === activeSlug },
+                                ]}
+                                aria-current={
+                                  cslug === activeSlug ? "page" : undefined
+                                }
+                              >
+                                {child.data.sidebarLabel ?? child.data.title}
+                              </a>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))
+      }
+    </aside>
+
+    <div class="doc-main">
+      <slot />
+    </div>
+
+    {
+      toc.length > 0 && (
+        <aside class="doc-toc" aria-label={tl("docs.onThisPage")}>
+          <p class="toc-label">{tl("docs.onThisPage")}</p>
+          <nav>
+            <ul>
+              {toc.map((h) => (
+                <li class:list={[{ sub: h.depth === 3 }]}>
+                  <a href={`#${h.slug}`}>{h.text}</a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </aside>
+      )
+    }
+  </div>
+</BaseLayout>
+
+<style>
+  .docs-shell {
+    max-width: 80rem;
+    margin-inline: auto;
+    padding-inline: var(--space-lg);
+    display: grid;
+    grid-template-columns: 248px minmax(0, 1fr);
+    gap: var(--space-2xl);
+    align-items: start;
+  }
+
+  @media (min-width: 1100px) {
+    .docs-shell {
+      grid-template-columns: 248px minmax(0, 1fr) 14rem;
+    }
+  }
+
+  /* ── sidebar ── */
+  .docnav {
+    position: sticky;
+    inset-block-start: 60px;
+    max-block-size: calc(100vh - 60px);
+    overflow-y: auto;
+    padding-block: var(--space-xl);
+    padding-inline-end: var(--space-md);
+    border-inline-end: 1px solid var(--color-border);
+  }
+
+  .group {
+    margin-block-end: var(--space-xl);
+  }
+
+  .group-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin: 0 0 var(--space-sm);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-text-subtle);
+  }
+
+  .group-label::before {
+    content: "";
+    inline-size: 5px;
+    block-size: 5px;
+    border-radius: var(--radius-full);
+    background: var(--color-brass);
+  }
+
+  .docnav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1px;
+  }
+
+  .doc-link {
+    display: block;
+    padding: 6px var(--space-md);
+    border-radius: var(--radius-sm);
+    border-inline-start: 2px solid transparent;
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    text-decoration: none;
+    transition: all 150ms ease;
+  }
+
+  .doc-link:hover {
+    color: var(--color-text);
+    background: var(--color-surface);
+    text-decoration: none;
+  }
+
+  .doc-link.active {
+    color: var(--color-primary);
+    border-inline-start-color: var(--color-primary);
+    background: var(--color-primary-soft);
+    font-weight: 600;
+  }
+
+  .children {
+    margin-block-start: 1px;
+    margin-inline-start: var(--space-md);
+  }
+
+  /* ── TOC ── */
+  .doc-toc {
+    display: none;
+  }
+
+  @media (min-width: 1100px) {
+    .doc-toc {
+      display: block;
+      position: sticky;
+      inset-block-start: 60px;
+      padding-block: var(--space-xl);
+    }
+  }
+
+  .toc-label {
+    margin: 0 0 var(--space-sm);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-text-subtle);
+  }
+
+  .doc-toc ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-xs);
+  }
+
+  .doc-toc a {
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    text-decoration: none;
+    line-height: 1.4;
+  }
+
+  .doc-toc a:hover {
+    color: var(--color-primary);
+  }
+
+  .doc-toc li.sub {
+    padding-inline-start: var(--space-md);
+  }
+
+  /* ── responsive: collapse rails, stack to a single reading column ── */
+  @media (max-width: 880px) {
+    .docs-shell {
+      grid-template-columns: 1fr;
+      gap: var(--space-lg);
+    }
+    .docnav {
+      position: static;
+      max-block-size: none;
+      border-inline-end: 0;
+      border-block-end: 1px solid var(--color-border);
+      padding-inline-end: 0;
+    }
+  }
+</style>

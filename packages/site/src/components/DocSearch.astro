@@ -1,0 +1,310 @@
+---
+// Scout — docs search (⌘K)
+//
+// A Pagefind-backed command palette for the docs. Pagefind indexes the BUILT
+// HTML (`pagefind --site dist` runs after `astro build`), so the search bundle
+// only exists in a production build — in `astro dev` there is no index and the
+// modal degrades to an "available in the built site" notice. Progressive
+// enhancement: the trigger is a plain button, the modal is a native <dialog>,
+// and the Pagefind module is dynamically imported on first open (never bundled
+// — the `/pagefind/` path is resolved at runtime by the browser).
+import { createTranslator } from "@lib/i18n";
+
+const tl = createTranslator(Astro.currentLocale);
+---
+
+<div class="docsearch">
+  <button type="button" class="trigger" data-search-open aria-haspopup="dialog">
+    <span class="ic" aria-hidden="true">⌕</span>
+    <span class="label">{tl("docs.searchLabel")}</span>
+    <kbd class="kbd" aria-hidden="true">⌘K</kbd>
+  </button>
+
+  <dialog class="modal" data-search-modal aria-label={tl("docs.searchLabel")}>
+    <div class="panel">
+      <div class="field">
+        <span class="ic" aria-hidden="true">⌕</span>
+        <input
+          type="search"
+          data-search-input
+          placeholder={tl("docs.searchPlaceholder")}
+          aria-label={tl("docs.searchPlaceholder")}
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <kbd class="kbd" aria-hidden="true">Esc</kbd>
+      </div>
+      <div class="results" data-search-results role="listbox" aria-label={tl("docs.searchLabel")}>
+        <p
+          class="hint"
+          data-search-hint
+          data-idle={tl("docs.searchHint")}
+          data-empty={tl("docs.searchEmpty")}
+          data-unavailable={tl("docs.searchUnavailable")}
+        >
+          {tl("docs.searchHint")}
+        </p>
+      </div>
+    </div>
+  </dialog>
+</div>
+
+<script>
+  type PagefindResult = {
+    data: () => Promise<{
+      url: string;
+      meta: { title?: string };
+      excerpt: string;
+    }>;
+  };
+  type Pagefind = {
+    search: (q: string) => Promise<{ results: PagefindResult[] }>;
+    init?: () => Promise<void>;
+  };
+
+  const open = document.querySelector<HTMLButtonElement>("[data-search-open]");
+  const modal = document.querySelector<HTMLDialogElement>("[data-search-modal]");
+  const input = document.querySelector<HTMLInputElement>("[data-search-input]");
+  const results = document.querySelector<HTMLElement>("[data-search-results]");
+  const hint = document.querySelector<HTMLElement>("[data-search-hint]");
+
+  if (open && modal && input && results && hint) {
+    const emptyText = hint.dataset.empty ?? "No results.";
+    const unavailableText =
+      hint.dataset.unavailable ?? "Search runs on the built site.";
+
+    let pagefind: Pagefind | null = null;
+    let loadFailed = false;
+
+    async function ensurePagefind(): Promise<Pagefind | null> {
+      if (pagefind || loadFailed) return pagefind;
+      try {
+        // Runtime-only path: the index is emitted by `pagefind --site dist`,
+        // so it is absent in dev. The variable keeps the bundler from trying
+        // to resolve it at build time.
+        const path = "/pagefind/pagefind.js";
+        const mod = (await import(/* @vite-ignore */ path)) as Pagefind;
+        await mod.init?.();
+        pagefind = mod;
+      } catch {
+        loadFailed = true;
+      }
+      return pagefind;
+    }
+
+    function showModal() {
+      modal!.showModal();
+      input!.value = "";
+      results!.replaceChildren(hint!);
+      hint!.textContent = hint!.dataset.idle ?? "";
+      input!.focus();
+      void ensurePagefind();
+    }
+
+    function render(
+      items: { url: string; title: string; excerpt: string }[],
+    ) {
+      if (items.length === 0) {
+        results!.replaceChildren(hint!);
+        hint!.textContent = loadFailed ? unavailableText : emptyText;
+        return;
+      }
+      const frag = document.createDocumentFragment();
+      for (const item of items) {
+        const a = document.createElement("a");
+        a.className = "result";
+        a.href = item.url;
+        a.setAttribute("role", "option");
+        const title = document.createElement("span");
+        title.className = "r-title";
+        title.textContent = item.title;
+        const ex = document.createElement("span");
+        ex.className = "r-excerpt";
+        ex.innerHTML = item.excerpt;
+        a.append(title, ex);
+        frag.append(a);
+      }
+      results!.replaceChildren(frag);
+    }
+
+    let token = 0;
+    async function runSearch(query: string) {
+      const mine = ++token;
+      const q = query.trim();
+      if (!q) {
+        results!.replaceChildren(hint!);
+        hint!.textContent = hint!.dataset.idle ?? "";
+        return;
+      }
+      const pf = await ensurePagefind();
+      if (mine !== token) return;
+      if (!pf) {
+        render([]);
+        return;
+      }
+      const search = await pf.search(q);
+      if (mine !== token) return;
+      const data = await Promise.all(
+        search.results.slice(0, 6).map((r) => r.data()),
+      );
+      if (mine !== token) return;
+      render(
+        data.map((d) => ({
+          url: d.url,
+          title: d.meta.title ?? d.url,
+          excerpt: d.excerpt,
+        })),
+      );
+    }
+
+    open.addEventListener("click", showModal);
+    input.addEventListener("input", () => void runSearch(input.value));
+
+    // Close when the backdrop (the dialog element itself) is clicked.
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) modal.close();
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (modal.open) modal.close();
+        else showModal();
+      }
+    });
+  }
+</script>
+
+<style>
+  .docsearch {
+    margin-block-end: var(--space-lg);
+  }
+
+  .trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    inline-size: 100%;
+    padding: var(--space-sm) var(--space-md);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text-subtle);
+    font-family: var(--font-body);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition: border-color 150ms ease;
+  }
+
+  .trigger:hover {
+    border-color: var(--color-border-strong);
+    color: var(--color-text-muted);
+  }
+
+  .trigger .label {
+    margin-inline-end: auto;
+  }
+
+  .trigger .ic {
+    color: var(--color-text-subtle);
+  }
+
+  .kbd {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    padding: 1px 6px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-subtle);
+    background: var(--color-bg);
+  }
+
+  .modal {
+    margin: 0 auto;
+    inset-block-start: 12vh;
+    inline-size: min(34rem, calc(100vw - 2 * var(--space-lg)));
+    padding: 0;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--color-bg);
+    box-shadow: var(--shadow-lg);
+    color: var(--color-text);
+  }
+
+  .modal::backdrop {
+    background: color-mix(in srgb, var(--color-text) 35%, transparent);
+    backdrop-filter: blur(2px);
+  }
+
+  .field {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    border-block-end: 1px solid var(--color-border);
+  }
+
+  .field .ic {
+    color: var(--color-text-subtle);
+    font-size: var(--text-lg);
+  }
+
+  .field input {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    color: var(--color-text);
+    font-family: var(--font-body);
+    font-size: var(--text-base);
+  }
+
+  .field input:focus {
+    outline: none;
+  }
+
+  .results {
+    max-block-size: 50vh;
+    overflow-y: auto;
+    padding: var(--space-sm);
+  }
+
+  .hint {
+    margin: 0;
+    padding: var(--space-md);
+    color: var(--color-text-subtle);
+    font-size: var(--text-sm);
+  }
+
+  .result {
+    display: block;
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    color: var(--color-text);
+  }
+
+  .result:hover {
+    background: var(--color-surface);
+    text-decoration: none;
+  }
+
+  .r-title {
+    display: block;
+    font-weight: 600;
+    font-size: var(--text-sm);
+  }
+
+  .r-excerpt {
+    display: block;
+    margin-block-start: 2px;
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    line-height: 1.5;
+  }
+
+  .r-excerpt :global(mark) {
+    background: var(--color-primary-soft);
+    color: inherit;
+    border-radius: 2px;
+  }
+</style>

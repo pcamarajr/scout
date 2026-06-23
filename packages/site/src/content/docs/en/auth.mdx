@@ -1,4 +1,14 @@
-# Auth profiles & secrets
+---
+title: "Auth profiles & secrets"
+description: "Run authenticated flows with a browser session captured once per environment, pick a profile per scenario, and keep secrets out of the committed script with $ENV: placeholders."
+sidebarLabel: "Auth profiles & secrets"
+order: 12
+group: "Reference"
+tags: ["auth", "profiles", "secrets"]
+translationKey: "auth"
+lang: en
+draft: false
+---
 
 Authenticated flows use a browser session captured once per environment (Playwright `storageState`).
 
@@ -15,7 +25,7 @@ Authenticated flows use a browser session captured once per environment (Playwri
 }
 ```
 
-A scenario picks a profile via file-level `profile:` frontmatter or a per-scenario override (see [Writing scenarios](./scenarios.md)).
+A scenario picks a profile via file-level `profile:` frontmatter or a per-scenario override (see [Writing scenarios](/docs/scenarios/)). For the full set of config keys, see the [config file reference](/docs/config/).
 
 ## Capturing a session
 
@@ -23,7 +33,7 @@ A scenario picks a profile via file-level `profile:` frontmatter or a per-scenar
 scout login subscriber   # opens a headed browser; log in, press Enter → saves .scout/state/subscriber.json (gitignored)
 ```
 
-> `scout login` captures **your application's** logged-in session — it is **not** AI/model-provider auth. For that, see [Providers & credentials](./providers) and `scout doctor`.
+> `scout login` captures **your application's** logged-in session — it is **not** AI/model-provider auth. For that, see [Providers & credentials](/docs/providers/) and `scout doctor`.
 
 ## Secrets (`$ENV:` placeholders)
 

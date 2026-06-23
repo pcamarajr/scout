@@ -350,4 +350,12 @@
   .skip-link:focus-visible {
     transform: translateY(0);
   }
+
+  /* Shared page container — the centered, padded column the topbar, footer,
+     and landing sections all align to. The single source of the site width. */
+  .wrap {
+    max-width: 72rem;
+    margin-inline: auto;
+    padding-inline: var(--space-lg);
+  }
 }

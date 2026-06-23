@@ -65,7 +65,7 @@ The first `scout go` needs an AI provider. Run `scout doctor` anytime to check.
 - **Claude Code (zero-config) — the happy path.** If you're signed in to [Claude Code](https://claude.com/claude-code), Scout reuses that session automatically. Nothing to set.
 - **Or an API key:** `export ANTHROPIC_API_KEY=…` (Claude), `export GEMINI_API_KEY=…` (Gemini), or `export OPENAI_API_KEY=…` (OpenAI). Scout picks the provider from the `model` in `scout.config.json`.
 
-Full provider setup → [`docs/providers/`](./docs/providers). Deterministic **replay never uses an LLM**, so CI needs no credentials (`scout go --no-heal`).
+Full provider setup → [Providers & credentials](https://scout.pcamarajr.dev/docs/providers/). Deterministic **replay never uses an LLM**, so CI needs no credentials (`scout go --no-heal`).
 
 ## Use it in your codebase
 
@@ -79,7 +79,7 @@ scout init                        # writes scout.config.json, .scout/, and AI ag
 ```
 
 - `.scout/specs/*.scout.md` (your scenarios) and `.scout/scripts/` are **committed**; runs and sessions are gitignored.
-- Gate a PR on it: `scout report --check` exits non-zero if any scenario isn't `verified`. → [CI setup](./docs/environments.md)
+- Gate a PR on it: `scout report --check` exits non-zero if any scenario isn't `verified`. → [CI setup](https://scout.pcamarajr.dev/docs/environments/)
 
 ## Use it with your AI agent
 
@@ -89,20 +89,20 @@ scout init                        # writes scout.config.json, .scout/, and AI ag
 - **`.claude/skills/scout/SKILL.md`** + **`.cursor/rules/scout.mdc`** — point your agent at it automatically.
 - **MCP server** (`scout mcp`) — exposes `scout_create_scenario`, `scout_run`, `scout_report`, … so the agent runs the loop end-to-end.
 
-The loop: you describe a flow → the agent writes the `.scout.md` → runs `scout go` → reports the **real** verdict (never claims success without running it) → iterates with you until it's green. Full guide → [`docs/ai-agents.md`](./docs/ai-agents.md).
+The loop: you describe a flow → the agent writes the `.scout.md` → runs `scout go` → reports the **real** verdict (never claims success without running it) → iterates with you until it's green. Full guide → [AI agents & MCP](https://scout.pcamarajr.dev/docs/ai-agents/).
 
 ## Docs
 
 | Topic | |
 |---|---|
-| [Writing scenarios](./docs/scenarios.md) | the `.scout.md` format, slugs, per-scenario overrides |
-| [Providers & credentials](./docs/providers) | Claude, Gemini, OpenAI — detection order + `scout doctor` |
-| [Auth profiles](./docs/auth.md) | logged-in flows, `scout login`, `$ENV:` secrets |
-| [Environments & CI](./docs/environments.md) | base-URL overrides, worktrees, the PR gate |
-| [Run artifacts](./docs/artifacts.md) | traces, screenshots, the preview video |
-| [AI agents & MCP](./docs/ai-agents.md) | the co-author loop, the scaffolded files, MCP tools |
-| [CLI reference](./docs/cli.md) | every command, `scout report --json/--check` |
-| [Architecture](./docs/architecture.md) | how it works inside + design decisions + limitations |
+| [Writing scenarios](https://scout.pcamarajr.dev/docs/scenarios/) | the `.scout.md` format, slugs, per-scenario overrides |
+| [Providers & credentials](https://scout.pcamarajr.dev/docs/providers/) | Claude, Gemini, OpenAI — detection order + `scout doctor` |
+| [Auth profiles](https://scout.pcamarajr.dev/docs/auth/) | logged-in flows, `scout login`, `$ENV:` secrets |
+| [Environments & CI](https://scout.pcamarajr.dev/docs/environments/) | base-URL overrides, worktrees, the PR gate |
+| [Run artifacts](https://scout.pcamarajr.dev/docs/artifacts/) | traces, screenshots, the preview video |
+| [AI agents & MCP](https://scout.pcamarajr.dev/docs/ai-agents/) | the co-author loop, the scaffolded files, MCP tools |
+| [CLI reference](https://scout.pcamarajr.dev/docs/cli/) | every command, `scout report --json/--check` |
+| [Architecture](https://scout.pcamarajr.dev/docs/architecture/) | how it works inside + design decisions + limitations |
 
 ## Verdicts
 
@@ -124,4 +124,4 @@ This is an npm-workspaces monorepo:
 
 ---
 
-Early but functional, and published on npm. Issues and PRs welcome — see [`docs/architecture.md`](./docs/architecture.md) for internals. MIT licensed.
+Early but functional, and published on npm. Issues and PRs welcome — see [Architecture](https://scout.pcamarajr.dev/docs/architecture/) for internals. MIT licensed.

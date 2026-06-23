@@ -1,4 +1,14 @@
-# Writing scenarios (`.scout.md`)
+---
+title: "Writing scenarios"
+description: "The .scout.md format: one file per feature, plain-language flows, browser permissions, multi-tab follows, and console/network assertions — versioned and reviewed like the rest of your tests."
+sidebarLabel: "Writing scenarios"
+order: 4
+group: "Getting started"
+tags: ["scenarios", "spec", "format"]
+translationKey: "scenarios"
+lang: en
+draft: false
+---
 
 Scenarios live as markdown under `.scout/specs/**/*.scout.md` — **one file per feature/component**, versioned and reviewed like the rest of your tests. The markdown is the **source of truth and a pure input**: a run never writes back to it. Status and last-run derive from `.scout/runs/` instead, so the spec diff only ever reflects an intent change, never run noise.
 
@@ -17,6 +27,8 @@ profile: qa               # per-scenario override (also: notes, tags)
 
 Logged-in subscriber opens ep 3; plays with no paywall.
 ```
+
+You state what a user can do and what must be true — never how to click it. That is the whole point: the sentence is the intent you hold the product to, and the agent discovers the real elements at run time so the wording survives a redesign.
 
 ## Rules
 
@@ -85,7 +97,7 @@ Keep these expectations about **shape, not exact values** — "a POST to `/api/c
 
 - **By hand** — write the markdown directly.
 - **CLI** — `scout create <name> -f <feature> -c <text> [-p profile] [-n notes]`. A convenience for humans without an agent.
-- **AI agent** — your coding agent writes a richer spec straight from repo context. See [AI agents & MCP](./ai-agents.md).
+- **AI agent** — your coding agent writes a richer spec straight from repo context. See [AI agents & MCP](/docs/ai-agents/).
 
 ## Migrating from a legacy `scenarios.json`
 

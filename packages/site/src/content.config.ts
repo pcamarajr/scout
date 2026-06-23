@@ -28,6 +28,11 @@ const docs = defineCollection({
     sidebarLabel: z.string().optional(),
     order: z.number(),
     group: z.enum(["Getting started", "Core concepts", "Reference"]),
+    // Nests this entry under another in the sidebar — the parent's slug
+    // WITHOUT the locale prefix (e.g. "providers" for the provider guides).
+    // Absent = top-level item in its group. Sidebar indents children under
+    // their parent; `order` still drives sequence within the nesting.
+    parent: z.string().optional(),
     tags: z.array(z.string()).default([]),
     translationKey: z.string(),
     lang: z.enum(locales),

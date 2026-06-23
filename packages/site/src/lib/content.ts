@@ -7,7 +7,17 @@
 // one place: filter by `lang`, exclude drafts, sort deterministically. A
 // page-view asks "give me this locale's docs" and stays ignorant of how
 // entries are stored or ordered.
+import type { CollectionEntry } from "astro:content";
 import { getCollection } from "astro:content";
+
+type DocEntry = CollectionEntry<"docs">;
+
+/** The sidebar groups, in display order. Mirror of the schema's group enum. */
+export const DOC_GROUPS = [
+  "Getting started",
+  "Core concepts",
+  "Reference",
+] as const;
 
 /**
  * Published docs for a locale, sorted by sidebar group then `order`.
@@ -20,4 +30,50 @@ export async function getDocsByLang(lang: string | undefined) {
     ({ data }) => data.lang === lang && !data.draft,
   );
   return entries.toSorted((a, b) => a.data.order - b.data.order);
+}
+
+/** Bare slug (no locale folder) for matching `parent` against entry ids. */
+function bareSlug(entry: DocEntry): string {
+  return entry.id.replace(/^[^/]+\//, "");
+}
+
+export interface DocNavItem {
+  entry: DocEntry;
+  children: DocEntry[];
+}
+
+export interface DocNavGroup {
+  label: (typeof DOC_GROUPS)[number];
+  items: DocNavItem[];
+}
+
+/**
+ * The docs sidebar tree for a locale: groups in display order, each holding
+ * its top-level entries with any nested children attached (one level deep —
+ * the provider guides under "Providers & credentials"). A child is any entry
+ * whose `parent` matches another entry's bare slug; it is rendered indented
+ * under that parent, never as its own top-level row. Everything stays ordered
+ * by `order`, which getDocsByLang already guarantees.
+ */
+export async function getDocsNav(
+  lang: string | undefined,
+): Promise<DocNavGroup[]> {
+  const docs = await getDocsByLang(lang);
+  const childrenByParent = new Map<string, DocEntry[]>();
+  for (const doc of docs) {
+    if (!doc.data.parent) continue;
+    const siblings = childrenByParent.get(doc.data.parent) ?? [];
+    siblings.push(doc);
+    childrenByParent.set(doc.data.parent, siblings);
+  }
+
+  return DOC_GROUPS.map((label) => ({
+    label,
+    items: docs
+      .filter((doc) => doc.data.group === label && !doc.data.parent)
+      .map((entry) => ({
+        entry,
+        children: childrenByParent.get(bareSlug(entry)) ?? [],
+      })),
+  })).filter((group) => group.items.length > 0);
 }

@@ -1,4 +1,14 @@
-# Providers & credentials
+---
+title: "Providers & credentials"
+description: "The first run and any heal need an AI provider; deterministic replay never does. How Scout infers the provider from your model, the two engines, and how scout doctor verifies credentials."
+sidebarLabel: "Providers & credentials"
+order: 13
+group: "Reference"
+tags: ["providers", "credentials", "models"]
+translationKey: "providers"
+lang: en
+draft: false
+---
 
 The first `scout go` on a scenario (and any heal) needs an AI provider. Deterministic **replay never uses an LLM**, so CI that only replays needs no credentials.
 
@@ -10,9 +20,9 @@ Scout infers the provider from the `model` in `scout.config.json` (case-insensit
 
 | `model` starts with | Provider | Guide |
 |---|---|---|
-| `claude…` | Anthropic (default) | [claude.md](./claude.md) |
-| `gemini…` / `google…` | Google | [gemini.md](./gemini.md) |
-| `gpt…`, `o1`, `o3`, `o4…` | OpenAI | [openai.md](./openai.md) |
+| `claude…` | Anthropic (default) | [Claude](/docs/providers/claude/) |
+| `gemini…` / `google…` | Google | [Gemini](/docs/providers/gemini/) |
+| `gpt…`, `o1`, `o3`, `o4…` | OpenAI | [OpenAI](/docs/providers/openai/) |
 
 Unknown/empty model ids fall back to Anthropic.
 
@@ -21,7 +31,7 @@ Unknown/empty model ids fall back to Anthropic.
 - **`agent-sdk`** (default for Anthropic) — the trusted Claude Agent SDK. Reuses a Claude Code session with **zero config**.
 - **`ai-sdk`** (default for Google/OpenAI; can also run Claude for parity) — the Vercel AI SDK engine. Authenticates with a real API key only.
 
-Override with `SCOUT_ENGINE=agent-sdk|ai-sdk` or `"engine"` in `scout.config.json`. Note: the AI SDK engine cannot reuse the Claude Code keychain/OAuth session — under it, Anthropic needs `ANTHROPIC_API_KEY`.
+Override with `SCOUT_ENGINE=agent-sdk|ai-sdk` or `"engine"` in `scout.config.json` (see the [config file reference](/docs/config/)). Note: the AI SDK engine cannot reuse the Claude Code keychain/OAuth session — under it, Anthropic needs `ANTHROPIC_API_KEY`.
 
 ## TL;DR
 
