@@ -17,11 +17,11 @@ export default defineConfig({
   output: "static",
 
   // The docs entry. /docs has no page of its own — the sidebar IS the docs
-  // nav — so it redirects into the first reading page, where the vision is
-  // reinforced first. Astro emits a static HTML redirect for this at build.
-  redirects: {
-    "/docs": "/docs/introduction/",
-  },
+  // nav. In-site links point straight at /docs/introduction/ (buildDocsHomeUrl)
+  // so navigation is flash-free; a bare /docs typed or linked externally is
+  // caught by a Vercel platform redirect (packages/site/vercel.json), a real
+  // 307 with no interstitial. We deliberately do NOT use Astro's `redirects`
+  // here: under `output: "static"` it emits a visible meta-refresh HTML page.
 
   // Code blocks in docs prose ship dark, on-brand. Shiki's github-dark theme
   // matches the design's dark `.codeblock`; the reading column stays light

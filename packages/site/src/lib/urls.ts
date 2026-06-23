@@ -46,3 +46,15 @@ export function buildRssUrl(locale: string): string {
 export function buildDocUrl(slug: string, locale: string): string {
   return buildLocaleUrl(locale, "docs", slug.replace(`${locale}/`, ""));
 }
+
+/**
+ * The docs landing. There is no `/docs/` page of its own — the first reading
+ * page (Introduction) IS the docs home. Linking straight to it keeps in-site
+ * navigation flash-free: a bare `/docs` is handled by a Vercel platform
+ * redirect (vercel.json), but `output: "static"` would otherwise emit a
+ * visible meta-refresh interstitial for an Astro `redirects` entry, so we
+ * never route in-site links through `/docs`.
+ */
+export function buildDocsHomeUrl(locale: string): string {
+  return buildLocaleUrl(locale, "docs", "introduction");
+}

@@ -275,7 +275,10 @@ const tl = createTranslator(Astro.currentLocale);
     font-size: var(--text-sm);
   }
 
-  .result {
+  /* Results are created in client JS via createElement, so they never get
+     Astro's scoping attribute — target them through the server-rendered
+     `.results` container with :global() or the styles won't apply. */
+  .results :global(.result) {
     display: block;
     padding: var(--space-sm) var(--space-md);
     border-radius: var(--radius-sm);
@@ -283,18 +286,19 @@ const tl = createTranslator(Astro.currentLocale);
     color: var(--color-text);
   }
 
-  .result:hover {
+  .results :global(.result:hover) {
     background: var(--color-surface);
     text-decoration: none;
   }
 
-  .r-title {
+  .results :global(.r-title) {
     display: block;
     font-weight: 600;
     font-size: var(--text-sm);
+    color: var(--color-text);
   }
 
-  .r-excerpt {
+  .results :global(.r-excerpt) {
     display: block;
     margin-block-start: 2px;
     font-size: var(--text-xs);
@@ -302,7 +306,7 @@ const tl = createTranslator(Astro.currentLocale);
     line-height: 1.5;
   }
 
-  .r-excerpt :global(mark) {
+  .results :global(.r-excerpt mark) {
     background: var(--color-primary-soft);
     color: inherit;
     border-radius: 2px;
