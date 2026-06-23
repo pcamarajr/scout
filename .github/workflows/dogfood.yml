@@ -195,4 +195,8 @@ jobs:
 
       - name: Promote the gated build to production (on green)
         if: needs.gate.result == 'success' && env.VERCEL_TOKEN != ''
-        run: npx vercel promote "$SCOUT_BASE_URL" --token="$VERCEL_TOKEN" --yes
+        # --scope is required: `vercel promote <url>` does NOT inherit the team
+        # from VERCEL_ORG_ID the way `vercel pull` does, so it defaults to the
+        # token's personal account and fails with "Deployment belongs to a
+        # different team". Pin the scope to the project's team explicitly.
+        run: npx vercel promote "$SCOUT_BASE_URL" --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID" --yes
