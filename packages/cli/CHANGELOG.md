@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/pcamarajr/scout/compare/scout-v0.8.0...scout-v0.9.0) (2026-06-23)
+
+
+### Features
+
+* **cli:** send custom HTTP headers to reach protected deploys ([#41](https://github.com/pcamarajr/scout/issues/41)) ([6c69c48](https://github.com/pcamarajr/scout/commit/6c69c489f99d23763f202f4db7e811cd03faf72c))
+
 ## [0.8.0](https://github.com/pcamarajr/scout/compare/scout-v0.7.1...scout-v0.8.0) (2026-06-21)
 
 
