@@ -34,7 +34,7 @@ You state what a user can do and what must be true — never how to click it. Th
 
 - Each `##` heading is one scenario. Its **logical slug** is `<file>/<scenario>` (e.g. `paywall/free-user-hits-paywall-on-ep-3`) and must be unique across the suite.
 - **Frontmatter** (YAML, optional): `feature` (defaults to the filename), `profile` (default auth profile for the file), `tags`.
-- **Per-scenario overrides:** `profile:`, `notes:`, `tags:`, and the permission keys (`grantPermissions:`, `denyPermissions:`, `geolocation:`) placed immediately under a heading (before the prose) override the file-level defaults.
+- **Per-scenario overrides:** `profile:`, `notes:`, `tags:`, the permission keys (`grantPermissions:`, `denyPermissions:`, `geolocation:`), and `cookies:` placed immediately under a heading (before the prose) override the file-level defaults.
 - **Body = flow + expected behavior, in plain language.** Describe what the user does and what must (or must not) be true. No CSS selectors, no Playwright code — the agent discovers the real elements at run time and records them.
 - A `.scout.md` whose every `##` lives inside a fenced ```` ``` ```` block parses as **zero scenarios** (that's how `example.scout.md` documents the format without polluting the suite).
 - Duplicate headings in a file, or a scenario with no body text, are hard errors.
@@ -62,6 +62,38 @@ Open the store locator; the nearest store to the coordinates is shown.
 ```
 
 Allowed: `geolocation`, `notifications`, `camera`, `microphone`, `clipboard-read`, `clipboard-write`, `midi` — an unknown name is a hard error. Granting `geolocation` requires coordinates (and coordinates imply granting it). `denyPermissions` matters mostly in **headed** runs (headless denies silently); `grantPermissions` and a granted `geolocation` change behavior in CI too.
+
+## Cookies
+
+When a flow's precondition is a cookie — forcing a server-side experiment variant, a feature flag, a consent state — declare it and scout seeds it into the browser **before the first navigation**, for both the AI run and replay. It's a context-creation parameter (like `storageState`), never a recorded step, so replay stays deterministic and the agent never needs a "set cookie" tool.
+
+Two forms. In the **frontmatter** (file default) or a **profile** (shared base in `scout.config.json`), `cookies:` is a list of objects — the place for attributes:
+
+```markdown
+---
+feature: Checkout
+cookies:
+  - name: hn_checkout_variant
+    value: A                 # file default: variant A
+  - name: consent
+    value: "yes"
+    httpOnly: true
+    sameSite: Lax            # Strict | Lax | None
+---
+
+## Default variant
+Open checkout; the file-level variant A is in effect.
+
+## Force variant C
+cookies: hn_checkout_variant=C   # per-scenario override: inline name=value
+
+Open checkout; variant C is forced.
+```
+
+- **Merge by name:** a profile's cookies are the base; the file frontmatter and then the per-scenario override win, keyed by cookie name. The per-`##` override is the terse inline `name=value[, n2=v2]` form (no attributes — those belong in the frontmatter/profile).
+- **`name` and `value` are required;** `domain`, `path`, `expires` (unix seconds), `httpOnly`, `secure`, `sameSite` are optional. `domain`/`path` default to the host of `baseUrl` and `/`.
+- **Secrets:** a `value` may use the `$ENV:VAR` placeholder (e.g. `cookies: session=$ENV:SESSION_TOKEN`) — resolved at launch, so the secret never lands in the committed spec or the agent's context. Only `value` is resolved.
+- **Fail-fast:** an unknown field, a bad `sameSite`, or a missing env var is a hard error — a silently skipped cookie precondition would produce a misleading verdict.
 
 ## Flows that open a new tab
 

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { loadConfig, resolveStorageState, type ScoutConfig } from "./config.js";
+import { loadConfig, resolveCookies, resolveStorageState, type ScoutConfig } from "./config.js";
 import { detectAiCredentials, inferProvider } from "./credentials.js";
 import { renderRunReport } from "./report.js";
 import { Store } from "./store.js";
@@ -8,7 +8,7 @@ import { BrowserSession } from "./runner/browser.js";
 import { runWithAgent } from "./runner/ai-runner.js";
 import { describeStep, replayForVideo, replaySteps } from "./runner/script-runner.js";
 import { generateVideo, pacingFor, type TimelineEntry, type VideoPacing } from "./runner/video.js";
-import type { RunResult, Scenario, Step, Target } from "./types.js";
+import type { RunResult, Scenario, ScenarioCookie, Step, Target } from "./types.js";
 
 export interface RunOptions {
   /** Skip the cached script and force an AI run (re-record) */
@@ -36,6 +36,7 @@ export async function runScenario(
   const start = Date.now();
   const runDir = store.newRunDir(scenario.slug);
   const storageState = resolveStorageState(scenario.profile, config);
+  const cookies = resolveCookies(scenario, config);
   const cached = opts.forceAi ? undefined : store.loadSteps(scenario.slug);
   const aiCreds = detectAiCredentials(inferProvider(config.model), { engine: config.engine });
 
@@ -47,6 +48,7 @@ export async function runScenario(
       locale: config.locale,
       runDir,
       permissions: scenario.permissions,
+      cookies,
       extraHeaders: config.headers,
     });
 
@@ -72,7 +74,7 @@ export async function runScenario(
       };
     } else if (heal && aiCreds.ok) {
       // cached script broke — re-verify with the agent and re-record
-      const aiResult = await runAi(scenario, config, store, runDir, storageState, opts);
+      const aiResult = await runAi(scenario, config, store, runDir, storageState, cookies, opts);
       result = {
         ...aiResult,
         healed: true,
@@ -99,7 +101,7 @@ export async function runScenario(
     if (!aiCreds.ok) {
       throw new Error(aiCreds.remediation);
     }
-    const aiResult = await runAi(scenario, config, store, runDir, storageState, opts);
+    const aiResult = await runAi(scenario, config, store, runDir, storageState, cookies, opts);
     result = { ...aiResult, startedAt, durationMs: Date.now() - start };
   }
 
@@ -108,7 +110,7 @@ export async function runScenario(
   if (config.recordVideo && result.verdict === "verified") {
     const steps = store.loadSteps(scenario.slug);
     if (steps?.length) {
-      result.video = await recordPreviewVideo(scenario, steps, config, storageState, runDir);
+      result.video = await recordPreviewVideo(scenario, steps, config, storageState, cookies, runDir);
     }
   }
 
@@ -229,6 +231,7 @@ async function recordPreviewVideo(
   steps: Step[],
   config: ScoutConfig,
   storageState: string | undefined,
+  cookies: ScenarioCookie[] | undefined,
   runDir: string
 ): Promise<string | undefined> {
   const attempt = async (pacing: VideoPacing): Promise<RecordedReplay> => {
@@ -243,6 +246,7 @@ async function recordPreviewVideo(
         recordVideo: true,
         slowMoMs: pacing.slowMoMs,
         permissions: scenario.permissions,
+        cookies,
         extraHeaders: config.headers,
       });
     } catch {
@@ -280,6 +284,7 @@ async function runAi(
   store: Store,
   runDir: string,
   storageState: string | undefined,
+  cookies: ScenarioCookie[] | undefined,
   opts: RunOptions
 ): Promise<RunResult> {
   const startedAt = new Date().toISOString();
@@ -297,6 +302,7 @@ async function runAi(
       locale: config.locale,
       runDir,
       permissions: scenario.permissions,
+      cookies,
       extraHeaders: config.headers,
     });
     let result;

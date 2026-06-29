@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
 import { SCOUT_DIR } from "./config.js";
-import type { GeoCoords, PermissionPolicy, Scenario } from "./types.js";
+import { mergeCookiesByName, parseCookieList, parseInlineCookies } from "./cookies.js";
+import type { GeoCoords, PermissionPolicy, Scenario, ScenarioCookie } from "./types.js";
 
 /**
  * Scenario specs live as markdown files under `.scout/specs/**\/*.scout.md`.
@@ -26,6 +27,7 @@ const OVERRIDE_KEYS = new Set([
   "grantPermissions",
   "denyPermissions",
   "geolocation",
+  "cookies",
 ]);
 
 /**
@@ -229,6 +231,7 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
   const fileProfile = typeof data.profile === "string" ? data.profile : undefined;
   const fileTags = parseTags(data.tags);
   const relFile = path.relative(cwd, specFile);
+  const fileCookies = parseCookieList(data.cookies, relFile);
 
   const sections = splitSections(content);
   const scenarios: Scenario[] = [];
@@ -260,7 +263,14 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
     seen.add(scenarioSlug);
 
     const tags = parseTags(overrides.tags) ?? fileTags;
-    const permissions = resolvePermissions(data, overrides, `${relFile} → "${section.name}"`);
+    const ctx = `${relFile} → "${section.name}"`;
+    const permissions = resolvePermissions(data, overrides, ctx);
+    // Per-section override (inline name=value) wins over the file frontmatter,
+    // by cookie name; the profile's cookies merge under both at launch.
+    const sectionCookies =
+      "cookies" in overrides ? parseInlineCookies(overrides.cookies, ctx) : [];
+    const merged = mergeCookiesByName(fileCookies, sectionCookies);
+    const cookies: ScenarioCookie[] | undefined = merged.length ? merged : undefined;
     scenarios.push({
       slug: `${fileSlug}/${scenarioSlug}`,
       name: section.name,
@@ -270,6 +280,7 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
       notes: overrides.notes,
       tags,
       permissions,
+      cookies,
       file: relFile,
     });
   }

@@ -1,4 +1,4 @@
-import type { ScoutConfig } from "../config.js";
+import { resolveCookies, type ScoutConfig } from "../config.js";
 import { inferProvider } from "../credentials.js";
 import type { Scenario, Step, Verdict } from "../types.js";
 import { createScoutTools } from "./agent-tools.js";
@@ -52,11 +52,20 @@ export async function runWithAgent(
     ? `Env vars disponíveis via placeholder $ENV:VAR (em browser_fill e em URLs de browser_navigate): ${envVars.map((v) => `$ENV:${v}`).join(", ")}.`
     : "";
 
+  // Cookies are seeded into the context by the runner before the flow. Announce
+  // only the NAMES so the agent treats the precondition as satisfied — values
+  // may be secrets ($ENV) and must never reach the LLM.
+  const presetCookies = resolveCookies(scenario, config);
+  const cookieInfo = presetCookies?.length
+    ? `Cookies já setados no browser antes do fluxo (pré-condição satisfeita — NÃO tente setá-los, você não tem ferramenta pra isso): ${presetCookies.map((c) => c.name).join(", ")}.`
+    : "";
+
   const systemPrompt = `Você é Scout, um agente de QA que verifica cenários em um browser real.
 
 App alvo: ${config.baseUrl}
 ${profileInfo}
 ${envInfo}
+${cookieInfo}
 
 Método de trabalho:
 1. Comece com browser_navigate para a página inicial do fluxo (ou browser_snapshot se já estiver lá).

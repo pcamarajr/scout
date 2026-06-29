@@ -298,6 +298,95 @@ test("scenarios without permission keys have undefined permissions", () => {
   assert.equal(s.permissions, undefined);
 });
 
+test("parses cookies: frontmatter object-list + per-section inline override merged by name", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "variants.scout.md",
+    `---
+feature: Checkout variant
+cookies:
+  - name: hn_checkout_variant
+    value: A
+  - name: consent
+    value: "yes"
+    httpOnly: true
+    sameSite: Lax
+---
+
+## Default variant from the file
+Open checkout; the file-level variant A is in effect.
+
+## Force variant C
+cookies: hn_checkout_variant=C
+
+Open checkout; variant C is forced.
+`
+  );
+
+  const [def, forced] = loadScenarios(cwd);
+
+  // File frontmatter applies to the first scenario, attributes preserved.
+  assert.deepEqual(def.cookies, [
+    { name: "hn_checkout_variant", value: "A" },
+    { name: "consent", value: "yes", httpOnly: true, sameSite: "Lax" },
+  ]);
+
+  // Section inline override wins by name; the untouched file cookie survives.
+  assert.deepEqual(forced.cookies, [
+    { name: "hn_checkout_variant", value: "C" },
+    { name: "consent", value: "yes", httpOnly: true, sameSite: "Lax" },
+  ]);
+});
+
+test("inline cookie override keeps the raw $ENV placeholder (never resolved at parse)", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "token.scout.md",
+    `---\nfeature: Token\n---\n\n## Seeds a token cookie\ncookies: session=$ENV:SESSION_TOKEN\n\nBody text.\n`
+  );
+  const [s] = loadScenarios(cwd);
+  assert.deepEqual(s.cookies, [{ name: "session", value: "$ENV:SESSION_TOKEN" }]);
+});
+
+test("rejects an unknown cookie field", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "badcookie.scout.md",
+    `---\nfeature: Bad\ncookies:\n  - name: x\n    value: y\n    sameSi: Lax\n---\n\n## Typo\nBody text.\n`
+  );
+  assert.throws(() => loadScenarios(cwd), /Unknown cookie field "sameSi"/);
+});
+
+test("rejects an invalid sameSite", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "badsamesite.scout.md",
+    `---\nfeature: Bad\ncookies:\n  - name: x\n    value: y\n    sameSite: Whatever\n---\n\n## Bad sameSite\nBody text.\n`
+  );
+  assert.throws(() => loadScenarios(cwd), /sameSite.*Strict, Lax, None/);
+});
+
+test("rejects a malformed inline cookie override", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "badinline.scout.md",
+    `---\nfeature: Bad\n---\n\n## No equals\ncookies: justname\n\nBody text.\n`
+  );
+  assert.throws(() => loadScenarios(cwd), /Expected name=value/);
+});
+
+test("scenarios without cookies have undefined cookies", () => {
+  const cwd = tmpProject();
+  writeSpec(cwd, "nocookies.scout.md", `---\nfeature: Plain\n---\n\n## Nothing\nJust prose.\n`);
+  const [s] = loadScenarios(cwd);
+  assert.equal(s.cookies, undefined);
+});
+
 test("grant wins over an inherited deny for the same permission", () => {
   const cwd = tmpProject();
   writeSpec(

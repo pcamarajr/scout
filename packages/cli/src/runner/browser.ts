@@ -1,6 +1,6 @@
 import path from "node:path";
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "playwright";
-import type { NetworkMatcher, PermissionPolicy, Step, Target } from "../types.js";
+import type { NetworkMatcher, PermissionPolicy, ScenarioCookie, Step, Target } from "../types.js";
 import {
   findConsoleErrors,
   globToRegex,
@@ -38,6 +38,12 @@ export interface LaunchOptions {
   slowMoMs?: number;
   /** Browser permission policy resolved from the scenario spec (grant/deny/geo). */
   permissions?: PermissionPolicy;
+  /**
+   * Cookies to seed into the context before the first navigation (profile +
+   * scenario, already merged). `value` may carry a `$ENV:VAR` placeholder,
+   * resolved here at launch — never persisted resolved.
+   */
+  cookies?: ScenarioCookie[];
   /**
    * Extra HTTP headers sent on every request in the context. Set from
    * `scout.config.json` `headers` or `SCOUT_EXTRA_HEADERS`. The canonical use is
@@ -130,6 +136,12 @@ export class BrowserSession {
     });
     // Deny stub must run before any page script and in every page (incl. popups).
     if (perm?.deny?.length) await context.addInitScript(denyPermissionsStub(perm.deny));
+    // Seed declared cookies before any navigation, so the server reads them on
+    // the very first request (e.g. a server-side experiment variant). After
+    // storageState load → declared cookies win over the auth session by name.
+    if (opts.cookies?.length) {
+      await context.addCookies(opts.cookies.map((c) => toPlaywrightCookie(c, opts.baseUrl)));
+    }
     const videoEpoch = opts.recordVideo ? Date.now() : undefined;
     await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
     const page = await context.newPage();
@@ -526,6 +538,34 @@ export class BrowserSession {
     }
     return { trace, video: videoPath };
   }
+}
+
+/** The cookie shape Playwright's `context.addCookies()` accepts. */
+type AddCookieParam = Parameters<BrowserContext["addCookies"]>[0][number];
+
+/**
+ * Maps a declared ScenarioCookie to Playwright's addCookies shape, resolving
+ * `$ENV:VAR` in the value. Playwright needs either `url` or `domain`+`path`:
+ * with an explicit `domain` we pass it plus `path` (default `/`); otherwise we
+ * derive from `baseUrl` — `url: baseUrl` when no `path`, or the baseUrl host +
+ * the given `path` when a path is set.
+ */
+export function toPlaywrightCookie(c: ScenarioCookie, baseUrl: string): AddCookieParam {
+  const cookie: AddCookieParam = { name: c.name, value: resolveEnvValue(c.value) };
+  if (c.expires !== undefined) cookie.expires = c.expires;
+  if (c.httpOnly !== undefined) cookie.httpOnly = c.httpOnly;
+  if (c.secure !== undefined) cookie.secure = c.secure;
+  if (c.sameSite !== undefined) cookie.sameSite = c.sameSite;
+  if (c.domain) {
+    cookie.domain = c.domain;
+    cookie.path = c.path ?? "/";
+  } else if (c.path) {
+    cookie.domain = new URL(baseUrl).hostname;
+    cookie.path = c.path;
+  } else {
+    cookie.url = baseUrl;
+  }
+  return cookie;
 }
 
 /** Replaces $ENV:VAR_NAME placeholders so secrets never live in committed scripts. */
