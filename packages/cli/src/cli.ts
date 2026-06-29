@@ -10,7 +10,7 @@ import { resolveEngineKind } from "./runner/engines/index.js";
 import { runScenario } from "./engine.js";
 import { runInit } from "./init.js";
 import { buildReport, renderSummary, scenarioStatus } from "./report.js";
-import { addScenario, slugify } from "./specs.js";
+import { addScenario, selectScenarios, slugify } from "./specs.js";
 import { Store } from "./store.js";
 
 // Rejeições fora da cadeia de await (SDK/Playwright em subprocesso) não podem
@@ -70,7 +70,7 @@ program
 program
   .command("go")
   .description("Runs scenarios: cached script replay; AI on first run or when the script breaks")
-  .option("-s, --scenario <idOrSlug>", "Run a single scenario")
+  .option("-s, --scenario <slugOrSpec>", "Run one scenario (full slug) or every scenario in a spec (file/dir slug)")
   .option("--ai", "Force AI-driven run (re-records the script)", false)
   .option("--no-heal", "Do not fall back to AI when replay fails (cheap CI)")
   .option("--headed", "Visible browser (local debug)", false)
@@ -80,11 +80,9 @@ program
     const store = new Store();
     const config = loadConfig(process.cwd(), { baseUrl: opts.baseUrl, recordVideo: opts.recordVideo });
     const all = store.listScenarios();
-    const targets = opts.scenario
-      ? all.filter((s) => s.slug === opts.scenario || s.name === opts.scenario)
-      : all;
+    const targets = opts.scenario ? selectScenarios(all, opts.scenario) : all;
     if (!targets.length) {
-      console.error(opts.scenario ? `Scenario "${opts.scenario}" not found.` : "No scenarios. Use `scout create`.");
+      console.error(opts.scenario ? `No scenario or spec matched "${opts.scenario}".` : "No scenarios. Use `scout create`.");
       process.exit(1);
     }
 

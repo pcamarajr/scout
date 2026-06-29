@@ -295,6 +295,26 @@ export function loadScenarios(cwd = process.cwd()): Scenario[] {
   return all;
 }
 
+/**
+ * Resolve a `go` selector against the loaded scenarios.
+ *
+ * A scenario slug is `<file>/<scenario>` (nested spec dirs add more segments).
+ * The selector may name:
+ *  - a single scenario, by exact slug (`auth/login/success`) or heading name;
+ *  - a whole spec file / directory, by its slug prefix (`auth`, `auth/login`),
+ *    which matches every scenario whose slug starts with `<selector>/`.
+ *
+ * The result is the de-duplicated union of those matches, preserving the input
+ * order, so `scout go auth` runs all of `auth` while `scout go auth/login`
+ * still targets the lone scenario when one exists.
+ */
+export function selectScenarios(all: Scenario[], selector: string): Scenario[] {
+  const prefix = `${selector}/`;
+  return all.filter(
+    (s) => s.slug === selector || s.name === selector || s.slug.startsWith(prefix)
+  );
+}
+
 export interface NewScenarioInput {
   feature: string;
   name: string;
