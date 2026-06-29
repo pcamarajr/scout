@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.0](https://github.com/pcamarajr/scout/compare/scout-v0.9.0...scout-v0.10.0) (2026-06-29)
+
+
+### Features
+
+* **cli:** let `scout go -s <spec>` run every scenario in a spec ([#49](https://github.com/pcamarajr/scout/issues/49)) ([dab19ca](https://github.com/pcamarajr/scout/commit/dab19ca752763f898fd7cda0815728161c481d79))
+* **cli:** scout doctor runtime checks + record-video preflight ([#47](https://github.com/pcamarajr/scout/issues/47)) ([997f71d](https://github.com/pcamarajr/scout/commit/997f71de1ca4e1df21341af2657e88e42aaa5304))
+* **cli:** set cookies per scenario and profile before the flow ([#46](https://github.com/pcamarajr/scout/issues/46)) ([9918877](https://github.com/pcamarajr/scout/commit/99188778bf572846456cef0a84cf6fae9f83eff8))
+* **cli:** turn --record-video into a polished demo with a synthetic cursor ([#48](https://github.com/pcamarajr/scout/issues/48)) ([10e1598](https://github.com/pcamarajr/scout/commit/10e1598178c0068062dfd0334d49d6b771f5d839))
+
 ## [0.9.0](https://github.com/pcamarajr/scout/compare/scout-v0.8.0...scout-v0.9.0) (2026-06-23)
 
 
