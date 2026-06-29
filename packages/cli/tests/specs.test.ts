@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { addScenario, loadScenarios, slugify, slugToToken } from "../src/specs.js";
+import { addScenario, loadScenarios, selectScenarios, slugify, slugToToken } from "../src/specs.js";
 import { Store } from "../src/store.js";
 
 function tmpProject(): string {
@@ -65,6 +65,49 @@ test("nested spec files namespace the file-slug", () => {
   const [s] = loadScenarios(cwd);
   assert.equal(s.slug, "auth/login/valid-credentials");
   assert.equal(slugToToken(s.slug), "auth__login__valid-credentials");
+});
+
+test("selectScenarios: full slug targets one scenario; spec slug targets the whole file", () => {
+  const cwd = tmpProject();
+  writeSpec(cwd, "auth.scout.md", `## Login success\nlogs in.\n\n## Login failure\nwrong password.\n`);
+  writeSpec(cwd, "billing.scout.md", `## Upgrade\nupgrades plan.\n`);
+  const all = loadScenarios(cwd);
+
+  // Full slug → single scenario (the existing `scenario/case` form).
+  assert.deepEqual(
+    selectScenarios(all, "auth/login-success").map((s) => s.slug),
+    ["auth/login-success"]
+  );
+  // Spec slug → every scenario in that file (the new `scenario` form).
+  assert.deepEqual(
+    selectScenarios(all, "auth").map((s) => s.slug),
+    ["auth/login-success", "auth/login-failure"]
+  );
+  // Heading name still matches.
+  assert.deepEqual(
+    selectScenarios(all, "Upgrade").map((s) => s.slug),
+    ["billing/upgrade"]
+  );
+  // No match → empty.
+  assert.deepEqual(selectScenarios(all, "nope"), []);
+});
+
+test("selectScenarios: nested spec dir slug matches its scenarios", () => {
+  const cwd = tmpProject();
+  writeSpec(cwd, "auth/login.scout.md", `## Valid\nok.\n\n## Invalid\nbad.\n`);
+  writeSpec(cwd, "auth/logout.scout.md", `## Bye\nlogs out.\n`);
+  const all = loadScenarios(cwd);
+
+  // Directory prefix runs everything under it.
+  assert.deepEqual(
+    selectScenarios(all, "auth").map((s) => s.slug),
+    ["auth/login/valid", "auth/login/invalid", "auth/logout/bye"]
+  );
+  // A deeper prefix narrows to one file.
+  assert.deepEqual(
+    selectScenarios(all, "auth/login").map((s) => s.slug),
+    ["auth/login/valid", "auth/login/invalid"]
+  );
 });
 
 test("a scenario with no description text is an error", () => {
