@@ -10,6 +10,10 @@ on:
     branches: [main]
   pull_request:
     types: [labeled]
+  # Manual re-publish escape hatch: if the automated publish is ever missed
+  # (e.g. a skipped `publish` job), dispatch this workflow on `main` to publish
+  # the version currently in packages/cli/package.json to npm via OIDC.
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -22,15 +26,26 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
+      # Manifest/monorepo mode (release-please-config.json + manifest present)
+      # emits PATH-PREFIXED outputs, not the bare `release_created`/`tag_name`.
+      # Reading the bare names silently yields empty strings, which skips the
+      # publish job — exactly what swallowed the 0.9.0 npm release.
+      release_created: ${{ steps.release.outputs['packages/cli--release_created'] }}
+      tag_name: ${{ steps.release.outputs['packages/cli--tag_name'] }}
     steps:
       - uses: googleapis/release-please-action@v5
         id: release
 
   publish:
     needs: release-please
-    if: github.event_name == 'push' && needs.release-please.outputs.release_created == 'true'
+    # Auto on a real `latest` release, or manually via workflow_dispatch (the
+    # re-publish escape hatch). `!cancelled()` lets dispatch run even though the
+    # release-please job is skipped on that event (a skipped need would otherwise
+    # skip this job too).
+    if: >-
+      ${{ !cancelled() &&
+        (github.event_name == 'workflow_dispatch' ||
+         (github.event_name == 'push' && needs.release-please.outputs.release_created == 'true')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -46,7 +61,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - run: npm publish --access public
+      - run: npm publish --access public --provenance
         working-directory: packages/cli
 
   # --- @next release-candidate publish (label-gated, on the release PR) ---
