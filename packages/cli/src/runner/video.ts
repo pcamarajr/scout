@@ -65,11 +65,50 @@ export function resolveFont(): string | undefined {
   return FONT_CANDIDATES.find((f) => fs.existsSync(f));
 }
 
-/** Resolves the ffmpeg binary (FFMPEG_PATH or PATH), or undefined if absent. */
-export function findFfmpeg(): string | undefined {
+export interface FfmpegDiagnosis {
+  ok: boolean;
+  /** The binary we probed (FFMPEG_PATH or "ffmpeg"). */
+  bin: string;
+  /** Why it's unusable, when ok is false. */
+  reason?: "missing" | "broken";
+  /** Human-readable detail — the spawn error, exit signal, or first stderr line. */
+  detail?: string;
+}
+
+/**
+ * Probes ffmpeg and classifies the outcome. "missing" = not on PATH /
+ * FFMPEG_PATH points nowhere (spawn errored). "broken" = the binary exists but
+ * won't run — typically aborts (e.g. SIGABRT from a missing shared library on a
+ * half-removed Homebrew install). The two need different remediation, so we
+ * tell them apart instead of collapsing both to "not found".
+ */
+export function diagnoseFfmpeg(): FfmpegDiagnosis {
   const bin = process.env.FFMPEG_PATH || "ffmpeg";
-  const probe = spawnSync(bin, ["-version"], { stdio: "ignore" });
-  return probe.status === 0 ? bin : undefined;
+  const probe = spawnSync(bin, ["-version"], { encoding: "utf8" });
+  if (probe.error) {
+    return { ok: false, bin, reason: "missing", detail: probe.error.message };
+  }
+  if (probe.status === 0) return { ok: true, bin };
+  const stderr = (probe.stderr || "").trim();
+  const firstLine = stderr.split("\n").find((l) => l.trim().length > 0);
+  const detail = probe.signal
+    ? `aborted with ${probe.signal}${firstLine ? ` — ${firstLine}` : ""}`
+    : firstLine || `exited with status ${probe.status}`;
+  return { ok: false, bin, reason: "broken", detail };
+}
+
+/** Install/repair hint tailored to a missing vs a broken ffmpeg. */
+export function ffmpegRemediation(d: FfmpegDiagnosis): string {
+  if (d.reason === "broken") {
+    return `ffmpeg is installed (${d.bin}) but won't run: ${d.detail}. Repair it — 'brew reinstall ffmpeg' (macOS), reinstall via your package manager (Linux), or point FFMPEG_PATH at a working binary.`;
+  }
+  return "ffmpeg not found. Install it — 'brew install ffmpeg' (macOS) / 'apt-get install ffmpeg' (Debian/Ubuntu) — or set FFMPEG_PATH to its location.";
+}
+
+/** Resolves the ffmpeg binary (FFMPEG_PATH or PATH), or undefined if absent/broken. */
+export function findFfmpeg(): string | undefined {
+  const d = diagnoseFfmpeg();
+  return d.ok ? d.bin : undefined;
 }
 
 function probeDurationMs(ffmpegBin: string, file: string): number | undefined {
@@ -232,14 +271,14 @@ export interface GenerateVideoResult {
  * `--record-video` always yields a playable file.
  */
 export function generateVideo(input: GenerateVideoInput): GenerateVideoResult {
-  const ffmpeg = findFfmpeg();
-  if (!ffmpeg) {
+  const diag = diagnoseFfmpeg();
+  if (!diag.ok) {
     return {
       output: input.webmPath,
-      warning:
-        "ffmpeg não encontrado — MP4 com overlays não gerado, mantido o WebM cru. Instale ffmpeg (brew install ffmpeg / apt-get install ffmpeg) ou defina FFMPEG_PATH.",
+      warning: `MP4 overlay not generated, kept the raw WebM. ${ffmpegRemediation(diag)}`,
     };
   }
+  const ffmpeg = diag.bin;
 
   const font = resolveFont();
   const durationMs =
