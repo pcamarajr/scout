@@ -3,7 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { CONFIG_FILE, loadConfig, parseHeadersEnv } from "../src/config.js";
+import { CONFIG_FILE, loadConfig, parseHeadersEnv, resolveCookies, type ScoutConfig } from "../src/config.js";
+import type { Scenario } from "../src/types.js";
 
 function tmpProject(config?: object): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "scout-config-"));
@@ -106,4 +107,43 @@ test("parseHeadersEnv accepts an object of strings and rejects malformed input",
   assert.throws(() => parseHeadersEnv("not json"), /must be a JSON object/);
   assert.throws(() => parseHeadersEnv('["a","b"]'), /must be a JSON object/);
   assert.throws(() => parseHeadersEnv('{"a":1}'), /must be a string/);
+});
+
+function scenarioWith(over: Partial<Scenario>): Scenario {
+  return { slug: "f/s", name: "s", scenario: "x", feature: "f", file: "f.scout.md", ...over };
+}
+
+function configWith(profiles: ScoutConfig["profiles"]): ScoutConfig {
+  return { baseUrl: "http://x", model: "m", headless: true, maxTurns: 40, profiles };
+}
+
+test("resolveCookies merges profile cookies (base) under scenario cookies (by name)", () => {
+  const config = configWith({
+    qa: { cookies: [{ name: "consent", value: "yes" }, { name: "v", value: "A" }] },
+  });
+  const scenario = scenarioWith({ profile: "qa", cookies: [{ name: "v", value: "C" }] });
+  // Scenario's `v` wins; profile's `consent` is inherited.
+  assert.deepEqual(resolveCookies(scenario, config), [
+    { name: "consent", value: "yes" },
+    { name: "v", value: "C" },
+  ]);
+});
+
+test("resolveCookies returns undefined when neither profile nor scenario declare cookies", () => {
+  const config = configWith({ qa: {} });
+  assert.equal(resolveCookies(scenarioWith({ profile: "qa" }), config), undefined);
+  assert.equal(resolveCookies(scenarioWith({}), config), undefined);
+});
+
+test("resolveCookies uses scenario cookies when there is no profile", () => {
+  const config = configWith({});
+  const scenario = scenarioWith({ cookies: [{ name: "v", value: "C" }] });
+  assert.deepEqual(resolveCookies(scenario, config), [{ name: "v", value: "C" }]);
+});
+
+test("resolveCookies validates profile cookies and rejects a bad sameSite", () => {
+  const config = configWith({
+    qa: { cookies: [{ name: "v", value: "A", sameSite: "Nope" } as never] },
+  });
+  assert.throws(() => resolveCookies(scenarioWith({ profile: "qa" }), config), /sameSite/);
 });

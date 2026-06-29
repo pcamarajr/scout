@@ -38,6 +38,27 @@ export interface GeoCoords {
 }
 
 /**
+ * One cookie applied to the browser context before the scenario runs. Resolved
+ * fresh from the spec each run (profile default + per-scenario frontmatter /
+ * override, merged by name) and set via Playwright `context.addCookies()` —
+ * never a replayable Step, like storageState/permissions. `value` may carry a
+ * `$ENV:VAR` placeholder, resolved at launch so the secret never lands in the
+ * committed spec or the LLM context. `domain`/`path` default to the host of
+ * `baseUrl` and `/` when omitted; `expires` is unix seconds (Playwright
+ * convention) and omitting it yields a session cookie.
+ */
+export interface ScenarioCookie {
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+  expires?: number;
+  httpOnly?: boolean;
+  secure?: boolean;
+  sameSite?: "Strict" | "Lax" | "None";
+}
+
+/**
  * Browser permission policy resolved from a scenario's spec (file frontmatter
  * is the default, per-section keys override it, merged per-axis). Three states
  * per permission: absent = native browser behavior (untouched); granted =
@@ -98,6 +119,12 @@ export interface Scenario {
   tags?: string[];
   /** Browser permission policy (frontmatter default + per-section override). */
   permissions?: PermissionPolicy;
+  /**
+   * Cookies declared on the scenario (file frontmatter + per-section override,
+   * merged by name). The profile's cookies are merged in at launch, under
+   * these. Carries raw `$ENV:VAR` placeholders — resolved only at launch.
+   */
+  cookies?: ScenarioCookie[];
   /** Source spec file, relative to the project root */
   file: string;
 }

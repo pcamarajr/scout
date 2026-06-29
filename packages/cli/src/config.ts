@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { mergeCookiesByName, validateCookie } from "./cookies.js";
+import type { Scenario, ScenarioCookie } from "./types.js";
 
 export interface ScoutProfile {
   /** Shown to the AI agent so it knows what kind of session this is */
@@ -14,6 +16,13 @@ export interface ScoutProfile {
    * (e.g. credentials for login flows). Values never reach the LLM.
    */
   env?: string[];
+  /**
+   * Cookies seeded into the context for every scenario on this profile (the
+   * shared base). A scenario's own cookies merge on top, by name. Each is a
+   * cookie object ({ name, value, domain?, path?, expires?, httpOnly?, secure?,
+   * sameSite? }); `value` may carry a $ENV:VAR placeholder.
+   */
+  cookies?: ScenarioCookie[];
 }
 
 export interface ScoutConfig {
@@ -145,4 +154,21 @@ export function resolveStorageState(
     return undefined;
   }
   return statePath;
+}
+
+/**
+ * Resolves the cookies for one scenario: the profile's cookies are the shared
+ * base, the scenario's own cookies (file frontmatter + section override, already
+ * merged in specs.ts) win on top — keyed by cookie name. Profile cookies come
+ * from JSON, so they're validated here (lazily, like resolveStorageState) and a
+ * bad one fails loud. Returns undefined when neither side declares any.
+ */
+export function resolveCookies(scenario: Scenario, config: ScoutConfig): ScenarioCookie[] | undefined {
+  const profileName = scenario.profile;
+  const profileRaw = profileName ? config.profiles[profileName]?.cookies : undefined;
+  const profileCookies = Array.isArray(profileRaw)
+    ? profileRaw.map((c, i) => validateCookie(c, `${CONFIG_FILE} profile "${profileName}" cookie #${i + 1}`))
+    : [];
+  const merged = mergeCookiesByName(profileCookies, scenario.cookies ?? []);
+  return merged.length ? merged : undefined;
 }
