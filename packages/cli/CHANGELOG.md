@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/pcamarajr/scout/compare/scout-v0.10.0...scout-v0.11.0) (2026-06-29)
+
+
+### Features
+
+* **cli:** run scenarios across named viewports ([#51](https://github.com/pcamarajr/scout/issues/51)) ([0893c18](https://github.com/pcamarajr/scout/commit/0893c185451ba925711b3b6bc311bbb92503f547))
+
 ## [0.10.0](https://github.com/pcamarajr/scout/compare/scout-v0.9.0...scout-v0.10.0) (2026-06-29)
 
 
