@@ -24,6 +24,8 @@ export interface DemoReplayOutcome {
   passed: boolean;
   timeline: TimelineEntry[];
   failedIndex?: number;
+  /** Human-readable "step N (description): error" when the replay tripped. */
+  failure?: string;
 }
 
 /**
@@ -62,8 +64,14 @@ export async function replayForDemo(
     }
     try {
       await session.executeStep(step);
-    } catch {
-      return { passed: false, timeline, failedIndex: i };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message.split("\n")[0] : String(error);
+      return {
+        passed: false,
+        timeline,
+        failedIndex: i,
+        failure: `step ${i + 1} (${describeStep(step)}): ${reason}`,
+      };
     }
     if (ASSERTION_KINDS.has(step.kind)) await session.page.waitForTimeout(assertDwellMs);
   }

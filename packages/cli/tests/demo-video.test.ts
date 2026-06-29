@@ -108,12 +108,13 @@ test("failed paced WebM is discarded, not rendered, when falling back", async ()
   });
 });
 
-test("both attempts failing yields no video and warns (verdict unaffected)", async () => {
+test("both attempts failing yields no video and surfaces the failing step", async () => {
   await withRunDir(async (runDir) => {
     const attempt = async (): Promise<RecordedReplay> => ({
       passed: false,
       webm: writeWebm(runDir),
       timeline: TIMELINE,
+      failure: 'step 3 (verificar texto visível "Manage my preferences"): Timeout 10000ms exceeded.',
     });
     let out: string | undefined = "sentinel";
     const warnings = await captureWarnings(async () => {
@@ -123,6 +124,14 @@ test("both attempts failing yields no video and warns (verdict unaffected)", asy
     assert.ok(
       warnings.some((w) => /non-paced fallback replay also failed/.test(w)),
       "the final no-video warning must be emitted"
+    );
+    assert.ok(
+      warnings.some((w) => /step 3 .*Manage my preferences.*Timeout/.test(w)),
+      "the warning must name the step that tripped the replay"
+    );
+    assert.ok(
+      warnings.some((w) => /doesn't replay deterministically/.test(w)),
+      "the warning must explain why a verified scenario can still yield no demo"
     );
   });
 });

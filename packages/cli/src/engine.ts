@@ -129,6 +129,8 @@ export interface RecordedReplay {
   webm?: string;
   /** Step captions with wall-clock offsets, for burned overlays. */
   timeline: TimelineEntry[];
+  /** Human-readable "step N (description): error" when the replay tripped. */
+  failure?: string;
 }
 
 /**
@@ -209,14 +211,19 @@ export async function recordDemoVideoFrom(
   if (paced.webm) fs.rmSync(paced.webm, { force: true }); // discard the failed paced take
 
   console.warn(
-    "[scout] video: paced demo replay failed; recorded a non-paced fallback clip (verdict unaffected)."
+    "[scout] video: paced demo replay failed; recorded a non-paced fallback clip (verdict unaffected)." +
+      (paced.failure ? ` Paced replay tripped on ${paced.failure}.` : "")
   );
   const fallbackPacing = nonPacedPacing(pacing);
   const fallback = await attempt(fallbackPacing);
   if (fallback.passed) return renderDemo(fallback, scenario, runDir, fallbackPacing);
 
   if (fallback.webm) fs.rmSync(fallback.webm, { force: true });
-  console.warn("[scout] video: non-paced fallback replay also failed — no video generated (verdict unaffected).");
+  console.warn(
+    "[scout] video: non-paced fallback replay also failed — no video generated (verdict unaffected)." +
+      (fallback.failure ? ` Replay tripped on ${fallback.failure}.` : "") +
+      " This usually means the scenario doesn't replay deterministically (it heals via AI each run), so there is no clean replay to film."
+  );
   return undefined;
 }
 
@@ -253,7 +260,7 @@ async function recordDemoVideo(
       });
     } catch {
       console.warn("[scout] video: could not open the browser for the demo replay.");
-      return { passed: false, timeline: [] };
+      return { passed: false, timeline: [], failure: "could not open the browser" };
     }
     const demo = await replayForDemo(
       session,
@@ -263,7 +270,7 @@ async function recordDemoVideo(
       pacing.verdictCardMs
     );
     const { video: webm } = await session.close();
-    return { passed: demo.passed, webm, timeline: demo.timeline };
+    return { passed: demo.passed, webm, timeline: demo.timeline, failure: demo.failure };
   };
 
   return recordDemoVideoFrom(attempt, scenario, runDir, pacingFor(config.videoSpeed));
