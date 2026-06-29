@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { resolveEnvValue, toPlaywrightCookie } from "../src/runner/browser.js";
+import { demoCursorStub, resolveEnvValue, toPlaywrightCookie } from "../src/runner/browser.js";
 
 // resolveEnvValue powers both browser_fill values AND browser_navigate URLs:
 // secrets/tokens live as $ENV:VAR in the committed script and resolve at runtime.
@@ -21,6 +21,18 @@ test("resolveEnvValue resolves multiple placeholders in one string", () => {
 
 test("resolveEnvValue leaves strings without placeholders untouched", () => {
   assert.equal(resolveEnvValue("/login"), "/login");
+});
+
+// The demo cursor is a best-effort overlay baked into the video. The critical
+// invariant is that it can NEVER intercept the real click — hence pointer-events:none.
+test("demoCursorStub injects a cursor API that cannot intercept clicks", () => {
+  const stub = demoCursorStub();
+  assert.match(stub, /window\.__scoutCursor/);
+  assert.match(stub, /move\s*\(/);
+  assert.match(stub, /pulse\s*\(/);
+  assert.match(stub, /pointer-events:none/);
+  // top-frame guard so the cursor isn't duplicated into iframes
+  assert.match(stub, /window\.top !== window\.self/);
 });
 
 test("resolveEnvValue throws when the referenced env var is undefined", () => {

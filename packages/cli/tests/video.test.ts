@@ -20,17 +20,24 @@ const TIMELINE: TimelineEntry[] = [
   { label: "2/2 · verificar texto visível \"Dashboard\"", tMs: 2200 },
 ];
 
-test("pacingFor maps videoSpeed to slowMo/dwell; 1.0 is natural speed", () => {
-  assert.deepEqual(pacingFor(1), { slowMoMs: 0, assertDwellMs: 500, titleCardMs: 1500, verdictCardMs: 1800 });
+test("pacingFor maps videoSpeed to slowMo/dwell/cursor-travel; 1.0 is natural speed", () => {
+  assert.deepEqual(pacingFor(1), {
+    slowMoMs: 0,
+    assertDwellMs: 500,
+    cursorTravelMs: 250, // clamped floor
+    titleCardMs: 1500,
+    verdictCardMs: 1800,
+  });
   const slow = pacingFor(0.4);
   assert.equal(slow.slowMoMs, 300);
   assert.equal(slow.assertDwellMs, 1250);
+  assert.ok(slow.cursorTravelMs > 250 && slow.cursorTravelMs <= 900, "cursor travel scales with speed");
 });
 
-test("pacingFor clamps out-of-range speeds and defaults to 0.4", () => {
+test("pacingFor clamps out-of-range speeds and defaults to 0.35", () => {
   assert.equal(pacingFor(5).slowMoMs, 0); // clamped to 1.0
   assert.ok(pacingFor(0).slowMoMs > 0); // clamped to 0.1, very slow
-  assert.equal(pacingFor().slowMoMs, pacingFor(0.4).slowMoMs);
+  assert.equal(pacingFor().slowMoMs, pacingFor(0.35).slowMoMs);
 });
 
 test("diagnoseFfmpeg flags a missing binary (FFMPEG_PATH points nowhere)", () => {
@@ -109,7 +116,7 @@ test("buildOverlayFilter bakes title, captions and verdict card", () => {
     pacing: pacingFor(0.4),
   });
   assert.match(graph, /drawtext/);
-  assert.match(graph, /scout preview/);
+  assert.match(graph, /scout demo/);
   assert.match(graph, /VERIFICADO/);
   assert.match(graph, /Free user hits paywall/);
   assert.match(graph, /navegar para \/login/);

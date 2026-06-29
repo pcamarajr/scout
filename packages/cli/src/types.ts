@@ -142,7 +142,7 @@ export interface RunResult {
   durationMs: number;
   screenshots: string[];
   trace?: string;
-  /** Paced preview clip (MP4, or WebM fallback) — only when --record-video and verified */
+  /** Paced demo clip (MP4, or WebM fallback) — only when --demo-video and verified */
   video?: string;
   /** true when this AI run replaced a broken cached script */
   healed?: boolean;

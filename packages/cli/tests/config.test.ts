@@ -76,8 +76,8 @@ test("recordVideo defaults off; SCOUT_RECORD_VIDEO and --record-video enable it"
   });
 });
 
-test("videoSpeed defaults to 0.4 and is overridable via config file", () => {
-  assert.equal(loadConfig(tmpProject()).videoSpeed, 0.4);
+test("videoSpeed defaults to 0.35 and is overridable via config file", () => {
+  assert.equal(loadConfig(tmpProject()).videoSpeed, 0.35);
   assert.equal(loadConfig(tmpProject({ videoSpeed: 1 })).videoSpeed, 1);
 });
 

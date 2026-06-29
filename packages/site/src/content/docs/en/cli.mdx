@@ -14,7 +14,7 @@ draft: false
 scout init [--base-url <url>] [-y|--yes]   # bootstrap: scout.config.json, .scout/, AI agent files
 scout create <name> -f <feature> -c <scenario> [-p profile] [-n notes]
 scout list                                 # scenarios + status + 📜 if a cached script exists
-scout go [-s slug|name] [--ai] [--no-heal] [--headed] [--record-video] [--base-url <url>]
+scout go [-s slug|name] [--ai] [--no-heal] [--headed] [--demo-video] [--base-url <url>]
 scout report [--json] [--check]            # suite summary (markdown default)
 scout doctor                               # diagnose AI credentials for the configured model
 scout migrate                              # legacy scenarios.json → .scout.md specs
@@ -34,7 +34,7 @@ Runs scenarios: cached-script replay, AI on the first run or when the script bre
 - `--ai` — force an AI-driven run (re-records the script).
 - `--no-heal` — don't fall back to AI when replay fails (cheap CI; failure becomes ❌).
 - `--headed` — visible browser (local debug).
-- `--record-video` — paced MP4 preview of each verified replay (needs `ffmpeg`; see [run artifacts](/docs/artifacts/)).
+- `--demo-video` — paced MP4 demo of each verified replay, with a synthetic cursor + click pulse (needs `ffmpeg`; see [run artifacts](/docs/artifacts/)). `--record-video` is a deprecated alias.
 - `--base-url <url>` — target for this run (precedence: flag > `SCOUT_BASE_URL` > config).
 
 ## `scout doctor`

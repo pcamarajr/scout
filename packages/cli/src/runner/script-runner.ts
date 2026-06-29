@@ -20,30 +20,46 @@ const ASSERTION_KINDS = new Set<Step["kind"]>([
   "assertConsoleMessage",
 ]);
 
-export interface PreviewReplayOutcome {
+export interface DemoReplayOutcome {
   passed: boolean;
   timeline: TimelineEntry[];
   failedIndex?: number;
 }
 
 /**
- * Replay dedicated to producing the preview video: identical step execution to
+ * Replay dedicated to producing the demo video: identical step execution to
  * {@link replaySteps}, but it records each step's wall-clock offset (for burned
- * captions) and dwells after assertions / at the end so a human can read the
+ * captions), drives the synthetic cursor to each target and pulses on the
+ * action, and dwells after assertions / at the end so a human can read the
  * verified state. It is decoupled from the verdict — this run is never the
- * source of truth, so the pacing pauses cannot affect a pass/fail decision.
+ * source of truth, so the pacing pauses and overlay cannot affect a pass/fail
+ * decision (the cursor calls are best-effort and swallow their own errors).
  */
-export async function replayForVideo(
+export async function replayForDemo(
   session: BrowserSession,
   steps: Step[],
   assertDwellMs: number,
+  cursorTravelMs: number,
   endDwellMs: number
-): Promise<PreviewReplayOutcome> {
+): Promise<DemoReplayOutcome> {
   const timeline: TimelineEntry[] = [];
   const epoch = session.videoEpoch ?? Date.now();
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
-    timeline.push({ label: `${i + 1}/${steps.length} · ${describeStep(step)}`, tMs: Date.now() - epoch });
+    // tMs is taken before the cursor travels, so the caption shows during travel.
+    const entry: TimelineEntry = {
+      label: `${i + 1}/${steps.length} · ${describeStep(step)}`,
+      tMs: Date.now() - epoch,
+    };
+    timeline.push(entry);
+    // Demo overlay: move the cursor to the target, let the eye follow, then pulse.
+    const center = await session.pointToStep(step, cursorTravelMs);
+    if (center) {
+      entry.x = center.x;
+      entry.y = center.y;
+      if (cursorTravelMs) await session.page.waitForTimeout(cursorTravelMs);
+      await session.pulseCursor();
+    }
     try {
       await session.executeStep(step);
     } catch {

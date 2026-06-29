@@ -32,9 +32,15 @@ export interface LaunchOptions {
   storageState?: string;
   locale?: string;
   runDir: string;
-  /** Record a WebM of the context (used only by the preview-video replay) */
+  /** Record a WebM of the context (used only by the demo-video replay) */
   recordVideo?: boolean;
-  /** Playwright slowMo (ms/action) — paces the preview replay for human viewing */
+  /**
+   * Inject a synthetic cursor + click pulse (used only by the demo-video replay)
+   * so a viewer can see what each step acts on. Best-effort overlay, captured
+   * natively by recordVideo — never affects the verdict.
+   */
+  demoCursor?: boolean;
+  /** Playwright slowMo (ms/action) — paces the demo replay for human viewing */
   slowMoMs?: number;
   /** Browser permission policy resolved from the scenario spec (grant/deny/geo). */
   permissions?: PermissionPolicy;
@@ -74,6 +80,70 @@ export function denyPermissionsStub(deny: string[]): string {
     if ((denied.includes("camera") || denied.includes("microphone")) && navigator.mediaDevices) {
       navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException("Permission denied", "NotAllowedError"));
     }
+  })();`;
+}
+
+/**
+ * Builds the init-script that injects a synthetic cursor + click pulse for the
+ * demo video. Playwright's recorded video never captures the OS pointer, so the
+ * UI would otherwise change with no visible cause; this paints a session-replay
+ * style cursor (Clarity/Sentry feel) that the recording captures natively.
+ *
+ * Injected at the context level so `window.__scoutCursor` re-exists after every
+ * navigation; the DOM element is (re)created lazily on the first `move()` since
+ * a `goto` wipes the previous document. `pointer-events:none` + a very high
+ * z-index guarantee it sits on top yet can never intercept the real click, so
+ * the overlay cannot perturb the flow it is filming.
+ */
+export function demoCursorStub(): string {
+  return `(() => {
+    if (window.top !== window.self) return; // top frame only — skip iframes
+    const CURSOR_ID = "__scout-cursor";
+    const STYLE_ID = "__scout-cursor-style";
+    let x = window.innerWidth / 2, y = window.innerHeight / 2;
+    function ensure() {
+      if (!document.body) return null;
+      if (!document.getElementById(STYLE_ID)) {
+        const style = document.createElement("style");
+        style.id = STYLE_ID;
+        style.textContent =
+          "#" + CURSOR_ID + "{position:fixed;top:0;left:0;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:rgba(0,0,0,.35);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45);z-index:2147483647;pointer-events:none;will-change:transform;}" +
+          // Positioned via left/top (NOT transform) so the scale keyframe, which
+          // owns the transform property, can't clobber its placement to (0,0).
+          ".__scout-ripple{position:fixed;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;border:2px solid #2ECC71;z-index:2147483646;pointer-events:none;animation:__scout-ripple .55s ease-out forwards;}" +
+          "@keyframes __scout-ripple{from{transform:scale(1);opacity:.9;}to{transform:scale(3.6);opacity:0;}}";
+        (document.head || document.documentElement).appendChild(style);
+      }
+      let el = document.getElementById(CURSOR_ID);
+      if (!el) {
+        el = document.createElement("div");
+        el.id = CURSOR_ID;
+        el.style.transform = "translate(" + x + "px," + y + "px)";
+        document.body.appendChild(el);
+      }
+      return el;
+    }
+    window.__scoutCursor = {
+      move(nx, ny, durMs) {
+        const el = ensure();
+        if (!el) return;
+        el.style.transition = "transform " + (durMs || 0) + "ms cubic-bezier(.4,0,.2,1)";
+        x = nx; y = ny;
+        el.style.transform = "translate(" + nx + "px," + ny + "px)";
+      },
+      pulse() {
+        const el = ensure();
+        if (!el || !document.body) return;
+        const r = document.createElement("div");
+        r.className = "__scout-ripple";
+        r.style.left = x + "px";
+        r.style.top = y + "px";
+        document.body.appendChild(r);
+        setTimeout(() => r.remove(), 700);
+        el.style.background = "rgba(46,204,113,.5)";
+        setTimeout(() => { el.style.background = "rgba(0,0,0,.35)"; }, 240);
+      },
+    };
   })();`;
 }
 
@@ -142,6 +212,9 @@ export class BrowserSession {
     if (opts.cookies?.length) {
       await context.addCookies(opts.cookies.map((c) => toPlaywrightCookie(c, opts.baseUrl)));
     }
+    // Demo cursor stub: a context init-script so the cursor API re-exists after
+    // every navigation (the element itself is re-created lazily on first move).
+    if (opts.demoCursor) await context.addInitScript(demoCursorStub());
     const videoEpoch = opts.recordVideo ? Date.now() : undefined;
     await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
     const page = await context.newPage();
@@ -512,6 +585,46 @@ export class BrowserSession {
     }
     if (target.css) return this.page.locator(target.css);
     throw new Error(`Target sem estratégia de localização: ${target.description}`);
+  }
+
+  /**
+   * Demo overlay: animates the synthetic cursor to a target-bearing step's
+   * bounding-box center and returns that center (for the timeline). Returns null
+   * for steps without a target or when the element has no box. Best-effort — any
+   * failure is swallowed so it can never break the demo replay (or the verdict).
+   */
+  async pointToStep(step: Step, travelMs = 0): Promise<{ x: number; y: number } | null> {
+    if (step.kind !== "click" && step.kind !== "fill" && step.kind !== "select") return null;
+    try {
+      const box = await this.targetLocator(step.target).boundingBox();
+      if (!box) return null;
+      const x = Math.round(box.x + box.width / 2);
+      const y = Math.round(box.y + box.height / 2);
+      await this.page.evaluate(
+        ([px, py, dur]) => {
+          (
+            window as unknown as {
+              __scoutCursor?: { move: (x: number, y: number, d: number) => void };
+            }
+          ).__scoutCursor?.move(px, py, dur);
+        },
+        [x, y, travelMs] as [number, number, number]
+      );
+      return { x, y };
+    } catch {
+      return null; // overlay is best-effort; never disturb the replay
+    }
+  }
+
+  /** Demo overlay: emits a click pulse at the cursor's current position. Best-effort. */
+  async pulseCursor(): Promise<void> {
+    try {
+      await this.page.evaluate(() => {
+        (window as unknown as { __scoutCursor?: { pulse: () => void } }).__scoutCursor?.pulse();
+      });
+    } catch {
+      // best-effort overlay — never disturb the replay
+    }
   }
 
   async close(): Promise<{ trace?: string; video?: string }> {
