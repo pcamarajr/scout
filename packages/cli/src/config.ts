@@ -36,9 +36,9 @@ export interface ScoutConfig {
   maxTurns: number;
   /** Locale forced on the browser context */
   locale?: string;
-  /** Record a paced MP4 preview of the verified replay. Enable with --record-video or SCOUT_RECORD_VIDEO=1. */
+  /** Record a paced MP4 demo of the verified replay. Enable with --demo-video or SCOUT_RECORD_VIDEO=1. */
   recordVideo?: boolean;
-  /** Preview pacing in (0,1]; <1 = slower so a human can follow. Default 0.4. */
+  /** Demo pacing in (0,1]; <1 = slower so a human can follow. Default 0.35. */
   videoSpeed?: number;
   /**
    * Agent engine for AI runs. `agent-sdk` (default) uses the trusted
@@ -67,7 +67,7 @@ const DEFAULTS: ScoutConfig = {
   maxTurns: 40,
   locale: "pt-BR",
   recordVideo: false,
-  videoSpeed: 0.4,
+  videoSpeed: 0.35,
   profiles: {},
 };
 

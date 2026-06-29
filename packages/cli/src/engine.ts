@@ -6,7 +6,7 @@ import { renderRunReport } from "./report.js";
 import { Store } from "./store.js";
 import { BrowserSession } from "./runner/browser.js";
 import { runWithAgent } from "./runner/ai-runner.js";
-import { describeStep, replayForVideo, replaySteps } from "./runner/script-runner.js";
+import { describeStep, replayForDemo, replaySteps } from "./runner/script-runner.js";
 import { generateVideo, pacingFor, type TimelineEntry, type VideoPacing } from "./runner/video.js";
 import type { RunResult, Scenario, ScenarioCookie, Step, Target } from "./types.js";
 
@@ -105,12 +105,12 @@ export async function runScenario(
     result = { ...aiResult, startedAt, durationMs: Date.now() - start };
   }
 
-  // Preview video: always sourced from a dedicated clean replay of the
+  // Demo video: always sourced from a dedicated clean replay of the
   // recorded script (never the AI run), only when verified and opted-in.
   if (config.recordVideo && result.verdict === "verified") {
     const steps = store.loadSteps(scenario.slug);
     if (steps?.length) {
-      result.video = await recordPreviewVideo(scenario, steps, config, storageState, cookies, runDir);
+      result.video = await recordDemoVideo(scenario, steps, config, storageState, cookies, runDir);
     }
   }
 
@@ -129,16 +129,18 @@ export interface RecordedReplay {
   webm?: string;
   /** Step captions with wall-clock offsets, for burned overlays. */
   timeline: TimelineEntry[];
+  /** Human-readable "step N (description): error" when the replay tripped. */
+  failure?: string;
 }
 
 /**
- * Builds the pacing for the non-paced fallback replay: zero slowMo and zero
- * dwell so it mirrors the authoritative `ai+heal` replay (which passed). The
- * title/verdict card durations are kept so the rendered MP4 still bookends with
- * the scenario name and the VERIFIED card.
+ * Builds the pacing for the non-paced fallback replay: zero slowMo, dwell and
+ * cursor-travel so it mirrors the authoritative `ai+heal` replay (which passed).
+ * The title/verdict card durations are kept so the rendered MP4 still bookends
+ * with the scenario name and the VERIFIED card.
  */
 export function nonPacedPacing(paced: VideoPacing): VideoPacing {
-  return { ...paced, slowMoMs: 0, assertDwellMs: 0 };
+  return { ...paced, slowMoMs: 0, assertDwellMs: 0, cursorTravelMs: 0 };
 }
 
 /**
@@ -146,7 +148,7 @@ export function nonPacedPacing(paced: VideoPacing): VideoPacing {
  * the raw WebM under a stable name when ffmpeg is missing or fails. Returns the
  * artifact path, or undefined when no WebM was produced at all.
  */
-function renderPreview(
+function renderDemo(
   recorded: RecordedReplay,
   scenario: Scenario,
   runDir: string,
@@ -158,12 +160,12 @@ function renderPreview(
     return undefined;
   }
   fs.writeFileSync(
-    path.join(runDir, "video.timeline.json"),
+    path.join(runDir, "demo.timeline.json"),
     JSON.stringify(recorded.timeline, null, 2) + "\n"
   );
   const result = generateVideo({
     webmPath: webm,
-    outPath: path.join(runDir, "video.mp4"),
+    outPath: path.join(runDir, "demo.mp4"),
     width: 390,
     height: 844,
     scenarioName: scenario.name,
@@ -177,7 +179,7 @@ function renderPreview(
     return result.output;
   }
   // Fallback (no/failed ffmpeg): keep the raw WebM under a stable name.
-  const dest = path.join(runDir, "video.webm");
+  const dest = path.join(runDir, "demo.webm");
   try {
     fs.renameSync(webm, dest);
     return dest;
@@ -187,46 +189,52 @@ function renderPreview(
 }
 
 /**
- * Orchestrates preview-video generation, decoupled from the browser so it can be
+ * Orchestrates demo-video generation, decoupled from the browser so it can be
  * tested: `attempt` performs one recorded replay at a given pacing and returns
  * its outcome + WebM. Best-effort and post-verdict — never touches the verdict.
  *
  * The verified scenario must NEVER yield zero video. The first attempt is paced
- * (slowMo + dwell) for human viewing. If that paced replay fails — the pacing
- * sometimes perturbs timing on flows the authoritative run handled fine (e.g. a
- * cookie banner) — we fall back to a non-paced replay that mirrors the
+ * (slowMo + dwell + cursor) for human viewing. If that paced replay fails — the
+ * pacing sometimes perturbs timing on flows the authoritative run handled fine
+ * (e.g. a cookie banner) — we fall back to a non-paced replay that mirrors the
  * authoritative run, which passed, so a usable clip is still produced. Only if
  * the fallback ALSO fails do we warn and yield no video.
  */
-export async function recordPreviewVideoFrom(
+export async function recordDemoVideoFrom(
   attempt: (pacing: VideoPacing) => Promise<RecordedReplay>,
   scenario: Scenario,
   runDir: string,
   pacing: VideoPacing
 ): Promise<string | undefined> {
   const paced = await attempt(pacing);
-  if (paced.passed) return renderPreview(paced, scenario, runDir, pacing);
+  if (paced.passed) return renderDemo(paced, scenario, runDir, pacing);
   if (paced.webm) fs.rmSync(paced.webm, { force: true }); // discard the failed paced take
 
   console.warn(
-    "[scout] video: paced preview replay failed; recorded a non-paced fallback clip (verdict unaffected)."
+    "[scout] video: paced demo replay failed; recorded a non-paced fallback clip (verdict unaffected)." +
+      (paced.failure ? ` Paced replay tripped on ${paced.failure}.` : "")
   );
   const fallbackPacing = nonPacedPacing(pacing);
   const fallback = await attempt(fallbackPacing);
-  if (fallback.passed) return renderPreview(fallback, scenario, runDir, fallbackPacing);
+  if (fallback.passed) return renderDemo(fallback, scenario, runDir, fallbackPacing);
 
   if (fallback.webm) fs.rmSync(fallback.webm, { force: true });
-  console.warn("[scout] video: non-paced fallback replay also failed — no video generated (verdict unaffected).");
+  console.warn(
+    "[scout] video: non-paced fallback replay also failed — no video generated (verdict unaffected)." +
+      (fallback.failure ? ` Replay tripped on ${fallback.failure}.` : "") +
+      " This usually means the scenario doesn't replay deterministically (it heals via AI each run), so there is no clean replay to film."
+  );
   return undefined;
 }
 
 /**
- * Runs one extra, paced replay of the verified script with video recording on,
- * then renders it to a GitHub-ready MP4 with baked step labels + verdict card.
- * On a paced-replay failure it retries without pacing so a verified scenario
- * still yields a clip; the verdict is never affected.
+ * Runs one extra, paced replay of the verified script with video recording on
+ * (and the synthetic demo cursor injected), then renders it to a GitHub-ready
+ * MP4 with baked step labels + verdict card. On a paced-replay failure it
+ * retries without pacing so a verified scenario still yields a clip; the verdict
+ * is never affected.
  */
-async function recordPreviewVideo(
+async function recordDemoVideo(
   scenario: Scenario,
   steps: Step[],
   config: ScoutConfig,
@@ -244,21 +252,28 @@ async function recordPreviewVideo(
         locale: config.locale,
         runDir,
         recordVideo: true,
+        demoCursor: true,
         slowMoMs: pacing.slowMoMs,
         permissions: scenario.permissions,
         cookies,
         extraHeaders: config.headers,
       });
     } catch {
-      console.warn("[scout] video: could not open the browser for the preview replay.");
-      return { passed: false, timeline: [] };
+      console.warn("[scout] video: could not open the browser for the demo replay.");
+      return { passed: false, timeline: [], failure: "could not open the browser" };
     }
-    const preview = await replayForVideo(session, steps, pacing.assertDwellMs, pacing.verdictCardMs);
+    const demo = await replayForDemo(
+      session,
+      steps,
+      pacing.assertDwellMs,
+      pacing.cursorTravelMs,
+      pacing.verdictCardMs
+    );
     const { video: webm } = await session.close();
-    return { passed: preview.passed, webm, timeline: preview.timeline };
+    return { passed: demo.passed, webm, timeline: demo.timeline, failure: demo.failure };
   };
 
-  return recordPreviewVideoFrom(attempt, scenario, runDir, pacingFor(config.videoSpeed));
+  return recordDemoVideoFrom(attempt, scenario, runDir, pacingFor(config.videoSpeed));
 }
 
 /**

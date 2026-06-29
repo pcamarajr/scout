@@ -45,11 +45,11 @@ export function renderRunReport(result: RunResult, scenario: Scenario, steps?: S
     const name = path.basename(result.video);
     lines.push(
       ``,
-      `## Preview`,
+      `## Demo`,
       ``,
       `<video src="./${name}" controls></video>`,
       ``,
-      `[▶ ${name}](./${name}) — paced replay of the verified flow.`
+      `[▶ ${name}](./${name}) — demo of the verified flow.`
     );
   }
 

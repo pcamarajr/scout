@@ -75,11 +75,16 @@ program
   .option("--ai", "Force AI-driven run (re-records the script)", false)
   .option("--no-heal", "Do not fall back to AI when replay fails (cheap CI)")
   .option("--headed", "Visible browser (local debug)", false)
-  .option("--record-video", "Record a paced MP4 preview of each verified replay (needs ffmpeg)", false)
+  .option("--demo-video", "Record a paced MP4 demo of each verified replay, with a synthetic cursor (needs ffmpeg)", false)
+  .option("--record-video", "Deprecated alias for --demo-video", false)
   .option("--base-url <url>", "Target app URL for this run (precedence: flag > SCOUT_BASE_URL > scout.config.json)")
   .action(async (opts) => {
     const store = new Store();
-    const config = loadConfig(process.cwd(), { baseUrl: opts.baseUrl, recordVideo: opts.recordVideo });
+    if (opts.recordVideo) console.warn("⚠ --record-video is deprecated; use --demo-video.");
+    const config = loadConfig(process.cwd(), {
+      baseUrl: opts.baseUrl,
+      recordVideo: opts.demoVideo || opts.recordVideo,
+    });
     const all = store.listScenarios();
     const targets = opts.scenario ? selectScenarios(all, opts.scenario) : all;
     if (!targets.length) {
@@ -93,10 +98,10 @@ program
     if (config.recordVideo) {
       const ff = diagnoseFfmpeg();
       if (!ff.ok) {
-        console.warn(`⚠ --record-video: ${ffmpegRemediation(ff)}`);
+        console.warn(`⚠ --demo-video: ${ffmpegRemediation(ff)}`);
         console.warn("  Continuing — verified scenarios will keep the raw .webm instead of an MP4.\n");
       } else if (!resolveFont()) {
-        console.warn("⚠ --record-video: no overlay font found — the MP4 will have no captions. Set SCOUT_VIDEO_FONT to a .ttf.\n");
+        console.warn("⚠ --demo-video: no overlay font found — the MP4 will have no captions. Set SCOUT_VIDEO_FONT to a .ttf.\n");
       }
     }
 
@@ -117,7 +122,7 @@ program
           failed++;
         }
         console.log(`   ↳ artifacts: ${path.relative(process.cwd(), result.runDir)}`);
-        if (result.video) console.log(`   ↳ preview: ${path.relative(process.cwd(), result.video)}`);
+        if (result.video) console.log(`   ↳ demo: ${path.relative(process.cwd(), result.video)}`);
       } catch (error) {
         console.log(`💥 error: ${error instanceof Error ? error.message : error}`);
         failed++;
@@ -355,7 +360,7 @@ async function diagnoseAiCreds(config: ScoutConfig): Promise<boolean> {
 
 /**
  * Runtime half of `doctor`: the local toolchain a run needs. The browser is
- * required (any run); ffmpeg + overlay font are only needed for `--record-video`
+ * required (any run); ffmpeg + overlay font are only needed for `--demo-video`
  * and so are reported as warnings, not run-blockers. Returns whether the
  * required pieces are present.
  */
@@ -375,9 +380,9 @@ function diagnoseRuntime(): boolean {
 
   const ff = diagnoseFfmpeg();
   if (ff.ok) {
-    console.log(`  ffmpeg:             ✓ ${ff.bin} (for --record-video)`);
+    console.log(`  ffmpeg:             ✓ ${ff.bin} (for --demo-video)`);
   } else {
-    console.log(`  ffmpeg:             ✗ ${ff.reason} — only needed for --record-video`);
+    console.log(`  ffmpeg:             ✗ ${ff.reason} — only needed for --demo-video`);
     console.log(`                      ${ffmpegRemediation(ff)}`);
   }
 

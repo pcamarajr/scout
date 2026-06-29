@@ -3,11 +3,13 @@ import fs from "node:fs";
 import type { Verdict } from "../types.js";
 
 /**
- * Preview-video pipeline. The video is sourced from a dedicated, paced replay
- * (never the messy AI run) and post-processed by ffmpeg into a GitHub-ready
- * MP4 with baked-in step labels and a verdict card. ffmpeg is an *optional*
- * system dependency — when it is missing we keep the raw WebM and warn with an
- * install hint instead of bundling a binary into the base install.
+ * Demo-video pipeline. The video is sourced from a dedicated, paced replay
+ * (never the messy AI run) — a synthetic cursor + click pulse are injected into
+ * the page (see demoCursorStub) and captured natively by the recording — then
+ * post-processed by ffmpeg into a GitHub-ready MP4 with baked-in step labels and
+ * a verdict card. ffmpeg is an *optional* system dependency — when it is missing
+ * we keep the raw WebM and warn with an install hint instead of bundling a
+ * binary into the base install.
  */
 
 export interface TimelineEntry {
@@ -15,6 +17,9 @@ export interface TimelineEntry {
   label: string;
   /** Milliseconds from video start (context creation) to the step's execution */
   tMs: number;
+  /** Target center (viewport px) the cursor moved to — only for target-bearing steps. */
+  x?: number;
+  y?: number;
 }
 
 export interface VideoPacing {
@@ -22,6 +27,12 @@ export interface VideoPacing {
   slowMoMs: number;
   /** Extra pause after each assertion so the verified state is readable */
   assertDwellMs: number;
+  /**
+   * Dwell after the synthetic cursor starts travelling to a target, before the
+   * step acts — lets the eye follow cursor → target → click. Zeroed in the
+   * non-paced fallback so it mirrors the authoritative run.
+   */
+  cursorTravelMs: number;
   /** Opening card (scenario name) duration */
   titleCardMs: number;
   /** Closing verdict card duration — also the final-frame dwell it overlays */
@@ -36,14 +47,15 @@ function clamp(n: number, lo: number, hi: number): number {
 
 /**
  * Maps the single `videoSpeed` knob (0,1] to concrete pacing. <1 = slower.
- * At 1.0 the replay runs at natural speed; the default 0.4 yields a clip a
- * human can actually follow.
+ * At 1.0 the replay runs at natural speed; the default 0.35 yields a demo a
+ * human can actually follow, with enough cursor-travel dwell to read each move.
  */
-export function pacingFor(videoSpeed = 0.4): VideoPacing {
+export function pacingFor(videoSpeed = 0.35): VideoPacing {
   const speed = clamp(videoSpeed, 0.1, 1);
   return {
     slowMoMs: Math.round(BASE_SLOWMO * (1 / speed - 1)),
     assertDwellMs: Math.round(500 / speed),
+    cursorTravelMs: clamp(Math.round(250 / speed), 250, 900),
     titleCardMs: 1500,
     verdictCardMs: 1800,
   };
@@ -141,9 +153,17 @@ const VERDICT_LABEL: Record<Verdict, string> = {
   blocked: "BLOQUEADO",
 };
 
-/** drawtext text=' ' wraps the value, so only quotes/backslashes must go. */
+/**
+ * Sanitizes a value for an ffmpeg `drawtext` field. Strips the quote/backslash
+ * that would break out of the `text='…'` wrapper, then escapes `:` — ffmpeg's
+ * filter-option separator — which otherwise truncates any caption containing a
+ * URL (e.g. a `navigate` step's `https://…`) and fails the whole filtergraph.
+ */
 function safeText(s: string): string {
-  return s.replace(/['\\]/g, "").trim();
+  return s
+    .replace(/['\\]/g, "")
+    .replace(/:/g, "\\:")
+    .trim();
 }
 
 /** Approx Arial glyph advance as a fraction of font size — for width fitting. */
@@ -230,7 +250,7 @@ export function buildOverlayFilter(spec: OverlaySpec): string {
   const title = fitText(spec.scenarioName, width - 40, 40, 18);
   filters.push(fullBox(0, titleSec));
   filters.push(text(title.text, { size: title.size, color: "white", y: "(h/2)-70", a: 0, b: titleSec }));
-  filters.push(text("scout preview", { size: 22, color: "0xBDC3C7", y: "(h/2)+10", a: 0, b: titleSec }));
+  filters.push(text("scout demo", { size: 22, color: "0xBDC3C7", y: "(h/2)+10", a: 0, b: titleSec }));
 
   // Closing verdict card.
   const verdict = fitText(VERDICT_LABEL[spec.verdict], width - 40, 52, 24);

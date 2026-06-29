@@ -19,7 +19,7 @@ draft: false
   "model": "claude-sonnet-4-6",
   "engine": "agent-sdk",
   "recordVideo": false,
-  "videoSpeed": 0.4,
+  "videoSpeed": 0.35,
   "profiles": {
     "anon": { "description": "Logged-out session" },
     "subscriber": {
@@ -37,8 +37,8 @@ draft: false
 | `baseUrl` | string | — | The URL every scenario is relative to. Overridable per run (see precedence below). |
 | `model` | string | `claude-sonnet-4-6` | The model used for verification and healing. Scout infers the provider and engine from it — see [Providers & credentials](/docs/providers/). |
 | `engine` | `"agent-sdk"` \| `"ai-sdk"` | inferred | Forces the run engine. Anthropic defaults to `agent-sdk`; Google/OpenAI use `ai-sdk`. Usually best left unset. |
-| `recordVideo` | boolean | `false` | When `true`, a verified scenario also produces a paced preview MP4. Needs `ffmpeg`. See [Run artifacts](/docs/artifacts/). |
-| `videoSpeed` | number `(0,1]` | `0.4` | Playback pacing for the preview video. `0.4` is slower (easier to watch); `1` is natural speed. |
+| `recordVideo` | boolean | `false` | When `true`, a verified scenario also produces a paced demo MP4 (enable per-run with `--demo-video`). Needs `ffmpeg`. See [Run artifacts](/docs/artifacts/). |
+| `videoSpeed` | number `(0,1]` | `0.35` | Playback pacing for the demo video. `0.35` is slower (easier to watch); `1` is natural speed. |
 | `profiles` | object | — | Named auth profiles. Each has a `description` and an optional `env` array naming the env vars its login needs. See [Auth profiles & secrets](/docs/auth/). |
 
 ## Environment overrides
@@ -49,7 +49,7 @@ Some keys can be overridden at run time without editing the file — handy for C
 |---|---|---|
 | `SCOUT_BASE_URL` | `baseUrl` | Precedence: `--base-url` flag > `SCOUT_BASE_URL` > config. |
 | `SCOUT_ENGINE` | `engine` | `agent-sdk` or `ai-sdk`. Note: `ai-sdk` can't reuse a Claude Code session — Anthropic then needs `ANTHROPIC_API_KEY`. |
-| `SCOUT_RECORD_VIDEO` | `recordVideo` | Set to `1` to enable for one run. |
+| `SCOUT_RECORD_VIDEO` | `recordVideo` | Set to `1` to enable the demo video for one run. |
 | `FFMPEG_PATH` | — | Path to `ffmpeg` if it isn't on `PATH`. |
 | `SCOUT_VIDEO_FONT` | — | Path to a `.ttf` for the burned-in video captions (otherwise autodetected). |
 

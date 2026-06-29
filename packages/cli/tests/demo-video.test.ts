@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import {
   nonPacedPacing,
-  recordPreviewVideoFrom,
+  recordDemoVideoFrom,
   type RecordedReplay,
 } from "../src/engine.js";
 import { pacingFor, type VideoPacing } from "../src/runner/video.js";
@@ -35,15 +35,17 @@ function writeWebm(runDir: string): string {
 }
 
 function withRunDir<T>(fn: (runDir: string) => Promise<T>): Promise<T> {
-  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "scout-preview-"));
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "scout-demo-"));
   return fn(runDir).finally(() => fs.rmSync(runDir, { recursive: true, force: true }));
 }
 
-test("nonPacedPacing zeroes slowMo and dwell but keeps the cards", () => {
-  const paced = pacingFor(0.4);
+test("nonPacedPacing zeroes slowMo, dwell and cursor-travel but keeps the cards", () => {
+  const paced = pacingFor(0.35);
   const plain = nonPacedPacing(paced);
   assert.equal(plain.slowMoMs, 0);
   assert.equal(plain.assertDwellMs, 0);
+  assert.equal(plain.cursorTravelMs, 0);
+  assert.ok(paced.cursorTravelMs > 0, "the paced pacing has a cursor-travel dwell");
   assert.equal(plain.titleCardMs, paced.titleCardMs);
   assert.equal(plain.verdictCardMs, paced.verdictCardMs);
 });
@@ -55,7 +57,7 @@ test("paced replay passing yields a clip and never invokes the fallback", async 
       pacings.push(pacing);
       return { passed: true, webm: writeWebm(runDir), timeline: TIMELINE };
     };
-    const out = await recordPreviewVideoFrom(attempt, SCENARIO, runDir, pacingFor(0.4));
+    const out = await recordDemoVideoFrom(attempt, SCENARIO, runDir, pacingFor(0.35));
     assert.ok(out, "a clip path must be returned");
     assert.ok(fs.existsSync(out!), "the clip must exist on disk");
     assert.equal(pacings.length, 1, "fallback must not run when the paced replay passes");
@@ -76,7 +78,7 @@ test("paced replay failing falls back to a non-paced clip (verdict unaffected)",
 
     let out: string | undefined;
     const warnings = await captureWarnings(async () => {
-      out = await recordPreviewVideoFrom(attempt, SCENARIO, runDir, pacingFor(0.4));
+      out = await recordDemoVideoFrom(attempt, SCENARIO, runDir, pacingFor(0.35));
     });
 
     assert.ok(out, "a fallback clip must still be produced");
@@ -85,7 +87,7 @@ test("paced replay failing falls back to a non-paced clip (verdict unaffected)",
     assert.ok(pacings[0].slowMoMs > 0, "first attempt is paced");
     assert.equal(pacings[1].slowMoMs, 0, "fallback attempt is non-paced");
     assert.ok(
-      warnings.some((w) => /paced preview replay failed; recorded a non-paced fallback/.test(w)),
+      warnings.some((w) => /paced demo replay failed; recorded a non-paced fallback/.test(w)),
       "a clear fallback warning must be emitted"
     );
   });
@@ -100,27 +102,36 @@ test("failed paced WebM is discarded, not rendered, when falling back", async ()
       return { passed: pacing.slowMoMs === 0, webm, timeline: TIMELINE };
     };
     await captureWarnings(async () => {
-      await recordPreviewVideoFrom(attempt, SCENARIO, runDir, pacingFor(0.4));
+      await recordDemoVideoFrom(attempt, SCENARIO, runDir, pacingFor(0.35));
     });
     assert.ok(!fs.existsSync(webmPaths[0]), "the failed paced WebM must be removed");
   });
 });
 
-test("both attempts failing yields no video and warns (verdict unaffected)", async () => {
+test("both attempts failing yields no video and surfaces the failing step", async () => {
   await withRunDir(async (runDir) => {
     const attempt = async (): Promise<RecordedReplay> => ({
       passed: false,
       webm: writeWebm(runDir),
       timeline: TIMELINE,
+      failure: 'step 3 (verificar texto visível "Manage my preferences"): Timeout 10000ms exceeded.',
     });
     let out: string | undefined = "sentinel";
     const warnings = await captureWarnings(async () => {
-      out = await recordPreviewVideoFrom(attempt, SCENARIO, runDir, pacingFor(0.4));
+      out = await recordDemoVideoFrom(attempt, SCENARIO, runDir, pacingFor(0.35));
     });
     assert.equal(out, undefined, "no clip when both attempts fail");
     assert.ok(
       warnings.some((w) => /non-paced fallback replay also failed/.test(w)),
       "the final no-video warning must be emitted"
+    );
+    assert.ok(
+      warnings.some((w) => /step 3 .*Manage my preferences.*Timeout/.test(w)),
+      "the warning must name the step that tripped the replay"
+    );
+    assert.ok(
+      warnings.some((w) => /doesn't replay deterministically/.test(w)),
+      "the warning must explain why a verified scenario can still yield no demo"
     );
   });
 });
