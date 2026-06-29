@@ -59,6 +59,36 @@ Logged-in subscriber opens ep 3; plays with no paywall.
   assert.equal(sub.scenario, "Logged-in subscriber opens ep 3; plays with no paywall.");
 });
 
+test("viewports: file-level default inherited; per-section list REPLACES (not merges)", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "nav.scout.md",
+    `---
+feature: Nav
+viewports: [mobile, desktop]
+---
+
+## Inherits the file default
+Opens the menu.
+
+## Overrides with its own list
+viewports: [tablet]
+
+Opens the menu on a tablet.
+`
+  );
+  const [inherits, overrides] = loadScenarios(cwd);
+  assert.deepEqual(inherits.viewports, ["mobile", "desktop"]); // file-level default
+  assert.deepEqual(overrides.viewports, ["tablet"]); // replaced, not merged with the file list
+});
+
+test("viewports: an invalid name fails loud at parse time", () => {
+  const cwd = tmpProject();
+  writeSpec(cwd, "bad.scout.md", `## X\nviewports: [Mobile XL]\n\nbody.\n`);
+  assert.throws(() => loadScenarios(cwd), /Invalid viewport name "Mobile XL"/);
+});
+
 test("nested spec files namespace the file-slug", () => {
   const cwd = tmpProject();
   writeSpec(cwd, "auth/login.scout.md", `## Valid credentials\nUser logs in with valid email + password; lands on /home.\n`);

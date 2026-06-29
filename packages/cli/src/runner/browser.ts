@@ -1,6 +1,7 @@
 import path from "node:path";
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "playwright";
 import type { NetworkMatcher, PermissionPolicy, ScenarioCookie, Step, Target } from "../types.js";
+import type { ResolvedViewport } from "../viewports.js";
 import {
   findConsoleErrors,
   globToRegex,
@@ -32,6 +33,11 @@ export interface LaunchOptions {
   storageState?: string;
   locale?: string;
   runDir: string;
+  /**
+   * Resolved viewport for this run — sizes the context (and any recorded video)
+   * and carries the device emulation (deviceScaleFactor/isMobile/hasTouch/UA).
+   */
+  viewport: ResolvedViewport;
   /** Record a WebM of the context (used only by the demo-video replay) */
   recordVideo?: boolean;
   /**
@@ -147,8 +153,6 @@ export function demoCursorStub(): string {
   })();`;
 }
 
-const VIDEO_SIZE = { width: 390, height: 844 } as const;
-
 const STEP_TIMEOUT = 10_000;
 
 /** Cap the ring buffers so a long-running session can't grow them unbounded. */
@@ -195,14 +199,20 @@ export class BrowserSession {
   static async launch(opts: LaunchOptions): Promise<BrowserSession> {
     const browser = await chromium.launch({ headless: opts.headless, slowMo: opts.slowMoMs });
     const perm = opts.permissions;
+    const vp = opts.viewport;
+    const size = { width: vp.width, height: vp.height };
     const context = await browser.newContext({
       locale: opts.locale ?? "pt-BR",
-      viewport: { ...VIDEO_SIZE }, // mobile-first; vertical video product
+      viewport: size,
+      ...(vp.deviceScaleFactor != null ? { deviceScaleFactor: vp.deviceScaleFactor } : {}),
+      ...(vp.isMobile != null ? { isMobile: vp.isMobile } : {}),
+      ...(vp.hasTouch != null ? { hasTouch: vp.hasTouch } : {}),
+      ...(vp.userAgent != null ? { userAgent: vp.userAgent } : {}),
       storageState: opts.storageState,
       ...(opts.extraHeaders ? { extraHTTPHeaders: opts.extraHeaders } : {}),
       ...(perm?.grant?.length ? { permissions: perm.grant } : {}),
       ...(perm?.geolocation ? { geolocation: perm.geolocation } : {}),
-      ...(opts.recordVideo ? { recordVideo: { dir: opts.runDir, size: { ...VIDEO_SIZE } } } : {}),
+      ...(opts.recordVideo ? { recordVideo: { dir: opts.runDir, size } } : {}),
     });
     // Deny stub must run before any page script and in every page (incl. popups).
     if (perm?.deny?.length) await context.addInitScript(denyPermissionsStub(perm.deny));

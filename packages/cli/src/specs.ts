@@ -24,11 +24,16 @@ const OVERRIDE_KEYS = new Set([
   "profile",
   "notes",
   "tags",
+  "viewports",
   "grantPermissions",
   "denyPermissions",
   "geolocation",
   "cookies",
 ]);
+
+/** Filesystem/report-safe viewport names (mirrors viewports.ts, kept inline so
+ *  spec parsing has no Playwright dependency). */
+const VIEWPORT_NAME_RE = /^[a-z0-9-]+$/;
 
 /**
  * Browser permissions Scout can grant/deny per scenario. Curated (not a
@@ -194,6 +199,29 @@ function parseTags(raw: unknown): string[] | undefined {
   return undefined;
 }
 
+/**
+ * Parse a viewport-name list from YAML (array/string) or a comma-separated
+ * override line, validating each name's charset (fail-loud, like permissions).
+ * Existence against the registry is checked later at resolution time.
+ */
+function parseViewportList(raw: unknown, ctx: string): string[] | undefined {
+  let items: string[] | undefined;
+  if (Array.isArray(raw)) items = raw.map(String);
+  else if (typeof raw === "string") {
+    const inner = raw.trim().replace(/^\[|\]$/g, "");
+    items = inner.split(",").map((t) => t.trim()).filter(Boolean);
+  }
+  if (!items?.length) return undefined;
+  for (const name of items) {
+    if (!VIEWPORT_NAME_RE.test(name)) {
+      throw new Error(
+        `Invalid viewport name "${name}" in ${ctx}. Use lowercase letters, digits and hyphens.`
+      );
+    }
+  }
+  return [...new Set(items)];
+}
+
 interface Section {
   name: string;
   bodyLines: string[];
@@ -230,6 +258,7 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
   const fileFeature = typeof data.feature === "string" ? data.feature : path.basename(specFile).replace(SPEC_EXT, "");
   const fileProfile = typeof data.profile === "string" ? data.profile : undefined;
   const fileTags = parseTags(data.tags);
+  const fileViewports = parseViewportList(data.viewports, `${path.relative(cwd, specFile)} frontmatter`);
   const relFile = path.relative(cwd, specFile);
   const fileCookies = parseCookieList(data.cookies, relFile);
 
@@ -264,6 +293,9 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
 
     const tags = parseTags(overrides.tags) ?? fileTags;
     const ctx = `${relFile} → "${section.name}"`;
+    // A per-section `viewports:` REPLACES the file-level list (it does not merge
+    // like tags) — a scenario explicitly chooses the sizes it runs in.
+    const viewports = "viewports" in overrides ? parseViewportList(overrides.viewports, ctx) : fileViewports;
     const permissions = resolvePermissions(data, overrides, ctx);
     // Per-section override (inline name=value) wins over the file frontmatter,
     // by cookie name; the profile's cookies merge under both at launch.
@@ -279,6 +311,7 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
       profile: overrides.profile ?? fileProfile,
       notes: overrides.notes,
       tags,
+      viewports,
       permissions,
       cookies,
       file: relFile,

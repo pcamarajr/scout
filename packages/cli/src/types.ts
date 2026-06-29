@@ -38,6 +38,25 @@ export interface GeoCoords {
 }
 
 /**
+ * A named viewport descriptor, declared in `scout.config.json` `viewports` (or
+ * shipped as a built-in). A `device` Playwright preset is the base; explicit
+ * fields override it (`{ device: "iPhone 13", height: 844 }` = the preset with
+ * its height pinned). `width`/`height` are required only when there is no
+ * `device` to take them from. Resolved into Playwright context options by
+ * `resolveViewport` at launch — never baked into the recorded script.
+ */
+export interface Viewport {
+  /** Playwright device preset name (e.g. "iPhone 13"); the base for overrides. */
+  device?: string;
+  width?: number;
+  height?: number;
+  deviceScaleFactor?: number;
+  isMobile?: boolean;
+  hasTouch?: boolean;
+  userAgent?: string;
+}
+
+/**
  * One cookie applied to the browser context before the scenario runs. Resolved
  * fresh from the spec each run (profile default + per-scenario frontmatter /
  * override, merged by name) and set via Playwright `context.addCookies()` —
@@ -117,6 +136,13 @@ export interface Scenario {
   notes?: string;
   /** Free-form tags (file-level + per-scenario, merged) */
   tags?: string[];
+  /**
+   * Viewport names this scenario runs in (file frontmatter default, replaced —
+   * not merged — by a per-section `viewports:` override). Each name must resolve
+   * against the built-in/config registry. Omitted = the config's default
+   * viewport. Declaring N names fans the scenario out into N verification units.
+   */
+  viewports?: string[];
   /** Browser permission policy (frontmatter default + per-section override). */
   permissions?: PermissionPolicy;
   /**
@@ -131,6 +157,8 @@ export interface Scenario {
 
 export interface RunResult {
   slug: string;
+  /** Viewport name this run executed in — part of the run identity (`slug@viewport`). */
+  viewport: string;
   /** replay = cached deterministic steps; ai = agent-driven run */
   mode: "replay" | "ai";
   verdict: Verdict;

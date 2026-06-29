@@ -9,9 +9,15 @@ import { detectAiCredentials, inferProvider, type AiProvider } from "./credentia
 import { resolveEngineKind } from "./runner/engines/index.js";
 import { runScenario } from "./engine.js";
 import { runInit } from "./init.js";
-import { buildReport, renderSummary, scenarioStatus } from "./report.js";
+import { buildReport, renderSummary, runStatus } from "./report.js";
 import { addScenario, selectScenarios, slugify } from "./specs.js";
 import { Store } from "./store.js";
+import {
+  defaultViewportName,
+  expandScenarios,
+  resolveViewport,
+  runnableViewports,
+} from "./viewports.js";
 import { diagnoseFfmpeg, ffmpegRemediation, resolveFont } from "./runner/video.js";
 
 // Rejeições fora da cadeia de await (SDK/Playwright em subprocesso) não podem
@@ -60,11 +66,12 @@ program
   .description("Lists scenarios and status")
   .action(() => {
     const store = new Store();
+    const config = loadConfig();
     const latest = store.latestRuns();
-    for (const s of store.listScenarios()) {
-      const script = store.loadSteps(s.slug) ? "📜" : "  ";
-      const status = scenarioStatus(s.slug, latest);
-      console.log(`${script} [${status.padEnd(8)}] ${s.slug}  —  ${s.name} (${s.profile ?? "anonymous"})`);
+    for (const { scenario: s, viewport } of expandScenarios(store.listScenarios(), config)) {
+      const script = store.loadSteps(s.slug, viewport) ? "📜" : "  ";
+      const status = runStatus(s.slug, viewport, latest);
+      console.log(`${script} [${status.padEnd(8)}] ${s.slug}@${viewport}  —  ${s.name} (${s.profile ?? "anonymous"})`);
     }
   });
 
@@ -77,6 +84,7 @@ program
   .option("--headed", "Visible browser (local debug)", false)
   .option("--demo-video", "Record a paced MP4 demo of each verified replay, with a synthetic cursor (needs ffmpeg)", false)
   .option("--record-video", "Deprecated alias for --demo-video", false)
+  .option("--viewport <name>", "Force this viewport for the run, ad-hoc (must exist in the registry; does not persist a script). Default: SCOUT_VIEWPORT")
   .option("--base-url <url>", "Target app URL for this run (precedence: flag > SCOUT_BASE_URL > scout.config.json)")
   .action(async (opts) => {
     const store = new Store();
@@ -85,6 +93,18 @@ program
       baseUrl: opts.baseUrl,
       recordVideo: opts.demoVideo || opts.recordVideo,
     });
+    // Ad-hoc viewport override: forces every targeted scenario into this one
+    // viewport and runs ephemerally (no script persisted). Validate up front so
+    // a typo fails before any browser opens.
+    const viewportOverride: string | undefined = opts.viewport ?? process.env.SCOUT_VIEWPORT;
+    if (viewportOverride) {
+      try {
+        resolveViewport(viewportOverride, config);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exit(1);
+      }
+    }
     const all = store.listScenarios();
     const targets = opts.scenario ? selectScenarios(all, opts.scenario) : all;
     if (!targets.length) {
@@ -107,25 +127,30 @@ program
 
     let failed = 0;
     for (const scenario of targets) {
-      process.stdout.write(`▶ ${scenario.slug} ... `);
-      try {
-        const result = await runScenario(store, scenario, config, {
-          forceAi: opts.ai,
-          heal: opts.heal,
-          headed: opts.headed,
-        });
-        const icon = result.runnerFailure ? "💥" : result.verdict === "verified" ? "✅" : result.verdict === "partial" ? "⚠️" : "❌";
-        const tag = result.runnerFailure ? " (runner failure — re-rode, não é veredito de UI)" : "";
-        console.log(`${icon} ${result.verdict}${tag} [${result.mode}${result.healed ? "+heal" : ""}] ${(result.durationMs / 1000).toFixed(1)}s`);
-        if (result.verdict !== "verified") {
-          console.log(`   ↳ ${result.reason}`);
+      const viewports = runnableViewports(scenario, config, viewportOverride);
+      for (const viewport of viewports) {
+        process.stdout.write(`▶ ${scenario.slug}@${viewport} ... `);
+        try {
+          const result = await runScenario(store, scenario, config, {
+            forceAi: opts.ai,
+            heal: opts.heal,
+            headed: opts.headed,
+            viewport,
+            ephemeral: Boolean(viewportOverride),
+          });
+          const icon = result.runnerFailure ? "💥" : result.verdict === "verified" ? "✅" : result.verdict === "partial" ? "⚠️" : "❌";
+          const tag = result.runnerFailure ? " (runner failure — re-rode, não é veredito de UI)" : "";
+          console.log(`${icon} ${result.verdict}${tag} [${result.mode}${result.healed ? "+heal" : ""}] ${(result.durationMs / 1000).toFixed(1)}s`);
+          if (result.verdict !== "verified") {
+            console.log(`   ↳ ${result.reason}`);
+            failed++;
+          }
+          console.log(`   ↳ artifacts: ${path.relative(process.cwd(), result.runDir)}`);
+          if (result.video) console.log(`   ↳ demo: ${path.relative(process.cwd(), result.video)}`);
+        } catch (error) {
+          console.log(`💥 error: ${error instanceof Error ? error.message : error}`);
           failed++;
         }
-        console.log(`   ↳ artifacts: ${path.relative(process.cwd(), result.runDir)}`);
-        if (result.video) console.log(`   ↳ demo: ${path.relative(process.cwd(), result.video)}`);
-      } catch (error) {
-        console.log(`💥 error: ${error instanceof Error ? error.message : error}`);
-        failed++;
       }
     }
     process.exit(failed ? 1 : 0);
@@ -138,15 +163,21 @@ program
   .option("--check", "Exit 1 if any scenario is not verified (CI/PR gate)", false)
   .action((opts) => {
     const store = new Store();
+    const config = loadConfig();
     const scenarios = store.listScenarios();
     const latest = store.latestRuns();
     if (opts.json) {
-      console.log(JSON.stringify(buildReport(scenarios, latest), null, 2));
+      console.log(JSON.stringify(buildReport(scenarios, latest, config), null, 2));
     } else {
-      console.log(renderSummary(scenarios, latest));
+      console.log(renderSummary(scenarios, latest, config));
     }
     if (opts.check) {
-      process.exit(scenarios.every((s) => scenarioStatus(s.slug, latest) === "verified") ? 0 : 1);
+      // Worst-of aggregate: the gate fails if ANY (scenario × viewport) unit is
+      // not verified.
+      const allVerified = expandScenarios(scenarios, config).every(
+        ({ scenario, viewport }) => runStatus(scenario.slug, viewport, latest) === "verified"
+      );
+      process.exit(allVerified ? 0 : 1);
     }
   });
 
@@ -155,6 +186,8 @@ program
   .description("Converts a legacy .scout/scenarios.json into .scout/specs/*.scout.md and relocates cached scripts")
   .action(() => {
     const store = new Store();
+    const config = loadConfig();
+    const legacyViewport = defaultViewportName(config);
     const legacy = path.join(process.cwd(), SCOUT_DIR, "scenarios.json");
     if (!fs.existsSync(legacy)) {
       console.log("Nothing to migrate — no .scout/scenarios.json found.");
@@ -183,7 +216,7 @@ program
       created++;
       const oldScript = path.join(process.cwd(), SCOUT_DIR, "scripts", `${s.slug}.json`);
       if (fs.existsSync(oldScript)) {
-        const newScript = store.scriptPath(slug);
+        const newScript = store.scriptPath(slug, legacyViewport);
         fs.mkdirSync(path.dirname(newScript), { recursive: true });
         fs.renameSync(oldScript, newScript);
         scripts++;
