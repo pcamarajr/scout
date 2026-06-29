@@ -34,6 +34,10 @@ A synthetic **cursor** is injected into the page and moves to each target before
 - Requires `ffmpeg` on `PATH` (or `FFMPEG_PATH`). Missing it isn't fatal — Scout keeps the raw `.webm` (cursor already baked in) and warns with an install hint. Font is autodetected, or set `SCOUT_VIDEO_FONT` to a `.ttf`.
 - Enable per-run with `--demo-video`, via `SCOUT_RECORD_VIDEO=1`, or `"recordVideo": true` in the config (see the [config file reference](/docs/config/)). `--record-video` still works as a deprecated alias.
 
+### Known limitation: new tabs
+
+Playwright records **one video per page**, and Scout films the first tab for the whole run. If a step opens a new tab (e.g. a `switchTab` after a link that targets `_blank`), the demo keeps showing the original tab — the new tab's content is recorded as a separate `.webm` that Scout doesn't render. There's no way to merge them into one continuous clip (the recordings overlap in time), so for now a single-tab flow makes the cleanest demo. Multi-tab demos are tracked as a future improvement.
+
 ## Trace vs demo
 
 Playwright's `trace.zip` is the deep-debug artifact (per-action screenshots, DOM, network, console). The opt-in demo video is a different job: a low-friction, GitHub-playable clip a reviewer watches in the PR — or a loop on a landing page — to see the feature working, with a visible cursor and click pulse, sourced from the clean replay and paced + annotated so it's worth watching.
