@@ -4,7 +4,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { Command } from "commander";
 import { chromium } from "playwright";
-import { CONFIG_FILE, SCOUT_DIR, loadConfig } from "./config.js";
+import { CONFIG_FILE, SCOUT_DIR, loadConfig, type ScoutConfig } from "./config.js";
 import { detectAiCredentials, inferProvider, type AiProvider } from "./credentials.js";
 import { resolveEngineKind } from "./runner/engines/index.js";
 import { runScenario } from "./engine.js";
@@ -12,6 +12,7 @@ import { runInit } from "./init.js";
 import { buildReport, renderSummary, scenarioStatus } from "./report.js";
 import { addScenario, slugify } from "./specs.js";
 import { Store } from "./store.js";
+import { diagnoseFfmpeg, ffmpegRemediation, resolveFont } from "./runner/video.js";
 
 // Rejeições fora da cadeia de await (SDK/Playwright em subprocesso) não podem
 // derrubar a suíte inteira — logar e deixar o cenário corrente falhar sozinho.
@@ -86,6 +87,19 @@ program
     if (!targets.length) {
       console.error(opts.scenario ? `Scenario "${opts.scenario}" not found.` : "No scenarios. Use `scout create`.");
       process.exit(1);
+    }
+
+    // Preflight the video toolchain up front so the user learns now — not after
+    // a full verification run — that an MP4 won't be produced. Best-effort: a
+    // verified scenario still keeps the raw .webm, so we warn and continue.
+    if (config.recordVideo) {
+      const ff = diagnoseFfmpeg();
+      if (!ff.ok) {
+        console.warn(`⚠ --record-video: ${ffmpegRemediation(ff)}`);
+        console.warn("  Continuing — verified scenarios will keep the raw .webm instead of an MP4.\n");
+      } else if (!resolveFont()) {
+        console.warn("⚠ --record-video: no overlay font found — the MP4 will have no captions. Set SCOUT_VIDEO_FONT to a .ttf.\n");
+      }
     }
 
     let failed = 0;
@@ -291,52 +305,102 @@ async function livePingAiSdk(
   }
 }
 
+/**
+ * AI-credential half of `doctor`: detect, then live-ping. Prints its section and
+ * returns whether the configured model can actually authenticate. Never exits —
+ * the caller combines this with the runtime check for one exit code.
+ */
+async function diagnoseAiCreds(config: ScoutConfig): Promise<boolean> {
+  const provider = inferProvider(config.model);
+  const engine = resolveEngineKind(provider, config.engine);
+  const status = detectAiCredentials(provider, { engine });
+
+  console.log("AI credentials:");
+  console.log(`  Model:    ${config.model}`);
+  console.log(`  Provider: ${provider}`);
+  console.log(`  Engine:   ${engine}`);
+
+  if (status.ok) {
+    console.log(`  Detection: ✓ matched ${status.source}`);
+  } else if (provider === "anthropic") {
+    // The file/env probe missed — but a macOS keychain-backed Claude Code
+    // session is invisible to it, yet the SDK can still authenticate. Don't
+    // give up here; let the live ping be the authority for Anthropic.
+    console.log("  Detection: ✗ no credential file or env var found (a macOS keychain session would not show here).");
+  } else {
+    // google/openai have no invisible-credential path: if detection failed,
+    // there is nothing to ping. Report remediation and stop.
+    console.log(`  Detection: ✗ no usable ${provider} credentials found.`);
+    console.log(`\n${status.remediation}`);
+    return false;
+  }
+
+  process.stdout.write("  Live check: pinging the model... ");
+  const ping =
+    provider === "anthropic"
+      ? await livePingAnthropic(config.model)
+      : await livePingAiSdk(provider, config.model);
+  if (ping.ok) {
+    console.log("✓ credentials valid");
+    return true;
+  }
+  console.log("✗");
+  console.log(`  The live check failed: ${ping.error ?? "unknown error"}`);
+  // When detection passed, the credentials are present but the live key was
+  // rejected (invalid/expired key, wrong project, no quota) — the ping error
+  // above is the actionable message. Only fall back to detection remediation
+  // when detection itself had something to say.
+  const remediation = status.remediation ?? detectAiCredentials(provider, { engine }).remediation;
+  if (remediation) console.log(`\n${remediation}`);
+  return false;
+}
+
+/**
+ * Runtime half of `doctor`: the local toolchain a run needs. The browser is
+ * required (any run); ffmpeg + overlay font are only needed for `--record-video`
+ * and so are reported as warnings, not run-blockers. Returns whether the
+ * required pieces are present.
+ */
+function diagnoseRuntime(): boolean {
+  console.log("\nRuntime:");
+
+  let browserOk = false;
+  try {
+    const exe = chromium.executablePath();
+    browserOk = !!exe && fs.existsSync(exe);
+  } catch {
+    browserOk = false;
+  }
+  console.log(
+    `  Browser (Chromium): ${browserOk ? "✓ installed" : "✗ not installed — run: npx playwright install chromium"}`
+  );
+
+  const ff = diagnoseFfmpeg();
+  if (ff.ok) {
+    console.log(`  ffmpeg:             ✓ ${ff.bin} (for --record-video)`);
+  } else {
+    console.log(`  ffmpeg:             ✗ ${ff.reason} — only needed for --record-video`);
+    console.log(`                      ${ffmpegRemediation(ff)}`);
+  }
+
+  const font = resolveFont();
+  console.log(
+    font
+      ? `  Overlay font:       ✓ ${font}`
+      : "  Overlay font:       ⚠ none found — video captions are skipped; set SCOUT_VIDEO_FONT to a .ttf"
+  );
+
+  return browserOk;
+}
+
 program
   .command("doctor")
-  .description("Diagnoses AI credentials (model provider auth) for the configured model — CI-usable exit code")
+  .description("Diagnoses the setup — AI credentials (model provider auth) and the local runtime (browser, ffmpeg, fonts). CI-usable exit code.")
   .action(async () => {
     const config = loadConfig();
-    const provider = inferProvider(config.model);
-    const engine = resolveEngineKind(provider, config.engine);
-    const status = detectAiCredentials(provider, { engine });
-
-    console.log(`Model:    ${config.model}`);
-    console.log(`Provider: ${provider}`);
-    console.log(`Engine:   ${engine}`);
-
-    if (status.ok) {
-      console.log(`Detection: ✓ matched ${status.source}`);
-    } else if (provider === "anthropic") {
-      // The file/env probe missed — but a macOS keychain-backed Claude Code
-      // session is invisible to it, yet the SDK can still authenticate. Don't
-      // give up here; let the live ping be the authority for Anthropic.
-      console.log("Detection: ✗ no credential file or env var found (a macOS keychain session would not show here).");
-    } else {
-      // google/openai have no invisible-credential path: if detection failed,
-      // there is nothing to ping. Report remediation and stop.
-      console.log(`Detection: ✗ no usable ${provider} credentials found.`);
-      console.log(`\n${status.remediation}`);
-      process.exit(1);
-    }
-
-    process.stdout.write("Live check: pinging the model... ");
-    const ping =
-      provider === "anthropic"
-        ? await livePingAnthropic(config.model)
-        : await livePingAiSdk(provider, config.model);
-    if (ping.ok) {
-      console.log("✓ credentials valid");
-      process.exit(0);
-    }
-    console.log("✗");
-    console.log(`The live check failed: ${ping.error ?? "unknown error"}`);
-    // When detection passed, the credentials are present but the live key was
-    // rejected (invalid/expired key, wrong project, no quota) — the ping error
-    // above is the actionable message. Only fall back to detection remediation
-    // when detection itself had something to say.
-    const remediation = status.remediation ?? detectAiCredentials(provider, { engine }).remediation;
-    if (remediation) console.log(`\n${remediation}`);
-    process.exit(1);
+    const aiOk = await diagnoseAiCreds(config);
+    const runtimeOk = diagnoseRuntime();
+    process.exit(aiOk && runtimeOk ? 0 : 1);
   });
 
 program

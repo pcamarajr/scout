@@ -6,6 +6,8 @@ import path from "node:path";
 import { test } from "node:test";
 import {
   buildOverlayFilter,
+  diagnoseFfmpeg,
+  ffmpegRemediation,
   findFfmpeg,
   generateVideo,
   pacingFor,
@@ -29,6 +31,42 @@ test("pacingFor clamps out-of-range speeds and defaults to 0.4", () => {
   assert.equal(pacingFor(5).slowMoMs, 0); // clamped to 1.0
   assert.ok(pacingFor(0).slowMoMs > 0); // clamped to 0.1, very slow
   assert.equal(pacingFor().slowMoMs, pacingFor(0.4).slowMoMs);
+});
+
+test("diagnoseFfmpeg flags a missing binary (FFMPEG_PATH points nowhere)", () => {
+  const saved = process.env.FFMPEG_PATH;
+  process.env.FFMPEG_PATH = path.join(os.tmpdir(), "scout-no-such-ffmpeg-binary");
+  try {
+    const d = diagnoseFfmpeg();
+    assert.equal(d.ok, false);
+    assert.equal(d.reason, "missing");
+    assert.match(ffmpegRemediation(d), /Install it/);
+    assert.equal(findFfmpeg(), undefined); // findFfmpeg agrees with the diagnosis
+  } finally {
+    if (saved === undefined) delete process.env.FFMPEG_PATH;
+    else process.env.FFMPEG_PATH = saved;
+  }
+});
+
+test("diagnoseFfmpeg flags a broken binary (exists but won't run)", () => {
+  // A shell script that exits non-zero stands in for the real-world breakage
+  // (ffmpeg present on PATH but aborting on a missing shared library).
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "scout-ffbroken-"));
+  const fake = path.join(dir, "ffmpeg");
+  fs.writeFileSync(fake, "#!/bin/sh\necho 'dyld: Library not loaded' >&2\nexit 1\n");
+  fs.chmodSync(fake, 0o755);
+  const saved = process.env.FFMPEG_PATH;
+  process.env.FFMPEG_PATH = fake;
+  try {
+    const d = diagnoseFfmpeg();
+    assert.equal(d.ok, false);
+    assert.equal(d.reason, "broken");
+    assert.match(ffmpegRemediation(d), /Repair it/);
+  } finally {
+    if (saved === undefined) delete process.env.FFMPEG_PATH;
+    else process.env.FFMPEG_PATH = saved;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("resolveFont honors SCOUT_VIDEO_FONT override", () => {
