@@ -1,5 +1,7 @@
 import path from "node:path";
 import { describeStep } from "./runner/script-runner.js";
+import { expandScenarios, runKey } from "./viewports.js";
+import type { ScoutConfig } from "./config.js";
 import type { RunResult, Scenario, ScenarioStatus, Step } from "./types.js";
 
 const ICON: Record<ScenarioStatus, string> = {
@@ -19,6 +21,7 @@ export function renderRunReport(result: RunResult, scenario: Scenario, steps?: S
     `|---|---|`,
     `| Verdict | **${result.verdict}**${result.runnerFailure ? " ⚠️ runner failure — not a UI judgment" : ""} |`,
     `| Mode | ${result.mode === "replay" ? "deterministic replay" : "AI-driven"}${result.healed ? " (healed)" : ""} |`,
+    `| Viewport | ${result.viewport} |`,
     `| Profile | ${scenario.profile ?? "anonymous"} |`,
     `| Duration | ${(result.durationMs / 1000).toFixed(1)}s |`,
     `| Started | ${result.startedAt} |`,
@@ -70,6 +73,8 @@ export interface ReportScenario {
   name: string;
   feature: string;
   profile: string | null;
+  /** Viewport this row was verified in — each (scenario × viewport) is a row. */
+  viewport: string;
   status: ScenarioStatus;
   lastRun: string | null;
 }
@@ -86,20 +91,28 @@ export interface ReportData {
   };
 }
 
-/** Status of a scenario derived from its latest run (pure-input specs never store it). */
-export function scenarioStatus(slug: string, latest: Map<string, RunResult>): ScenarioStatus {
-  return latest.get(slug)?.verdict ?? "pending";
+/**
+ * Status of one (scenario × viewport) unit, derived from its latest run
+ * (pure-input specs never store it). Keyed `<slug>@<viewport>`.
+ */
+export function runStatus(slug: string, viewport: string, latest: Map<string, RunResult>): ScenarioStatus {
+  return latest.get(runKey(slug, viewport))?.verdict ?? "pending";
 }
 
 /** Structured suite report (the `scout report --json` output) — for CI/PR gates. */
-export function buildReport(scenarios: Scenario[], latest: Map<string, RunResult>): ReportData {
-  const rows: ReportScenario[] = scenarios.map((s) => ({
-    slug: s.slug,
-    name: s.name,
-    feature: s.feature,
-    profile: s.profile ?? null,
-    status: scenarioStatus(s.slug, latest),
-    lastRun: latest.get(s.slug)?.startedAt ?? null,
+export function buildReport(
+  scenarios: Scenario[],
+  latest: Map<string, RunResult>,
+  config: ScoutConfig
+): ReportData {
+  const rows: ReportScenario[] = expandScenarios(scenarios, config).map(({ scenario, viewport }) => ({
+    slug: scenario.slug,
+    name: scenario.name,
+    feature: scenario.feature,
+    profile: scenario.profile ?? null,
+    viewport,
+    status: runStatus(scenario.slug, viewport, latest),
+    lastRun: latest.get(runKey(scenario.slug, viewport))?.startedAt ?? null,
   }));
   const count = (status: ScenarioStatus) => rows.filter((r) => r.status === status).length;
   return {
@@ -116,35 +129,40 @@ export function buildReport(scenarios: Scenario[], latest: Map<string, RunResult
 }
 
 /** Suite summary — PR-embeddable (the \`scout report\` output). */
-export function renderSummary(scenarios: Scenario[], latest: Map<string, RunResult>): string {
+export function renderSummary(
+  scenarios: Scenario[],
+  latest: Map<string, RunResult>,
+  config: ScoutConfig
+): string {
+  const units = expandScenarios(scenarios, config);
   const lines = [
     `## 🔭 Scout — browser verification`,
     ``,
-    `| Feature | Scenario | Profile | Status | Mode | Last run |`,
-    `|---------|----------|---------|--------|------|----------|`,
+    `| Feature | Scenario | Viewport | Profile | Status | Mode | Last run |`,
+    `|---------|----------|----------|---------|--------|------|----------|`,
   ];
-  for (const s of scenarios) {
-    const run = latest.get(s.slug);
-    const status = scenarioStatus(s.slug, latest);
+  for (const { scenario: s, viewport } of units) {
+    const run = latest.get(runKey(s.slug, viewport));
+    const status = runStatus(s.slug, viewport, latest);
     const mode = run ? (run.mode === "replay" ? "replay" : run.healed ? "AI (healed)" : "AI") : "—";
     lines.push(
-      `| ${s.feature} | ${s.name} | ${s.profile ?? "anonymous"} | ${ICON[status]} ${status} | ${mode} | ${run?.startedAt ? run.startedAt.slice(0, 16).replace("T", " ") : "never"} |`
+      `| ${s.feature} | ${s.name} | ${viewport} | ${s.profile ?? "anonymous"} | ${ICON[status]} ${status} | ${mode} | ${run?.startedAt ? run.startedAt.slice(0, 16).replace("T", " ") : "never"} |`
     );
   }
 
-  const failing = scenarios.filter((s) => {
-    const status = scenarioStatus(s.slug, latest);
+  const failing = units.filter(({ scenario: s, viewport }) => {
+    const status = runStatus(s.slug, viewport, latest);
     return status === "failed" || status === "blocked";
   });
   if (failing.length) {
     lines.push(``, `### Failures`, ``);
-    for (const s of failing) {
-      const run = latest.get(s.slug);
-      lines.push(`- **${s.name}**: ${run?.reason ?? "no run recorded"}`);
+    for (const { scenario: s, viewport } of failing) {
+      const run = latest.get(runKey(s.slug, viewport));
+      lines.push(`- **${s.name}** @${viewport}: ${run?.reason ?? "no run recorded"}`);
     }
   }
 
-  const verified = scenarios.filter((s) => scenarioStatus(s.slug, latest) === "verified").length;
-  lines.push(``, `**${verified}/${scenarios.length} verified.**`);
+  const verified = units.filter(({ scenario: s, viewport }) => runStatus(s.slug, viewport, latest) === "verified").length;
+  lines.push(``, `**${verified}/${units.length} verified.**`);
   return lines.join("\n") + "\n";
 }

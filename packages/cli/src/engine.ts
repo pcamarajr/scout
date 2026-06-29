@@ -8,6 +8,7 @@ import { BrowserSession } from "./runner/browser.js";
 import { runWithAgent } from "./runner/ai-runner.js";
 import { describeStep, replayForDemo, replaySteps } from "./runner/script-runner.js";
 import { generateVideo, pacingFor, type TimelineEntry, type VideoPacing } from "./runner/video.js";
+import { defaultViewportName, resolveViewport, type ResolvedViewport } from "./viewports.js";
 import type { RunResult, Scenario, ScenarioCookie, Step, Target } from "./types.js";
 
 export interface RunOptions {
@@ -16,6 +17,14 @@ export interface RunOptions {
   /** When the cached script fails, re-verify with the AI agent (default true) */
   heal?: boolean;
   headed?: boolean;
+  /** Viewport name to run in. Omitted = the config's default viewport. */
+  viewport?: string;
+  /**
+   * Ad-hoc run (the `--viewport` override): verify but never persist a cached
+   * script, so a forced viewport the scenario doesn't declare leaves no orphan
+   * `<slug>@<viewport>.json` behind.
+   */
+  ephemeral?: boolean;
 }
 
 /**
@@ -34,10 +43,13 @@ export async function runScenario(
   const heal = opts.heal ?? true;
   const startedAt = new Date().toISOString();
   const start = Date.now();
-  const runDir = store.newRunDir(scenario.slug);
+  const viewportName = opts.viewport ?? defaultViewportName(config);
+  const viewport = resolveViewport(viewportName, config);
+  const ephemeral = opts.ephemeral ?? false;
+  const runDir = store.newRunDir(scenario.slug, viewportName);
   const storageState = resolveStorageState(scenario.profile, config);
   const cookies = resolveCookies(scenario, config);
-  const cached = opts.forceAi ? undefined : store.loadSteps(scenario.slug);
+  const cached = opts.forceAi ? undefined : store.loadSteps(scenario.slug, viewportName);
   const aiCreds = detectAiCredentials(inferProvider(config.model), { engine: config.engine });
 
   const launch = () =>
@@ -47,6 +59,7 @@ export async function runScenario(
       storageState,
       locale: config.locale,
       runDir,
+      viewport,
       permissions: scenario.permissions,
       cookies,
       extraHeaders: config.headers,
@@ -62,6 +75,7 @@ export async function runScenario(
     if (replay.passed) {
       result = {
         slug: scenario.slug,
+        viewport: viewportName,
         mode: "replay",
         verdict: "verified",
         reason: `Deterministic script passed (${cached.length} steps).`,
@@ -74,7 +88,7 @@ export async function runScenario(
       };
     } else if (heal && aiCreds.ok) {
       // cached script broke — re-verify with the agent and re-record
-      const aiResult = await runAi(scenario, config, store, runDir, storageState, cookies, opts);
+      const aiResult = await runAi(scenario, config, store, runDir, viewport, storageState, cookies, opts);
       result = {
         ...aiResult,
         healed: true,
@@ -85,6 +99,7 @@ export async function runScenario(
     } else {
       result = {
         slug: scenario.slug,
+        viewport: viewportName,
         mode: "replay",
         verdict: "failed",
         reason: `Step ${replay.failedIndex! + 1} failed: ${replay.failedStep} — ${replay.error}${heal ? " (AI heal unavailable: no Anthropic credentials)" : " (heal disabled)"}`,
@@ -101,23 +116,23 @@ export async function runScenario(
     if (!aiCreds.ok) {
       throw new Error(aiCreds.remediation);
     }
-    const aiResult = await runAi(scenario, config, store, runDir, storageState, cookies, opts);
+    const aiResult = await runAi(scenario, config, store, runDir, viewport, storageState, cookies, opts);
     result = { ...aiResult, startedAt, durationMs: Date.now() - start };
   }
 
   // Demo video: always sourced from a dedicated clean replay of the
   // recorded script (never the AI run), only when verified and opted-in.
   if (config.recordVideo && result.verdict === "verified") {
-    const steps = store.loadSteps(scenario.slug);
+    const steps = store.loadSteps(scenario.slug, viewportName);
     if (steps?.length) {
-      result.video = await recordDemoVideo(scenario, steps, config, storageState, cookies, runDir);
+      result.video = await recordDemoVideo(scenario, steps, config, viewport, storageState, cookies, runDir);
     }
   }
 
   store.saveRunResult(result);
   fs.writeFileSync(
     path.join(runDir, "report.md"),
-    renderRunReport(result, scenario, store.loadSteps(scenario.slug))
+    renderRunReport(result, scenario, store.loadSteps(scenario.slug, viewportName))
   );
   return result;
 }
@@ -152,7 +167,8 @@ function renderDemo(
   recorded: RecordedReplay,
   scenario: Scenario,
   runDir: string,
-  pacing: VideoPacing
+  pacing: VideoPacing,
+  size: { width: number; height: number }
 ): string | undefined {
   const webm = recorded.webm;
   if (!webm || !fs.existsSync(webm)) {
@@ -166,8 +182,8 @@ function renderDemo(
   const result = generateVideo({
     webmPath: webm,
     outPath: path.join(runDir, "demo.mp4"),
-    width: 390,
-    height: 844,
+    width: size.width,
+    height: size.height,
     scenarioName: scenario.name,
     verdict: "verified",
     timeline: recorded.timeline,
@@ -204,10 +220,11 @@ export async function recordDemoVideoFrom(
   attempt: (pacing: VideoPacing) => Promise<RecordedReplay>,
   scenario: Scenario,
   runDir: string,
-  pacing: VideoPacing
+  pacing: VideoPacing,
+  size: { width: number; height: number } = { width: 390, height: 844 }
 ): Promise<string | undefined> {
   const paced = await attempt(pacing);
-  if (paced.passed) return renderDemo(paced, scenario, runDir, pacing);
+  if (paced.passed) return renderDemo(paced, scenario, runDir, pacing, size);
   if (paced.webm) fs.rmSync(paced.webm, { force: true }); // discard the failed paced take
 
   console.warn(
@@ -216,7 +233,7 @@ export async function recordDemoVideoFrom(
   );
   const fallbackPacing = nonPacedPacing(pacing);
   const fallback = await attempt(fallbackPacing);
-  if (fallback.passed) return renderDemo(fallback, scenario, runDir, fallbackPacing);
+  if (fallback.passed) return renderDemo(fallback, scenario, runDir, fallbackPacing, size);
 
   if (fallback.webm) fs.rmSync(fallback.webm, { force: true });
   console.warn(
@@ -238,6 +255,7 @@ async function recordDemoVideo(
   scenario: Scenario,
   steps: Step[],
   config: ScoutConfig,
+  viewport: ResolvedViewport,
   storageState: string | undefined,
   cookies: ScenarioCookie[] | undefined,
   runDir: string
@@ -251,6 +269,7 @@ async function recordDemoVideo(
         storageState,
         locale: config.locale,
         runDir,
+        viewport,
         recordVideo: true,
         demoCursor: true,
         slowMoMs: pacing.slowMoMs,
@@ -273,7 +292,10 @@ async function recordDemoVideo(
     return { passed: demo.passed, webm, timeline: demo.timeline, failure: demo.failure };
   };
 
-  return recordDemoVideoFrom(attempt, scenario, runDir, pacingFor(config.videoSpeed));
+  return recordDemoVideoFrom(attempt, scenario, runDir, pacingFor(config.videoSpeed), {
+    width: viewport.width,
+    height: viewport.height,
+  });
 }
 
 /**
@@ -298,6 +320,7 @@ async function runAi(
   config: ScoutConfig,
   store: Store,
   runDir: string,
+  viewport: ResolvedViewport,
   storageState: string | undefined,
   cookies: ScenarioCookie[] | undefined,
   opts: RunOptions
@@ -316,13 +339,14 @@ async function runAi(
       storageState,
       locale: config.locale,
       runDir,
+      viewport,
       permissions: scenario.permissions,
       cookies,
       extraHeaders: config.headers,
     });
     let result;
     try {
-      result = await runWithAgent(session, scenario, config);
+      result = await runWithAgent(session, scenario, config, viewport);
     } finally {
       await session.screenshot("final-state").catch(() => {});
     }
@@ -334,12 +358,15 @@ async function runAi(
 
   fs.writeFileSync(path.join(runDir, "transcript.md"), transcript.join("\n\n---\n\n"));
 
-  if (outcome.verdict === "verified" && outcome.steps.length) {
-    store.saveSteps(scenario.slug, pruneSteps(outcome.steps));
+  // Ephemeral runs (the --viewport override) verify but never persist a script,
+  // so a forced viewport the scenario doesn't declare leaves no orphan behind.
+  if (outcome.verdict === "verified" && outcome.steps.length && !(opts.ephemeral ?? false)) {
+    store.saveSteps(scenario.slug, viewport.name, pruneSteps(outcome.steps));
   }
 
   return {
     slug: scenario.slug,
+    viewport: viewport.name,
     mode: "ai",
     verdict: outcome.verdict,
     reason: outcome.runnerFailure

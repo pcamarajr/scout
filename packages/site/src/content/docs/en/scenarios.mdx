@@ -17,13 +17,15 @@ Scenarios live as markdown under `.scout/specs/**/*.scout.md` — **one file per
 feature: Paywall          # optional; defaults to the filename
 profile: anon             # default auth profile for scenarios below
 tags: [monetization]      # optional
+viewports: [mobile]       # optional; screen sizes each scenario runs in
 ---
 
 ## Free user hits paywall on ep 3
 Open ep 3 of series X without login; paywall appears with a signup CTA.
 
 ## Subscriber bypasses paywall
-profile: qa               # per-scenario override (also: notes, tags)
+profile: qa               # per-scenario override (also: notes, tags, viewports)
+viewports: [mobile, desktop]
 
 Logged-in subscriber opens ep 3; plays with no paywall.
 ```
@@ -33,11 +35,40 @@ You state what a user can do and what must be true — never how to click it. Th
 ## Rules
 
 - Each `##` heading is one scenario. Its **logical slug** is `<file>/<scenario>` (e.g. `paywall/free-user-hits-paywall-on-ep-3`) and must be unique across the suite.
-- **Frontmatter** (YAML, optional): `feature` (defaults to the filename), `profile` (default auth profile for the file), `tags`.
-- **Per-scenario overrides:** `profile:`, `notes:`, `tags:`, the permission keys (`grantPermissions:`, `denyPermissions:`, `geolocation:`), and `cookies:` placed immediately under a heading (before the prose) override the file-level defaults.
+- **Frontmatter** (YAML, optional): `feature` (defaults to the filename), `profile` (default auth profile for the file), `tags`, `viewports`.
+- **Per-scenario overrides:** `profile:`, `notes:`, `tags:`, `viewports:`, the permission keys (`grantPermissions:`, `denyPermissions:`, `geolocation:`), and `cookies:` placed immediately under a heading (before the prose) override the file-level defaults.
 - **Body = flow + expected behavior, in plain language.** Describe what the user does and what must (or must not) be true. No CSS selectors, no Playwright code — the agent discovers the real elements at run time and records them.
 - A `.scout.md` whose every `##` lives inside a fenced ```` ``` ```` block parses as **zero scenarios** (that's how `example.scout.md` documents the format without polluting the suite).
 - Duplicate headings in a file, or a scenario with no body text, are hard errors.
+
+## Viewports (screen sizes)
+
+Each scenario runs in one or more **named viewports**. List more than one and the scenario fans out into independent verification units — each viewport gets its own recorded script (`<slug>@<viewport>.json`), its own verdict, and its own demo video. That is how you cover responsive behavior: the mobile hamburger and the desktop nav are different flows, verified separately.
+
+Three viewports are built in, usable with no config:
+
+- **`mobile`** — iPhone 13 emulation (touch + mobile UA), pinned to 390×844.
+- **`desktop`** — 1280×800, no touch.
+- **`tablet`** — iPad Mini (768×1024, touch).
+
+A per-scenario `viewports:` list **replaces** the file-level one (it does not merge like tags) — each scenario explicitly chooses its sizes. Declare none anywhere and scout uses the config's `defaultViewport` (`mobile`).
+
+```markdown
+---
+feature: Navigation
+viewports: [mobile, desktop]   # file default: every scenario runs in both
+---
+
+## Primary nav reaches Pricing
+Open the home page and reach the "Pricing" link from the main navigation.
+
+## Hamburger opens the drawer
+viewports: [mobile]            # only meaningful on small screens
+
+Open the home page; tapping the menu button reveals the navigation drawer.
+```
+
+Names are limited to `[a-z0-9-]` (they become script-file tokens); a name not in the registry fails the run with a clear error. Override or add viewports in [`scout.config.json`](/docs/config/), and force one ad-hoc with `scout go --viewport <name>` (that run never persists a script). The demo video follows the viewport — a `desktop` scenario records a landscape clip.
 
 ## Browser permissions
 

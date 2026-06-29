@@ -5,9 +5,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { loadConfig } from "../config.js";
 import { runScenario } from "../engine.js";
-import { renderSummary, scenarioStatus } from "../report.js";
+import { renderSummary, runStatus } from "../report.js";
 import { addScenario } from "../specs.js";
 import { Store } from "../store.js";
+import { expandScenarios, resolveViewport, runnableViewports } from "../viewports.js";
 
 /**
  * MCP interface so coding agents (Claude Code local or cloud sessions) can
@@ -28,14 +29,19 @@ export async function startMcpServer(): Promise<void> {
       inputSchema: {},
     },
     async () => {
+      const config = loadConfig();
       const latest = store.latestRuns();
-      const scenarios = store.listScenarios().map((s) => ({
-        ...s,
-        status: scenarioStatus(s.slug, latest),
-        lastRun: latest.get(s.slug)?.startedAt ?? null,
-        hasCachedScript: Boolean(store.loadSteps(s.slug)),
+      const units = expandScenarios(store.listScenarios(), config).map(({ scenario: s, viewport }) => ({
+        slug: s.slug,
+        name: s.name,
+        feature: s.feature,
+        profile: s.profile ?? null,
+        viewport,
+        status: runStatus(s.slug, viewport, latest),
+        lastRun: latest.get(`${s.slug}@${viewport}`)?.startedAt ?? null,
+        hasCachedScript: Boolean(store.loadSteps(s.slug, viewport)),
       }));
-      return { content: [{ type: "text", text: JSON.stringify(scenarios, null, 2) }] };
+      return { content: [{ type: "text", text: JSON.stringify(units, null, 2) }] };
     }
   );
 
@@ -70,14 +76,25 @@ export async function startMcpServer(): Promise<void> {
       inputSchema: {
         scenario: z.string().optional().describe("slug do cenário (<feature>/<cenário>); omitir = todos"),
         forceAi: z.boolean().optional().describe("Ignora o cache e re-grava o script via AI"),
+        viewport: z
+          .string()
+          .optional()
+          .describe("Força este viewport, ad-hoc (deve existir no registry; não persiste script). Omitir = roda os viewports declarados pelo cenário."),
         baseUrl: z
           .string()
           .optional()
           .describe("Override do app alvo só para esta execução (ex: server efêmero de um worktree). Precedência: param > SCOUT_BASE_URL > scout.config.json"),
       },
     },
-    async ({ scenario, forceAi, baseUrl }) => {
+    async ({ scenario, forceAi, viewport, baseUrl }) => {
       const config = loadConfig(process.cwd(), { baseUrl });
+      if (viewport) {
+        try {
+          resolveViewport(viewport, config);
+        } catch (error) {
+          return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+        }
+      }
       const all = store.listScenarios();
       const targets = scenario
         ? all.filter((s) => s.slug === scenario || s.name === scenario)
@@ -87,25 +104,29 @@ export async function startMcpServer(): Promise<void> {
       }
       const results = [];
       for (const s of targets) {
-        try {
-          const r = await runScenario(store, s, config, { forceAi });
-          results.push({
-            scenario: s.name,
-            verdict: r.verdict,
-            mode: r.mode,
-            healed: r.healed ?? false,
-            reason: r.reason,
-            runnerFailure: r.runnerFailure,
-            runDir: r.runDir,
-            screenshots: r.screenshots,
-            trace: r.trace,
-          });
-        } catch (error) {
-          results.push({
-            scenario: s.name,
-            verdict: "blocked",
-            reason: error instanceof Error ? error.message : String(error),
-          });
+        for (const vp of runnableViewports(s, config, viewport)) {
+          try {
+            const r = await runScenario(store, s, config, { forceAi, viewport: vp, ephemeral: Boolean(viewport) });
+            results.push({
+              scenario: s.name,
+              viewport: r.viewport,
+              verdict: r.verdict,
+              mode: r.mode,
+              healed: r.healed ?? false,
+              reason: r.reason,
+              runnerFailure: r.runnerFailure,
+              runDir: r.runDir,
+              screenshots: r.screenshots,
+              trace: r.trace,
+            });
+          } catch (error) {
+            results.push({
+              scenario: s.name,
+              viewport: vp,
+              verdict: "blocked",
+              reason: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
       }
       return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
@@ -119,7 +140,7 @@ export async function startMcpServer(): Promise<void> {
       inputSchema: {},
     },
     async () => ({
-      content: [{ type: "text", text: renderSummary(store.listScenarios(), store.latestRuns()) }],
+      content: [{ type: "text", text: renderSummary(store.listScenarios(), store.latestRuns(), loadConfig()) }],
     })
   );
 

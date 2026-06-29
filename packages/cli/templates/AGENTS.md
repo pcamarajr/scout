@@ -38,24 +38,61 @@ Format:
 feature: Paywall          # optional; defaults to the filename
 profile: anon             # optional; default auth profile for scenarios below
 tags: [monetization]      # optional
+viewports: [mobile]       # optional; viewports each scenario below runs in
 ---
 
 ## Free user hits paywall on ep 3
 Open ep 3 of series X without login; the paywall appears with a signup CTA.
 
 ## Subscriber bypasses paywall
-profile: qa               # per-scenario override (also: notes, tags)
+profile: qa               # per-scenario override (also: notes, tags, viewports)
+viewports: [mobile, desktop]
 
 Logged-in subscriber opens ep 3; the episode plays with no paywall.
 ```
 
 Rules that matter when you author:
 
-- **Frontmatter** (YAML, optional): `feature` (defaults to the filename), `profile` (default auth profile), `tags`.
+- **Frontmatter** (YAML, optional): `feature` (defaults to the filename), `profile` (default auth profile), `tags`, `viewports`.
 - **Each `## heading` is one scenario.** Its logical slug is `<file-slug>/<scenario-slug>` (e.g. `paywall/free-user-hits-paywall-on-ep-3`) and must be unique across the suite. Duplicate headings in a file, or a scenario with no body text, are hard errors.
-- **Per-scenario overrides:** immediately under a heading you may place `profile:`, `notes:`, `tags:`, `grantPermissions:`, `denyPermissions:`, and `geolocation:` lines (before the prose) to override the file-level defaults.
+- **Per-scenario overrides:** immediately under a heading you may place `profile:`, `notes:`, `tags:`, `viewports:`, `grantPermissions:`, `denyPermissions:`, and `geolocation:` lines (before the prose) to override the file-level defaults.
 - **Body = flow + expected behavior, in plain language.** Describe what the user does and what must (or must not) be true. No CSS selectors, no Playwright code — the agent discovers the real elements at run time and records them.
 - A `.scout.md` whose every `##` lives inside a fenced ```` ``` ```` block parses as **zero scenarios** (that is how `example.scout.md` documents the format without polluting the suite).
+
+## Viewports (screen sizes)
+
+Each scenario runs in one or more **named viewports**. Declaring more than one fans the scenario out into independent verification units — each viewport gets its own recorded script (`<slug>@<viewport>.json`), its own verdict, and its own demo video. This is how you cover responsive behavior (the mobile hamburger vs the desktop nav).
+
+Built-in viewports, usable without any config:
+
+- **`mobile`** — iPhone 13 emulation (touch + mobile UA), pinned to 390×844.
+- **`desktop`** — 1280×800, no touch.
+- **`tablet`** — iPad Mini (768×1024, touch).
+
+Declare them in the **frontmatter** (default for every scenario in the file) and override **per scenario** — a per-scenario `viewports:` list **replaces** the file-level one (it does not merge like tags), so a scenario explicitly chooses its sizes. Omitting `viewports` everywhere uses the config's `defaultViewport` (`mobile`).
+
+```markdown
+---
+feature: Navigation
+viewports: [mobile, desktop]   # file default: every scenario runs in both
+---
+
+## Primary nav is reachable
+Open the home page and reach the "Pricing" link from the main navigation.
+
+## Hamburger menu opens on small screens
+viewports: [mobile]            # this one only matters on mobile
+
+Open the home page; tapping the menu button reveals the navigation drawer.
+```
+
+Add or override viewports in `scout.config.json` (`viewports`), where each entry is a Playwright `device` preset and/or explicit fields (`width`, `height`, `deviceScaleFactor`, `isMobile`, `hasTouch`, `userAgent`) — they compose, so `{ "device": "iPhone 13", "width": 414 }` is the preset with its width overridden. Set the fallback with `defaultViewport`.
+
+Notes:
+
+- Viewport names are limited to `[a-z0-9-]` (they become script-file tokens). A name not in the registry, or an unknown `device` preset, fails the run with a clear error.
+- `scout go --viewport <name>` forces one viewport ad-hoc for debugging (must exist in the registry); that run never persists a script.
+- The demo video follows the viewport — a `desktop` scenario records a landscape clip.
 
 ## Browser permissions
 

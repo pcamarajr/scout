@@ -6,10 +6,10 @@ import type { RunResult, Scenario, Step } from "./types.js";
 
 /**
  * Filesystem store inside the target project:
- *   .scout/specs/<feature>.scout.md  — committed (the suite; markdown source of truth)
- *   .scout/scripts/<slug>.json       — committed (cached deterministic steps; `<slug>` is `<file>/<scenario>`)
- *   .scout/runs/<runId>/             — gitignored (artifacts per run)
- *   .scout/state/<profile>.json      — gitignored (auth storageState)
+ *   .scout/specs/<feature>.scout.md       — committed (the suite; markdown source of truth)
+ *   .scout/scripts/<slug>@<viewport>.json — committed (cached deterministic steps per viewport; `<slug>` is `<file>/<scenario>`)
+ *   .scout/runs/<runId>/                  — gitignored (artifacts per run)
+ *   .scout/state/<profile>.json           — gitignored (auth storageState)
  */
 export class Store {
   readonly root: string;
@@ -49,27 +49,28 @@ export class Store {
 
   // ---- cached deterministic scripts ----
 
-  scriptPath(slug: string): string {
-    return path.join(this.root, "scripts", `${slug}.json`);
+  /** Committed script for one (scenario × viewport): `scripts/<slug>@<viewport>.json`. */
+  scriptPath(slug: string, viewport: string): string {
+    return path.join(this.root, "scripts", `${slug}@${viewport}.json`);
   }
 
-  loadSteps(slug: string): Step[] | undefined {
-    const file = this.scriptPath(slug);
+  loadSteps(slug: string, viewport: string): Step[] | undefined {
+    const file = this.scriptPath(slug, viewport);
     if (!fs.existsSync(file)) return undefined;
     return JSON.parse(fs.readFileSync(file, "utf8"));
   }
 
-  saveSteps(slug: string, steps: Step[]): void {
-    const file = this.scriptPath(slug);
+  saveSteps(slug: string, viewport: string, steps: Step[]): void {
+    const file = this.scriptPath(slug, viewport);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(steps, null, 2) + "\n");
   }
 
   // ---- runs ----
 
-  newRunDir(slug: string): string {
+  newRunDir(slug: string, viewport: string): string {
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const dir = path.join(this.root, "runs", `${stamp}-${slugToToken(slug)}`);
+    const dir = path.join(this.root, "runs", `${stamp}-${slugToToken(slug)}@${viewport}`);
     fs.mkdirSync(dir, { recursive: true });
     return dir;
   }
@@ -81,7 +82,11 @@ export class Store {
     );
   }
 
-  /** Latest run result per scenario slug (for `scout report`) */
+  /**
+   * Latest run result per (scenario × viewport), keyed `<slug>@<viewport>` (for
+   * `scout report`). Each viewport is an independent verification unit, so two
+   * viewports of the same scenario never overwrite each other.
+   */
   latestRuns(): Map<string, RunResult> {
     const runsDir = path.join(this.root, "runs");
     const map = new Map<string, RunResult>();
@@ -91,7 +96,7 @@ export class Store {
       const file = path.join(runsDir, dir, "result.json");
       if (!fs.existsSync(file)) continue;
       const result: RunResult = JSON.parse(fs.readFileSync(file, "utf8"));
-      map.set(result.slug, result); // later overwrites earlier
+      map.set(`${result.slug}@${result.viewport}`, result); // later overwrites earlier
     }
     return map;
   }
@@ -106,8 +111,10 @@ feature: Example
 # How to write a scout spec
 
 One file per feature/component. File-level frontmatter sets defaults
-(\`feature\`, \`profile\`, \`tags\`). Each \`##\` heading is one scenario; optional
-\`profile\`/\`notes\`/\`tags\` override lines may follow a heading before the prose.
+(\`feature\`, \`profile\`, \`tags\`, \`viewports\`). Each \`##\` heading is one scenario;
+optional \`profile\`/\`notes\`/\`tags\`/\`viewports\` override lines may follow a heading
+before the prose. A scenario's \`viewports\` list (built-ins: mobile/desktop/tablet)
+REPLACES the file-level one and fans the scenario out into one run per viewport.
 Write the flow + expected behavior in plain language — no selectors, no code.
 
 Copy the block below into a new \`*.scout.md\` file (outside the fence) to start:
@@ -117,6 +124,7 @@ Copy the block below into a new \`*.scout.md\` file (outside the fence) to start
 feature: Paywall
 profile: anon
 tags: [monetization]
+viewports: [mobile]
 ---
 
 ## Free user hits paywall on ep 3
@@ -124,6 +132,7 @@ Open ep 3 of series X without login; paywall appears with a signup CTA.
 
 ## Subscriber bypasses paywall
 profile: qa
+viewports: [mobile, desktop]
 
 Logged-in subscriber opens ep 3; plays with no paywall.
 \`\`\`

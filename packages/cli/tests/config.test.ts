@@ -101,6 +101,16 @@ test("SCOUT_EXTRA_HEADERS merges over (and wins against) the config file", () =>
   });
 });
 
+test("viewports/defaultViewport pass through; a bad viewport name fails loud at load", () => {
+  const config = loadConfig(tmpProject({ defaultViewport: "desktop", viewports: { "wide-xl": { width: 1920, height: 1080 } } }));
+  assert.equal(config.defaultViewport, "desktop");
+  assert.deepEqual(config.viewports?.["wide-xl"], { width: 1920, height: 1080 });
+  assert.throws(
+    () => loadConfig(tmpProject({ viewports: { "Wide XL": { width: 1920, height: 1080 } } })),
+    /Invalid viewport name "Wide XL"/
+  );
+});
+
 test("parseHeadersEnv accepts an object of strings and rejects malformed input", () => {
   assert.deepEqual(parseHeadersEnv('{"a":"1","b":"2"}'), { a: "1", b: "2" });
   assert.deepEqual(parseHeadersEnv("{}"), {});

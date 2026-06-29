@@ -1,5 +1,6 @@
 import { resolveCookies, type ScoutConfig } from "../config.js";
 import { inferProvider } from "../credentials.js";
+import type { ResolvedViewport } from "../viewports.js";
 import type { Scenario, Step, Verdict } from "../types.js";
 import { createScoutTools } from "./agent-tools.js";
 import { selectEngine } from "./engines/index.js";
@@ -28,7 +29,8 @@ export type { AiRunOutcome, QueryEndInfo };
 export async function runWithAgent(
   session: BrowserSession,
   scenario: Scenario,
-  config: ScoutConfig
+  config: ScoutConfig,
+  viewport: ResolvedViewport
 ): Promise<AiRunOutcome> {
   const steps: Step[] = [];
   const transcript: string[] = [];
@@ -60,9 +62,12 @@ export async function runWithAgent(
     ? `Cookies já setados no browser antes do fluxo (pré-condição satisfeita — NÃO tente setá-los, você não tem ferramenta pra isso): ${presetCookies.map((c) => c.name).join(", ")}.`
     : "";
 
+  const viewportInfo = `Viewport: rodando como "${viewport.name}" (${viewport.width}×${viewport.height}${viewport.isMobile ? ", mobile/touch" : ""}). Verifique o layout correspondente a esse tamanho — no mobile espere menu hambúrguer/nav compacta; no desktop, nav horizontal.`;
+
   const systemPrompt = `Você é Scout, um agente de QA que verifica cenários em um browser real.
 
 App alvo: ${config.baseUrl}
+${viewportInfo}
 ${profileInfo}
 ${envInfo}
 ${cookieInfo}

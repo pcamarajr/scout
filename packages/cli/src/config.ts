@@ -1,7 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { mergeCookiesByName, validateCookie } from "./cookies.js";
-import type { Scenario, ScenarioCookie } from "./types.js";
+import type { Scenario, ScenarioCookie, Viewport } from "./types.js";
+
+/** Filesystem/report-safe viewport names (mirrors viewports.ts, kept inline so
+ *  config has no Playwright dependency). */
+const VIEWPORT_NAME_RE = /^[a-z0-9-]+$/;
 
 export interface ScoutProfile {
   /** Shown to the AI agent so it knows what kind of session this is */
@@ -34,6 +38,14 @@ export interface ScoutConfig {
   headless: boolean;
   /** Max agent turns per AI run */
   maxTurns: number;
+  /**
+   * Named viewports a scenario may run in, keyed by name. Merged over the
+   * built-ins (`mobile`/`desktop`/`tablet`) — a same-named entry overrides one.
+   * Each is a Viewport descriptor (a `device` preset and/or explicit fields).
+   */
+  viewports?: Record<string, Viewport>;
+  /** Viewport used when a scenario declares none. Defaults to `mobile`. */
+  defaultViewport?: string;
   /** Locale forced on the browser context */
   locale?: string;
   /** Record a paced MP4 demo of the verified replay. Enable with --demo-video or SCOUT_RECORD_VIDEO=1. */
@@ -123,6 +135,15 @@ export function loadConfig(cwd = process.cwd(), overrides: ConfigOverrides = {})
   }
   if (overrides.baseUrl) merged.baseUrl = overrides.baseUrl;
   if (overrides.recordVideo) merged.recordVideo = true;
+  // Fail loud on a viewport name that can't serve as a script-file token —
+  // catches the typo at config load, not when a run tries to write the path.
+  for (const name of Object.keys(merged.viewports ?? {})) {
+    if (!VIEWPORT_NAME_RE.test(name)) {
+      throw new Error(
+        `Invalid viewport name "${name}" in ${CONFIG_FILE}. Use lowercase letters, digits and hyphens.`
+      );
+    }
+  }
   return merged;
 }
 

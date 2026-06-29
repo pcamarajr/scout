@@ -14,7 +14,7 @@ draft: false
 scout init [--base-url <url>] [-y|--yes]   # bootstrap: scout.config.json, .scout/, AI agent files
 scout create <name> -f <feature> -c <scenario> [-p profile] [-n notes]
 scout list                                 # scenarios + status + 📜 if a cached script exists
-scout go [-s slug|name] [--ai] [--no-heal] [--headed] [--demo-video] [--base-url <url>]
+scout go [-s slug|name] [--ai] [--no-heal] [--headed] [--demo-video] [--viewport <name>] [--base-url <url>]
 scout report [--json] [--check]            # suite summary (markdown default)
 scout doctor                               # diagnose AI credentials for the configured model
 scout migrate                              # legacy scenarios.json → .scout.md specs
@@ -35,7 +35,10 @@ Runs scenarios: cached-script replay, AI on the first run or when the script bre
 - `--no-heal` — don't fall back to AI when replay fails (cheap CI; failure becomes ❌).
 - `--headed` — visible browser (local debug).
 - `--demo-video` — paced MP4 demo of each verified replay, with a synthetic cursor + click pulse (needs `ffmpeg`; see [run artifacts](/docs/artifacts/)). `--record-video` is a deprecated alias.
+- `--viewport <name>` — force every targeted scenario into this one [viewport](/docs/scenarios/#viewports-screen-sizes) (ad-hoc, for debugging; must exist in the registry). The run never persists a script. Mirrors `SCOUT_VIEWPORT`.
 - `--base-url <url>` — target for this run (precedence: flag > `SCOUT_BASE_URL` > config).
+
+By default a scenario runs in every viewport it declares (default: `mobile`), so `scout go` fans out into one verification per `(scenario × viewport)` — each with its own recorded script, verdict, and demo video.
 
 ## `scout doctor`
 
@@ -55,7 +58,7 @@ scout report --json --check   # prints JSON AND sets the exit code
 ```jsonc
 {
   "scenarios": [
-    { "slug": "paywall/paywall-free", "name": "Paywall free", "feature": "Paywall", "profile": "anon", "status": "verified", "lastRun": "2026-06-10T12:00:00.000Z" }
+    { "slug": "paywall/paywall-free", "name": "Paywall free", "feature": "Paywall", "profile": "anon", "viewport": "mobile", "status": "verified", "lastRun": "2026-06-10T12:00:00.000Z" }
   ],
   "summary": { "total": 4, "verified": 3, "failed": 1, "partial": 0, "blocked": 0, "pending": 0 }
 }

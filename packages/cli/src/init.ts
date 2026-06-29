@@ -70,6 +70,9 @@ export async function runInit(opts: InitOptions = {}, deps: InitDeps = {}): Prom
           headless: true,
           maxTurns: 40,
           locale: "pt-BR",
+          // Viewports a scenario can run in. Built-ins (mobile/desktop/tablet)
+          // work without listing them; add entries here to override or extend.
+          defaultViewport: "mobile",
           profiles: {
             anon: { description: "Logged-out session" },
           },
