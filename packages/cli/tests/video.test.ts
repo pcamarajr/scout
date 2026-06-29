@@ -123,6 +123,23 @@ test("buildOverlayFilter bakes title, captions and verdict card", () => {
   assert.match(graph, /expansion=none/); // % is never interpreted
 });
 
+test("buildOverlayFilter escapes ':' so a URL caption can't break the filtergraph", () => {
+  // A navigate step's caption contains an absolute URL; an unescaped ':' is
+  // ffmpeg's drawtext option separator and would fail the whole transcode.
+  const graph = buildOverlayFilter({
+    font: "/font.ttf",
+    width: 390,
+    height: 844,
+    durationMs: 6000,
+    scenarioName: "Login",
+    verdict: "verified",
+    timeline: [{ label: "1/1 · navegar para https://x.co/a", tMs: 200 }],
+    pacing: pacingFor(0.35),
+  });
+  assert.ok(graph.includes("https\\://"), "the colon must be escaped as \\:");
+  assert.ok(!graph.includes("https://"), "no raw unescaped colon may reach the filtergraph");
+});
+
 test("buildOverlayFilter strips quotes/backslashes and truncates overflowing titles", () => {
   const long = "A".repeat(120);
   const graph = buildOverlayFilter({

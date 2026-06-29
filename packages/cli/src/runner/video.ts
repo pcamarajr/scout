@@ -153,9 +153,17 @@ const VERDICT_LABEL: Record<Verdict, string> = {
   blocked: "BLOQUEADO",
 };
 
-/** drawtext text=' ' wraps the value, so only quotes/backslashes must go. */
+/**
+ * Sanitizes a value for an ffmpeg `drawtext` field. Strips the quote/backslash
+ * that would break out of the `text='…'` wrapper, then escapes `:` — ffmpeg's
+ * filter-option separator — which otherwise truncates any caption containing a
+ * URL (e.g. a `navigate` step's `https://…`) and fails the whole filtergraph.
+ */
 function safeText(s: string): string {
-  return s.replace(/['\\]/g, "").trim();
+  return s
+    .replace(/['\\]/g, "")
+    .replace(/:/g, "\\:")
+    .trim();
 }
 
 /** Approx Arial glyph advance as a fraction of font size — for width fitting. */
