@@ -11,7 +11,7 @@
     "kind": "fill",
     "target": {
       "css": "article#env-form > div:nth-of-type(1) > section:nth-of-type(1) > div:nth-of-type(1) > form:nth-of-type(1) > label:nth-of-type(1) > input:nth-of-type(1)",
-      "description": "textbox \"FOCUS25\""
+      "description": "textbox \"Coupon code\""
     },
     "value": "$ENV:LAB_COUPON"
   },
@@ -25,7 +25,7 @@
   },
   {
     "kind": "assertVisible",
-    "text": "Coupon FOCUS25 applied"
+    "text": "Coupon applied"
   },
   {
     "kind": "assertNotVisible",
@@ -33,7 +33,7 @@
   },
   {
     "kind": "screenshot",
-    "label": "coupon-focus25-applied"
+    "label": "coupon-applied"
   },
   {
     "kind": "assertNoConsoleErrors"

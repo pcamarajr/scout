@@ -1,15 +1,16 @@
 ---
 // Scout — Lab feature card
 //
-// One feature of the gallery: header (eyebrow + live verdict), title, blurb,
-// then a two-column body pairing the interactive surface (default slot) with
-// the EXACT `.scout.md` scenario CI runs against it. A docs link closes it.
+// One feature of the gallery: header (eyebrow), title, blurb, a recorded demo
+// of Scout verifying the scenario, then a body pairing the interactive surface
+// (default slot) with the EXACT `.scout.md` scenario that runs against it. A
+// docs link closes it.
 //
-// The verdict plate is a DYNAMIC slot: it renders "pending" at build time and
-// the LabPageView island rewrites it from /lab/verdicts.json at runtime (the
-// CI contract, ReportData shape). It degrades to the static "pending" plate
-// when JS is off or the fetch fails — never a blank. The plate ramp here is a
-// runtime-mutable mirror of VerdictPlate's (which is build-time only).
+// The demo is a static MP4 recorded with `scout --demo-video` (800×450) and
+// committed under public/lab/demos/<file>.mp4 — regenerated only when the
+// feature changes, never on every build. It answers "show me it working"
+// without any runtime fetch or CI dependency; the verdict the project's own
+// suite reaches lives in GitHub Actions, linked from the page.
 import { createTranslator } from "@lib/i18n";
 import type { LabFeature } from "@lib/lab";
 import { buildDocUrl } from "@lib/urls";
@@ -23,23 +24,32 @@ const locale = Astro.currentLocale ?? "en";
 const tl = createTranslator(Astro.currentLocale);
 
 const docHref = `${buildDocUrl(feature.docSlug, locale)}${feature.docHash ? `#${feature.docHash}` : ""}`;
+const videoSrc = `/lab/demos/${feature.file}.mp4`;
 ---
 
 <article class="card" id={feature.file}>
   <header class="card-head">
     <p class="eyebrow">{feature.eyebrow}</p>
-    <span
-      class="plate plate--pending"
-      data-verdict-slot={feature.slug}
-      role="status"
-    >
-      <span class="glyph" aria-hidden="true" data-verdict-glyph>⏳</span>
-      <span data-verdict-label>{tl("lab.verdictPending")}</span>
-    </span>
   </header>
 
   <h3>{feature.title}</h3>
   <p class="blurb">{feature.blurb}</p>
+
+  <figure class="demo">
+    <video
+      class="demo-video"
+      src={videoSrc}
+      controls
+      muted
+      loop
+      playsinline
+      preload="metadata"
+      width="800"
+      height="450"
+      aria-label={`${tl("lab.demoLabel")} — ${feature.title}`}></video>
+    <figcaption>{tl("lab.demoCaption")}</figcaption>
+    {feature.videoNote && <p class="demo-note">{feature.videoNote}</p>}
+  </figure>
 
   <div class="card-body">
     <section class="surface" aria-label={tl("lab.tryItLabel")}>
@@ -107,6 +117,41 @@ const docHref = `${buildDocUrl(feature.docSlug, locale)}${feature.docHash ? `#${
     max-width: 62ch;
     font-size: var(--text-sm);
     color: var(--color-text-muted);
+  }
+
+  /* ── recorded demo (scout --demo-video, 800×450) ── */
+  .demo {
+    margin: var(--space-lg) 0 0;
+  }
+
+  .demo-video {
+    display: block;
+    inline-size: 100%;
+    block-size: auto;
+    aspect-ratio: 16 / 9;
+    max-inline-size: 40rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-sunken);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .demo figcaption {
+    margin-block-start: var(--space-sm);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-subtle);
+  }
+
+  .demo-note {
+    margin-block-start: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    border-inline-start: 2px solid var(--color-brass);
+    background: var(--color-brass-soft);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: var(--color-brass-deep);
   }
 
   .card-body {
@@ -214,50 +259,5 @@ const docHref = `${buildDocUrl(feature.docSlug, locale)}${feature.docHash ? `#${
 
   .doc-link .arr {
     transition: transform var(--dur) var(--ease);
-  }
-
-  /* ── verdict plate (runtime-mutable mirror of VerdictPlate, sm) ── */
-  .plate {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-family: var(--font-mono);
-    font-weight: 600;
-    line-height: 1;
-    letter-spacing: 0.02em;
-    white-space: nowrap;
-    border-radius: var(--radius-full);
-    font-size: 0.72rem;
-    padding: 0.34rem 0.7rem;
-  }
-
-  .plate .glyph {
-    font-size: 1.05em;
-  }
-
-  .plate--pending {
-    background: var(--color-brass-soft);
-    color: var(--color-brass-deep);
-    border: 1px solid color-mix(in oklch, var(--color-brass) 40%, transparent);
-  }
-
-  .plate--verified {
-    background: var(--color-verified);
-    color: var(--color-on-verified);
-  }
-
-  .plate--partial {
-    background: var(--color-partial);
-    color: var(--color-on-partial);
-  }
-
-  .plate--failed {
-    background: var(--color-failed);
-    color: var(--color-on-failed);
-  }
-
-  .plate--blocked {
-    background: var(--color-blocked);
-    color: var(--color-on-blocked);
   }
 </style>

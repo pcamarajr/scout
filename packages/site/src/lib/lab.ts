@@ -5,10 +5,10 @@
 // `.scout.md` scenario CI runs against it — single source, no drift.
 //
 // SINGLE SOURCE OF TRUTH: the scenarios are NOT duplicated here. They are read
-// verbatim, at build time, from the site's own dogfood suite under
-// `.scout/specs/lab/*.scout.md` — the same files scout replays against the
-// deployed Lab in the F4 pipeline. Rendering the raw file guarantees the spec
-// shown on the page can never drift from the spec that runs.
+// verbatim, at build time, from the site's own `.scout.md` suite under
+// `.scout/specs/lab/*.scout.md` — the same files scout runs against the Lab.
+// Rendering the raw file guarantees the spec shown on the page can never drift
+// from the spec that runs.
 //
 // The per-feature prose (eyebrow/title/blurb) is catalog CONTENT, not UI
 // chrome, so it lives here as data alongside the docs links — mirroring how
@@ -45,7 +45,7 @@ export type LabSurface =
   | "auth";
 
 export interface LabFeature {
-  /** Matches the scenario `slug` in verdicts.json (`<file>/<scenario>`). */
+  /** The scenario's logical slug (`lab/<file>/<scenario>`) — its stable identity. */
   slug: string;
   /** Spec file basename under `.scout/specs/lab/`. */
   file: string;
@@ -58,14 +58,16 @@ export interface LabFeature {
   docSlug: string;
   /** Optional in-page anchor on the docs entry. */
   docHash?: string;
-  /** The exact `.scout.md`, read from the dogfood suite at build time. */
+  /** The exact `.scout.md`, read from the `.scout.md` suite at build time. */
   spec: string;
+  /** Optional caveat shown under the recorded demo (e.g. a recording limitation). */
+  videoNote?: string;
 }
 
 /**
  * The Lab gallery, in display order. Each entry's `slug` mirrors the logical
  * slug scout derives (`<specs-relative-dir>/<github-slugged-heading>`) and must
- * stay in sync with verdicts.json and the heading in the matching spec file.
+ * stay in sync with the heading in the matching spec file.
  * The specs live under `.scout/specs/lab/`, so the dir segment is `lab/<file>`.
  */
 export const LAB_FEATURES: LabFeature[] = [
@@ -80,6 +82,8 @@ export const LAB_FEATURES: LabFeature[] = [
     docSlug: "scenarios",
     docHash: "flows-that-open-a-new-tab",
     spec: specFor("multi-tab"),
+    videoNote:
+      "The recording captures the first tab only — the new tab opens off-camera, so this clip ends as the click fires. Scout still follows the switch and runs every assertion on the new tab; see the spec below.",
   },
   {
     slug: "lab/env-form/a-coupon-from-the-environment-applies",

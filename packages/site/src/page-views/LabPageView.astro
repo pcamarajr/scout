@@ -1,20 +1,15 @@
 ---
 // Scout — Lab page-view
 //
-// The live demo surface (plan #435). Three things, once per feature:
-//   1. a working interactive surface you can exercise in the browser,
-//   2. the EXACT .scout.md scenario CI replays against this page (read verbatim
-//      from .scout/specs/lab/ — single source, no drift), and
-//   3. a live verdict plate fed by /lab/verdicts.json (the `scout report --json`
-//      ReportData contract).
-// Plus a verdict board up top and a quickstart so a visitor can point their own
-// Scout at this page — a known-good target.
-//
-// Honesty (#333): the board reflects recorded runs; cheap deterministic replay
-// is a supporting nicety, never sold here as the moat. In F3 the seed verdicts
-// are `pending` — the board wires to the CI pipeline in F4, which writes the
-// real verdicts.json. The island degrades to the static pending plates when JS
-// is off or the fetch fails.
+// The live demo surface. Three things, once per feature:
+//   1. a recorded demo (MP4) of Scout verifying the scenario — "show me it
+//      working" with no runtime fetch or CI dependency,
+//   2. a working interactive surface you can exercise in the browser, and
+//   3. the EXACT .scout.md scenario that runs against this page (read verbatim
+//      from .scout/specs/lab/ — single source, no drift).
+// Up top, a link to the project's GitHub Actions (the honest, GitHub-native
+// proof the suite is green); at the bottom, a quickstart so a visitor can point
+// their own Scout at this page — a known-good target.
 import LabFeatureCard from "@components/LabFeatureCard.astro";
 import BaseLayout from "@layouts/BaseLayout.astro";
 import { createTranslator } from "@lib/i18n";
@@ -26,11 +21,20 @@ const tl = createTranslator(Astro.currentLocale);
 
 const firstScenarioHref = buildLocaleUrl(locale, "docs", "first-scenario");
 
+// GitHub-native CI proof: the badge SVG and the runs list for the `scout`
+// workflow (.github/workflows/scout.yml), which replays these exact .scout.md
+// scenarios against a fresh build of the Lab on every push — deterministically,
+// no AI. GitHub renders the badge for any workflow that exists in the repo, so
+// there's no separate publish step.
+const CI_WORKFLOW_URL = "https://github.com/pcamarajr/scout/actions/workflows/scout.yml";
+const CI_BADGE_URL = `${CI_WORKFLOW_URL}/badge.svg?branch=main`;
+
 // The quickstart commands, one source for the rendered block and the copy.
+// No install step on purpose: `npx @pcamarajr/scout` runs the published bin
+// anywhere. `create` needs both -f (feature/spec file) and -c (the scenario).
 const QUICKSTART = [
-  "npm i -D @pcamarajr/scout",
-  'npx scout create demo -c "Open the report in a new tab; the new tab shows Report ready"',
-  "npx scout go --base-url https://scout.pcamarajr.dev/lab",
+  'npx @pcamarajr/scout create "A new tab opens with the report" -f demo -c "Open the report in a new tab; the new tab shows Report ready"',
+  "npx @pcamarajr/scout go --base-url https://scout.pcamarajr.dev/lab",
 ].join("\n");
 ---
 
@@ -44,23 +48,19 @@ const QUICKSTART = [
     </div>
   </section>
 
-  {/* ── verdict board ────────────────────────────────────────── */}
-  <section class="board marker" id="board">
+  {/* ── CI proof ─────────────────────────────────────────────── */}
+  <section class="ci marker" id="ci">
     <div class="wrap">
-      <span class="marker-tag">// <b>{tl("lab.tag")}</b></span>
-      <div class="board-grid">
-        <div class="board-head">
-          <h2>{tl("lab.boardTitle")}</h2>
-          <p class="board-line" data-board-line>{tl("lab.boardLineDefault")}</p>
-          <p class="board-note">{tl("lab.boardNote")}</p>
+      <span class="marker-tag">// <b>{tl("lab.ciTag")}</b></span>
+      <div class="ci-grid">
+        <div class="ci-head">
+          <h2>{tl("lab.ciTitle")}</h2>
+          <p class="ci-note">{tl("lab.ciNote")}</p>
         </div>
-        <ul class="counts" data-board-counts aria-label={tl("lab.boardScenarios")}>
-          <li><span class="n" data-count="verified">0</span> verified</li>
-          <li><span class="n" data-count="partial">0</span> partial</li>
-          <li><span class="n" data-count="failed">0</span> failed</li>
-          <li><span class="n" data-count="blocked">0</span> blocked</li>
-          <li><span class="n" data-count="pending">5</span> pending</li>
-        </ul>
+        <a class="ci-link" href={CI_WORKFLOW_URL} target="_blank" rel="noopener noreferrer">
+          <img class="ci-badge" src={CI_BADGE_URL} alt={tl("lab.ciBadgeAlt")} height="20" loading="lazy" />
+          <span class="ci-cta">{tl("lab.ciCta")} <span class="arr" aria-hidden="true">→</span></span>
+        </a>
       </div>
     </div>
   </section>
@@ -282,54 +282,61 @@ const QUICKSTART = [
     color: var(--color-text-muted);
   }
 
-  /* ── verdict board ── */
-  .board-grid {
+  /* ── CI proof ── */
+  .ci-grid {
     display: grid;
     grid-template-columns: 1.4fr 1fr;
     gap: var(--space-2xl);
     align-items: center;
   }
 
-  .board-head h2 {
+  .ci-head h2 {
     font-size: var(--text-3xl);
     line-height: 1.08;
     letter-spacing: -0.015em;
   }
 
-  .board-line {
-    margin-block-start: var(--space-sm);
-    font-family: var(--font-mono);
-    font-size: var(--text-lg);
-    color: var(--color-text);
-  }
-
-  .board-note {
+  .ci-note {
     margin-block-start: var(--space-md);
     max-width: 54ch;
     font-size: var(--text-sm);
     color: var(--color-text-subtle);
   }
 
-  .counts {
-    list-style: none;
-    margin: 0;
+  .ci-link {
+    display: inline-flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    align-items: flex-start;
     padding: var(--space-lg);
-    display: grid;
-    gap: var(--space-sm);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     background: var(--color-surface);
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-    color: var(--color-text-muted);
   }
 
-  .counts .n {
-    display: inline-block;
-    min-width: 1.6em;
-    font-size: var(--text-lg);
-    font-variant-numeric: tabular-nums;
-    color: var(--color-text);
+  .ci-link:hover {
+    text-decoration: none;
+  }
+
+  .ci-badge {
+    display: block;
+    block-size: 20px;
+    inline-size: auto;
+  }
+
+  .ci-cta {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-primary);
+  }
+
+  .ci-cta .arr {
+    transition: transform var(--dur) var(--ease);
+  }
+
+  .ci-link:hover .ci-cta .arr {
+    transform: translateX(3px);
   }
 
   /* ── gallery ── */
@@ -411,9 +418,9 @@ const QUICKSTART = [
   }
 
   .surface-hint {
+    align-self: stretch;
     font-size: var(--text-xs);
     color: var(--color-text-subtle);
-    max-width: 46ch;
   }
 
   .lab-panel {
@@ -559,7 +566,7 @@ const QUICKSTART = [
 
   /* ── responsive ── */
   @media (max-width: 60rem) {
-    .board-grid,
+    .ci-grid,
     .quick-grid {
       grid-template-columns: 1fr;
       gap: var(--space-xl);
@@ -574,88 +581,6 @@ const QUICKSTART = [
 </style>
 
 <script>
-  // ── verdict board island ──────────────────────────────────────────────
-  // Reads the CI contract (ReportData = `scout report --json`) and rewrites
-  // each card's verdict plate + the board counts.
-  //
-  // Two tiers, so updating verdicts never triggers a site rebuild (plan #435):
-  //   1. LIVE — the mutable store the dogfood pipeline writes on every run: the
-  //      orphan `verdicts` branch. Served SAME-ORIGIN via a Vercel rewrite
-  //      (vercel.json: /lab/verdicts.live.json → the branch's raw URL). Same
-  //      origin matters: the dogfood gate runs with Vercel bypass headers on
-  //      the whole context, and custom headers on a *cross-origin* fetch force
-  //      a CORS preflight that raw.githubusercontent can't answer — so we keep
-  //      this fetch same-origin and let Vercel proxy to GitHub server-side.
-  //   2. SEED — the build-time `/lab/verdicts.json` shipped in dist (the last
-  //      run recorded into the repo). Used when the live store is unreachable.
-  // If both fail, the static "pending" plates stay — never a blank board.
-  const VERDICTS_LIVE_URL = "/lab/verdicts.live.json";
-  const VERDICTS_SEED_URL = "/lab/verdicts.json";
-  type Status = "verified" | "partial" | "failed" | "blocked" | "pending";
-  const GLYPH: Record<Status, string> = {
-    verified: "✅",
-    partial: "⚠️",
-    failed: "❌",
-    blocked: "🚫",
-    pending: "⏳",
-  };
-  const PLATE_CLASSES = [
-    "plate--verified",
-    "plate--partial",
-    "plate--failed",
-    "plate--blocked",
-    "plate--pending",
-  ];
-
-  async function fetchVerdicts(url: string) {
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) throw new Error(`${url} → ${res.status}`);
-    return res.json();
-  }
-
-  async function loadVerdicts() {
-    // Prefer the live store; fall back to the build-time seed. A throw from
-    // both lands in the .catch() below, leaving the static pending plates.
-    let data;
-    try {
-      data = await fetchVerdicts(VERDICTS_LIVE_URL);
-    } catch {
-      data = await fetchVerdicts(VERDICTS_SEED_URL);
-    }
-
-    for (const s of data.scenarios ?? []) {
-      const slot = document.querySelector<HTMLElement>(
-        `[data-verdict-slot="${s.slug}"]`,
-      );
-      if (!slot) continue;
-      const status = s.status as Status;
-      slot.classList.remove(...PLATE_CLASSES);
-      slot.classList.add(`plate--${status}`);
-      const glyph = slot.querySelector<HTMLElement>("[data-verdict-glyph]");
-      const label = slot.querySelector<HTMLElement>("[data-verdict-label]");
-      if (glyph) glyph.textContent = GLYPH[status] ?? "⏳";
-      if (label) label.textContent = status;
-    }
-
-    const summary = data.summary;
-    if (summary) {
-      for (const key of Object.keys(GLYPH) as Status[]) {
-        const cell = document.querySelector<HTMLElement>(`[data-count="${key}"]`);
-        if (cell && typeof summary[key] === "number") {
-          cell.textContent = String(summary[key]);
-        }
-      }
-      const line = document.querySelector<HTMLElement>("[data-board-line]");
-      if (line && typeof summary.verified === "number" && typeof summary.total === "number") {
-        line.textContent = `${summary.verified}/${summary.total} verified`;
-      }
-    }
-  }
-
-  loadVerdicts().catch(() => {
-    /* keep the static pending plates */
-  });
-
   // ── live surfaces ─────────────────────────────────────────────────────
 
   // multi-tab: follow the click into a new tab (a real /lab/report/ page).
