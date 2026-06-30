@@ -1,0 +1,64 @@
+# Scout replays the Lab's own scenarios — the badge the Lab page links to.
+#
+# This is the deliberately simple successor to the old dogfood gate: it proves
+# "Scout runs these very cases" without any of the deploy machinery. It builds
+# the Lab, serves the static output locally, and replays the committed
+# `.scout.md` scenarios against it with `scout go --no-heal` — deterministic,
+# ZERO LLM, no API key, no secrets. The verdict gates the job; the Lab page
+# embeds this workflow's GitHub-native status badge and links to the runs.
+name: scout
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    env:
+      # The env-form scenario resolves $ENV:LAB_COUPON; the literal stays here,
+      # never in the committed spec or script.
+      LAB_COUPON: FOCUS25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Build the Scout CLI
+        run: npm run build -w @pcamarajr/scout
+
+      - name: Build the Lab site
+        run: npm run build -w @pcamarajr/scout-site
+
+      - name: Install the replay browser
+        run: npx playwright install --with-deps chromium
+        working-directory: packages/cli
+
+      - name: Replay the Lab scenarios against the fresh build (no AI)
+        working-directory: packages/site
+        run: |
+          npx --yes serve dist --listen 4321 --no-clipboard > /tmp/serve.log 2>&1 &
+          trap 'kill %1 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4321/lab/ > /dev/null && break
+            sleep 1
+          done
+          node ../cli/dist/cli.js go --no-heal --base-url http://localhost:4321
+
+      - name: Verdict summary and gate
+        if: always()
+        working-directory: packages/site
+        run: |
+          {
+            echo "## 🔭 Scout — Lab replay"
+            echo
+            node ../cli/dist/cli.js report
+          } >> "$GITHUB_STEP_SUMMARY"
+          node ../cli/dist/cli.js report --check

@@ -48,6 +48,7 @@ const videoSrc = `/lab/demos/${feature.file}.mp4`;
       height="450"
       aria-label={`${tl("lab.demoLabel")} — ${feature.title}`}></video>
     <figcaption>{tl("lab.demoCaption")}</figcaption>
+    {feature.videoNote && <p class="demo-note">{feature.videoNote}</p>}
   </figure>
 
   <div class="card-body">
@@ -140,6 +141,17 @@ const videoSrc = `/lab/demos/${feature.file}.mp4`;
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     color: var(--color-text-subtle);
+  }
+
+  .demo-note {
+    margin-block-start: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    border-inline-start: 2px solid var(--color-brass);
+    background: var(--color-brass-soft);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: var(--color-brass-deep);
   }
 
   .card-body {

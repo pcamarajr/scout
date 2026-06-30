@@ -60,6 +60,8 @@ export interface LabFeature {
   docHash?: string;
   /** The exact `.scout.md`, read from the `.scout.md` suite at build time. */
   spec: string;
+  /** Optional caveat shown under the recorded demo (e.g. a recording limitation). */
+  videoNote?: string;
 }
 
 /**
@@ -80,6 +82,8 @@ export const LAB_FEATURES: LabFeature[] = [
     docSlug: "scenarios",
     docHash: "flows-that-open-a-new-tab",
     spec: specFor("multi-tab"),
+    videoNote:
+      "The recording captures the first tab only — the new tab opens off-camera, so this clip ends as the click fires. Scout still follows the switch and runs every assertion on the new tab; see the spec below.",
   },
   {
     slug: "lab/env-form/a-coupon-from-the-environment-applies",

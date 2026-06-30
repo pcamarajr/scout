@@ -21,10 +21,12 @@ const tl = createTranslator(Astro.currentLocale);
 
 const firstScenarioHref = buildLocaleUrl(locale, "docs", "first-scenario");
 
-// GitHub-native CI proof: the badge SVG and the runs list for the existing
-// ci.yml workflow. No new pipeline, no orphan branch — GitHub renders both for
-// any workflow that already exists in the repo.
-const CI_WORKFLOW_URL = "https://github.com/pcamarajr/scout/actions/workflows/ci.yml";
+// GitHub-native CI proof: the badge SVG and the runs list for the `scout`
+// workflow (.github/workflows/scout.yml), which replays these exact .scout.md
+// scenarios against a fresh build of the Lab on every push — deterministically,
+// no AI. GitHub renders the badge for any workflow that exists in the repo, so
+// there's no separate publish step.
+const CI_WORKFLOW_URL = "https://github.com/pcamarajr/scout/actions/workflows/scout.yml";
 const CI_BADGE_URL = `${CI_WORKFLOW_URL}/badge.svg?branch=main`;
 
 // The quickstart commands, one source for the rendered block and the copy.
@@ -415,9 +417,9 @@ const QUICKSTART = [
   }
 
   .surface-hint {
+    align-self: stretch;
     font-size: var(--text-xs);
     color: var(--color-text-subtle);
-    max-width: 46ch;
   }
 
   .lab-panel {
