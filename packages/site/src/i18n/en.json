@@ -137,7 +137,7 @@
   "lab.quickEyebrow": "Point your own Scout at it",
   "lab.quickTitleLead": "Run Scout against",
   "lab.quickTitleEmph": "a known-good target",
-  "lab.quickBody": "This page is a stable target. Install Scout, point it here, and watch it verify a scenario against a site you did not write — the fastest way to see a first reading.",
+  "lab.quickBody": "This page is a stable target. Point Scout at it with one npx command — no install — and watch it verify a scenario against a site you did not write. The fastest way to see a first reading.",
   "lab.quickCopyLabel": "Copy",
   "lab.quickCopiedLabel": "Copied",
   "lab.quickCopyAria": "Copy the quickstart commands",

@@ -30,10 +30,11 @@ const CI_WORKFLOW_URL = "https://github.com/pcamarajr/scout/actions/workflows/sc
 const CI_BADGE_URL = `${CI_WORKFLOW_URL}/badge.svg?branch=main`;
 
 // The quickstart commands, one source for the rendered block and the copy.
+// No install step on purpose: `npx @pcamarajr/scout` runs the published bin
+// anywhere. `create` needs both -f (feature/spec file) and -c (the scenario).
 const QUICKSTART = [
-  "npm i -D @pcamarajr/scout",
-  'npx scout create demo -c "Open the report in a new tab; the new tab shows Report ready"',
-  "npx scout go --base-url https://scout.pcamarajr.dev/lab",
+  'npx @pcamarajr/scout create "A new tab opens with the report" -f demo -c "Open the report in a new tab; the new tab shows Report ready"',
+  "npx @pcamarajr/scout go --base-url https://scout.pcamarajr.dev/lab",
 ].join("\n");
 ---
 
