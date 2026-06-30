@@ -66,6 +66,10 @@ export async function runScenario(
     });
 
   let result: RunResult;
+  // Steps that actually verified this run, for sourcing the demo video. An
+  // ephemeral run (--viewport override) never persists a script, so the demo
+  // can't re-read it from the store — it films these instead.
+  let verifiedSteps: Step[] | undefined;
 
   if (cached?.length) {
     const session = await launch();
@@ -73,6 +77,7 @@ export async function runScenario(
     const { trace } = await session.close();
 
     if (replay.passed) {
+      verifiedSteps = cached;
       result = {
         slug: scenario.slug,
         viewport: viewportName,
@@ -88,11 +93,12 @@ export async function runScenario(
       };
     } else if (heal && aiCreds.ok) {
       // cached script broke — re-verify with the agent and re-record
-      const aiResult = await runAi(scenario, config, store, runDir, viewport, storageState, cookies, opts);
+      const ai = await runAi(scenario, config, store, runDir, viewport, storageState, cookies, opts);
+      verifiedSteps = ai.steps;
       result = {
-        ...aiResult,
+        ...ai.result,
         healed: true,
-        reason: `Cached script broke at step ${replay.failedIndex! + 1} (${replay.failedStep}: ${replay.error}). Re-verified by AI: ${aiResult.reason}`,
+        reason: `Cached script broke at step ${replay.failedIndex! + 1} (${replay.failedStep}: ${replay.error}). Re-verified by AI: ${ai.result.reason}`,
         startedAt,
         durationMs: Date.now() - start,
       };
@@ -116,14 +122,18 @@ export async function runScenario(
     if (!aiCreds.ok) {
       throw new Error(aiCreds.remediation);
     }
-    const aiResult = await runAi(scenario, config, store, runDir, viewport, storageState, cookies, opts);
-    result = { ...aiResult, startedAt, durationMs: Date.now() - start };
+    const ai = await runAi(scenario, config, store, runDir, viewport, storageState, cookies, opts);
+    verifiedSteps = ai.steps;
+    result = { ...ai.result, startedAt, durationMs: Date.now() - start };
   }
 
-  // Demo video: always sourced from a dedicated clean replay of the
-  // recorded script (never the AI run), only when verified and opted-in.
+  // Demo video: always sourced from a dedicated clean replay of the recorded
+  // script (never the AI run), only when verified and opted-in. The committed
+  // script wins; an ephemeral --viewport run persists none, so fall back to the
+  // steps this run just verified (pruned the same way a committed script is).
   if (config.recordVideo && result.verdict === "verified") {
-    const steps = store.loadSteps(scenario.slug, viewportName);
+    const persisted = store.loadSteps(scenario.slug, viewportName);
+    const steps = persisted ?? (verifiedSteps ? pruneSteps(verifiedSteps) : undefined);
     if (steps?.length) {
       result.video = await recordDemoVideo(scenario, steps, config, viewport, storageState, cookies, runDir);
     }
@@ -132,7 +142,7 @@ export async function runScenario(
   store.saveRunResult(result);
   fs.writeFileSync(
     path.join(runDir, "report.md"),
-    renderRunReport(result, scenario, store.loadSteps(scenario.slug, viewportName))
+    renderRunReport(result, scenario, store.loadSteps(scenario.slug, viewportName) ?? verifiedSteps)
   );
   return result;
 }
@@ -324,7 +334,7 @@ async function runAi(
   storageState: string | undefined,
   cookies: ScenarioCookie[] | undefined,
   opts: RunOptions
-): Promise<RunResult> {
+): Promise<{ result: RunResult; steps: Step[] }> {
   const startedAt = new Date().toISOString();
   const start = Date.now();
   const transcript: string[] = [];
@@ -365,20 +375,23 @@ async function runAi(
   }
 
   return {
-    slug: scenario.slug,
-    viewport: viewport.name,
-    mode: "ai",
-    verdict: outcome.verdict,
-    reason: outcome.runnerFailure
-      ? `${outcome.reason} (${attempts} tentativas de AI run — investigue os artifacts em ${runDir})`
-      : outcome.reason,
-    stepCount: outcome.steps.length,
-    runDir,
-    startedAt,
-    durationMs: Date.now() - start,
-    screenshots,
-    trace,
-    runnerFailure: outcome.runnerFailure,
+    result: {
+      slug: scenario.slug,
+      viewport: viewport.name,
+      mode: "ai",
+      verdict: outcome.verdict,
+      reason: outcome.runnerFailure
+        ? `${outcome.reason} (${attempts} tentativas de AI run — investigue os artifacts em ${runDir})`
+        : outcome.reason,
+      stepCount: outcome.steps.length,
+      runDir,
+      startedAt,
+      durationMs: Date.now() - start,
+      screenshots,
+      trace,
+      runnerFailure: outcome.runnerFailure,
+    },
+    steps: outcome.steps,
   };
 }
 
