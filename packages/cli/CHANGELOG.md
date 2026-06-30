@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/pcamarajr/scout/compare/scout-v0.11.0...scout-v0.11.1) (2026-06-30)
+
+
+### Bug Fixes
+
+* **cli:** film demo videos for ephemeral --viewport runs ([#54](https://github.com/pcamarajr/scout/issues/54)) ([3eec430](https://github.com/pcamarajr/scout/commit/3eec430b774771eefe238ad519ad95619d209649))
+
 ## [0.11.0](https://github.com/pcamarajr/scout/compare/scout-v0.10.0...scout-v0.11.0) (2026-06-29)
 
 

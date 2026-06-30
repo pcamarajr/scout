@@ -1,6 +1,6 @@
 {
   "name": "@pcamarajr/scout",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Self-healing browser QA: natural-language scenarios verified by an AI agent, replayed deterministically in CI",
   "type": "module",
   "license": "MIT",
