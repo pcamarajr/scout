@@ -13,7 +13,7 @@ import type { Verdict } from "../types.js";
  */
 
 export interface TimelineEntry {
-  /** Caption burned onto the frame while this step runs (e.g. "2/5 · clicar em ...") */
+  /** Caption burned onto the frame while this step runs (e.g. "2/5 · click ...") */
   label: string;
   /** Milliseconds from video start (context creation) to the step's execution */
   tMs: number;
@@ -147,10 +147,10 @@ const VERDICT_COLOR: Record<Verdict, string> = {
 };
 
 const VERDICT_LABEL: Record<Verdict, string> = {
-  verified: "VERIFICADO",
-  failed: "FALHOU",
-  partial: "PARCIAL",
-  blocked: "BLOQUEADO",
+  verified: "VERIFIED",
+  failed: "FAILED",
+  partial: "PARTIAL",
+  blocked: "BLOCKED",
 };
 
 /**
@@ -333,7 +333,7 @@ export function generateVideo(input: GenerateVideoInput): GenerateVideoResult {
   if (run.status !== 0) {
     return {
       output: input.webmPath,
-      warning: "ffmpeg falhou ao gerar o MP4 — mantido o WebM cru.",
+      warning: "ffmpeg failed to generate the MP4 — kept the raw WebM.",
     };
   }
 
@@ -341,6 +341,6 @@ export function generateVideo(input: GenerateVideoInput): GenerateVideoResult {
     output: input.outPath,
     warning: font
       ? undefined
-      : "Nenhuma fonte encontrada para os overlays — MP4 gerado sem legendas. Defina SCOUT_VIDEO_FONT apontando para um .ttf.",
+      : "No font found for the overlays — MP4 generated without captions. Set SCOUT_VIDEO_FONT pointing to a .ttf.",
   };
 }

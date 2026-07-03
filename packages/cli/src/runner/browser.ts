@@ -354,7 +354,7 @@ export class BrowserSession {
       };
       const timer = setTimeout(() => {
         cleanup();
-        reject(new Error(`Nenhum tab com URL casando "${urlGlob}" em ${STEP_TIMEOUT}ms.`));
+        reject(new Error(`No tab with a URL matching "${urlGlob}" within ${STEP_TIMEOUT}ms.`));
       }, STEP_TIMEOUT);
       this.context.on("page", onPage);
       for (const p of this.context.pages()) p.on("framenavigated", check);
@@ -412,7 +412,7 @@ export class BrowserSession {
   private async resolveRef(ref: number): Promise<{ locator: Locator; target: Target }> {
     const info = this.refs.get(ref);
     if (!info) {
-      throw new Error(`Ref [${ref}] desconhecido — tire um novo browser_snapshot, a página mudou.`);
+      throw new Error(`Ref [${ref}] unknown — take a new browser_snapshot, the page changed.`);
     }
     const description = `${info.role} "${info.name}"`;
     if (info.role && info.name) {
@@ -504,7 +504,7 @@ export class BrowserSession {
         .first()
         .isVisible()
         .catch(() => false);
-      if (!visible) throw new Error(`Texto "${text}" não está visível (checagem one-shot pós-settle).`);
+      if (!visible) throw new Error(`Text "${text}" is not visible (one-shot check after settle).`);
       return;
     }
     await this.page
@@ -521,7 +521,7 @@ export class BrowserSession {
       .first()
       .isVisible()
       .catch(() => false);
-    if (visible) throw new Error(`Texto "${text}" está visível, mas não deveria estar.`);
+    if (visible) throw new Error(`Text "${text}" is visible, but it should not be.`);
   }
 
   /**
@@ -535,19 +535,19 @@ export class BrowserSession {
         await this.page.waitForURL((u) => u.toString().includes(pattern), { timeout });
         return;
       } catch {
-        throw new Error(`URL atual "${this.page.url()}" não contém "${pattern}" (após ${timeout}ms).`);
+        throw new Error(`Current URL "${this.page.url()}" does not contain "${pattern}" (after ${timeout}ms).`);
       }
     }
     const url = this.page.url();
     if (!url.includes(pattern)) {
-      throw new Error(`URL atual "${url}" não contém "${pattern}".`);
+      throw new Error(`Current URL "${url}" does not contain "${pattern}".`);
     }
   }
 
   /** Asserts an expected network call was observed. Throws with a reason on miss. */
   async assertNetwork(matcher: NetworkMatcher): Promise<void> {
     const result = await matchNetwork(this.buffers().network, matcher);
-    if (!result.ok) throw new Error(result.reason ?? "Asserção de rede falhou.");
+    if (!result.ok) throw new Error(result.reason ?? "Network assertion failed.");
   }
 
   /** Asserts no console errors (console.error + uncaught) except ignored substrings. */
@@ -571,7 +571,7 @@ export class BrowserSession {
     // assertion always pass — false confidence on replay. Reject it here too,
     // mirroring the tool schema, so a hand-edited or legacy script fails closed.
     if (!includes.length || includes.some((s) => s.length === 0)) {
-      throw new Error("assertConsoleMessage requer trechos não-vazios.");
+      throw new Error("assertConsoleMessage requires non-empty substrings.");
     }
     const hit = this.buffers().console.find(
       (m) => (!type || m.type === type) && includes.every((s) => m.text.includes(s))
@@ -579,7 +579,7 @@ export class BrowserSession {
     if (!hit) {
       const want = includes.map((s) => `"${s}"`).join(" + ");
       throw new Error(
-        `Nenhuma mensagem de console${type ? ` do tipo "${type}"` : ""} continha ${want}.`
+        `No console message${type ? ` of type "${type}"` : ""} contained ${want}.`
       );
     }
   }
@@ -600,14 +600,14 @@ export class BrowserSession {
       .slice(-30)
       .map((m) => `[${m.type}] ${m.text}`);
     return [
-      `Network (${networkRequests.length} requests total, últimos ${net.length}):`,
-      ...(net.length ? net.map((l) => `  ${l}`) : ["  (nenhum)"]),
+      `Network (${networkRequests.length} requests total, last ${net.length}):`,
+      ...(net.length ? net.map((l) => `  ${l}`) : ["  (none)"]),
       ``,
       `Console errors/warnings (${errs.length}):`,
-      ...(errs.length ? errs.map((l) => `  ${l}`) : ["  (nenhum)"]),
+      ...(errs.length ? errs.map((l) => `  ${l}`) : ["  (none)"]),
       ``,
-      `Outras mensagens de console (${other.length}, p/ assert_console_message):`,
-      ...(other.length ? other.map((l) => `  ${l}`) : ["  (nenhum)"]),
+      `Other console messages (${other.length}, for assert_console_message):`,
+      ...(other.length ? other.map((l) => `  ${l}`) : ["  (none)"]),
     ].join("\n");
   }
 
@@ -670,7 +670,7 @@ export class BrowserSession {
         .first();
     }
     if (target.css) return this.page.locator(target.css);
-    throw new Error(`Target sem estratégia de localização: ${target.description}`);
+    throw new Error(`Target has no location strategy: ${target.description}`);
   }
 
   /**
@@ -771,7 +771,7 @@ export function toPlaywrightCookie(c: ScenarioCookie, baseUrl: string): AddCooki
 export function resolveEnvValue(value: string): string {
   return value.replace(/\$ENV:([A-Z0-9_]+)/g, (_, name) => {
     const v = process.env[name];
-    if (v === undefined) throw new Error(`Env var ${name} (referenciada como $ENV:${name}) não definida.`);
+    if (v === undefined) throw new Error(`Env var ${name} (referenced as $ENV:${name}) is not defined.`);
     return v;
   });
 }

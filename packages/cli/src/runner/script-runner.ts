@@ -85,37 +85,37 @@ const timeoutSuffix = (timeout?: number): string => (timeout ? ` (timeout ${time
 export function describeStep(step: Step): string {
   switch (step.kind) {
     case "navigate":
-      return `navegar para ${step.url}`;
+      return `navigate to ${step.url}`;
     case "click":
-      return `clicar em ${step.target.description}`;
+      return `click ${step.target.description}`;
     case "fill":
-      return `preencher ${step.target.description}`;
+      return `fill ${step.target.description}`;
     case "select":
-      return `selecionar "${step.value}" em ${step.target.description}`;
+      return `select "${step.value}" in ${step.target.description}`;
     case "press":
-      return `pressionar ${step.key}`;
+      return `press ${step.key}`;
     case "wheel":
-      return `scroll (wheel) deltaX=${step.deltaX} deltaY=${step.deltaY}${step.x !== undefined || step.y !== undefined ? ` em (${step.x ?? "centro"}, ${step.y ?? "centro"})` : ""}`;
+      return `scroll (wheel) deltaX=${step.deltaX} deltaY=${step.deltaY}${step.x !== undefined || step.y !== undefined ? ` at (${step.x ?? "center"}, ${step.y ?? "center"})` : ""}`;
     case "drag":
-      return `arrastar de (${step.fromX}, ${step.fromY}) até (${step.toX}, ${step.toY})`;
+      return `drag from (${step.fromX}, ${step.fromY}) to (${step.toX}, ${step.toY})`;
     case "waitForText":
-      return `esperar texto "${step.text}"${timeoutSuffix(step.timeout)}`;
+      return `wait for text "${step.text}"${timeoutSuffix(step.timeout)}`;
     case "waitForUrl":
-      return `esperar URL conter "${step.pattern}"${timeoutSuffix(step.timeout)}`;
+      return `wait for URL to contain "${step.pattern}"${timeoutSuffix(step.timeout)}`;
     case "assertVisible":
-      return `verificar texto visível "${step.text}"${step.oneShot ? " (one-shot)" : ""}${timeoutSuffix(step.timeout)}`;
+      return `assert text visible "${step.text}"${step.oneShot ? " (one-shot)" : ""}${timeoutSuffix(step.timeout)}`;
     case "assertNotVisible":
-      return `verificar texto AUSENTE "${step.text}"${timeoutSuffix(step.timeout)}`;
+      return `assert text ABSENT "${step.text}"${timeoutSuffix(step.timeout)}`;
     case "assertUrl":
-      return `verificar URL contém "${step.pattern}"${timeoutSuffix(step.timeout)}`;
+      return `assert URL contains "${step.pattern}"${timeoutSuffix(step.timeout)}`;
     case "assertNetwork":
-      return `verificar request ${step.method ?? "ANY"} ${step.urlGlob}${step.status ? ` (status ${step.status})` : ""}${step.responseIncludes?.length ? ` contendo ${step.responseIncludes.join(", ")}` : ""}`;
+      return `assert request ${step.method ?? "ANY"} ${step.urlGlob}${step.status ? ` (status ${step.status})` : ""}${step.responseIncludes?.length ? ` containing ${step.responseIncludes.join(", ")}` : ""}`;
     case "assertNoConsoleErrors":
-      return `verificar ausência de erros no console${step.ignore?.length ? ` (ignorando ${step.ignore.join(", ")})` : ""}`;
+      return `assert no console errors${step.ignore?.length ? ` (ignoring ${step.ignore.join(", ")})` : ""}`;
     case "assertConsoleMessage":
-      return `verificar mensagem de console contendo ${step.includes.map((s) => `"${s}"`).join(" + ")}${step.type ? ` (tipo ${step.type})` : ""}`;
+      return `assert console message containing ${step.includes.map((s) => `"${s}"`).join(" + ")}${step.type ? ` (type ${step.type})` : ""}`;
     case "switchTab":
-      return `trocar para o tab ${step.urlGlob ? `que casa "${step.urlGlob}"` : "mais recente"}`;
+      return `switch to tab ${step.urlGlob ? `matching "${step.urlGlob}"` : "most recent"}`;
     case "screenshot":
       return `screenshot "${step.label}"`;
   }
@@ -131,7 +131,7 @@ export async function replaySteps(session: BrowserSession, steps: Step[]): Promi
     try {
       await session.executeStep(step);
     } catch (error) {
-      await session.screenshot(`replay-falhou-step-${i + 1}`).catch(() => {});
+      await session.screenshot(`replay-failed-step-${i + 1}`).catch(() => {});
       return {
         passed: false,
         failedIndex: i,
@@ -140,6 +140,6 @@ export async function replaySteps(session: BrowserSession, steps: Step[]): Promi
       };
     }
   }
-  await session.screenshot("estado-final").catch(() => {});
+  await session.screenshot("final-state").catch(() => {});
   return { passed: true };
 }

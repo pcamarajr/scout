@@ -20,8 +20,8 @@ import {
 } from "./viewports.js";
 import { diagnoseFfmpeg, ffmpegRemediation, resolveFont } from "./runner/video.js";
 
-// Rejeições fora da cadeia de await (SDK/Playwright em subprocesso) não podem
-// derrubar a suíte inteira — logar e deixar o cenário corrente falhar sozinho.
+// Rejections outside the await chain (SDK/Playwright in a subprocess) must not
+// bring down the whole suite — log and let the current scenario fail on its own.
 process.on("unhandledRejection", (reason) => {
   console.error(`\n⚠ unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`);
 });
@@ -139,7 +139,7 @@ program
             ephemeral: Boolean(viewportOverride),
           });
           const icon = result.runnerFailure ? "💥" : result.verdict === "verified" ? "✅" : result.verdict === "partial" ? "⚠️" : "❌";
-          const tag = result.runnerFailure ? " (runner failure — re-rode, não é veredito de UI)" : "";
+          const tag = result.runnerFailure ? " (runner failure — re-ran, not a UI verdict)" : "";
           console.log(`${icon} ${result.verdict}${tag} [${result.mode}${result.healed ? "+heal" : ""}] ${(result.durationMs / 1000).toFixed(1)}s`);
           if (result.verdict !== "verified") {
             console.log(`   ↳ ${result.reason}`);

@@ -46,12 +46,12 @@ export async function runWithAgent(
   });
 
   const profileInfo = scenario.profile
-    ? `Sessão autenticada com o profile "${scenario.profile}"${config.profiles[scenario.profile]?.description ? ` (${config.profiles[scenario.profile].description})` : ""}. Você JÁ está logado — não faça login de novo a menos que o cenário peça.`
-    : "Sessão anônima (logged-out).";
+    ? `Authenticated session with the profile "${scenario.profile}"${config.profiles[scenario.profile]?.description ? ` (${config.profiles[scenario.profile].description})` : ""}. You are ALREADY logged in — don't log in again unless the scenario asks for it.`
+    : "Anonymous session (logged-out).";
 
   const envVars = scenario.profile ? (config.profiles[scenario.profile]?.env ?? []) : [];
   const envInfo = envVars.length
-    ? `Env vars disponíveis via placeholder $ENV:VAR (em browser_fill e em URLs de browser_navigate): ${envVars.map((v) => `$ENV:${v}`).join(", ")}.`
+    ? `Env vars available via the $ENV:VAR placeholder (in browser_fill and in browser_navigate URLs): ${envVars.map((v) => `$ENV:${v}`).join(", ")}.`
     : "";
 
   // Cookies are seeded into the context by the runner before the flow. Announce
@@ -59,42 +59,42 @@ export async function runWithAgent(
   // may be secrets ($ENV) and must never reach the LLM.
   const presetCookies = resolveCookies(scenario, config);
   const cookieInfo = presetCookies?.length
-    ? `Cookies já setados no browser antes do fluxo (pré-condição satisfeita — NÃO tente setá-los, você não tem ferramenta pra isso): ${presetCookies.map((c) => c.name).join(", ")}.`
+    ? `Cookies already set in the browser before the flow (precondition satisfied — do NOT try to set them, you have no tool for that): ${presetCookies.map((c) => c.name).join(", ")}.`
     : "";
 
-  const viewportInfo = `Viewport: rodando como "${viewport.name}" (${viewport.width}×${viewport.height}${viewport.isMobile ? ", mobile/touch" : ""}). Verifique o layout correspondente a esse tamanho — no mobile espere menu hambúrguer/nav compacta; no desktop, nav horizontal.`;
+  const viewportInfo = `Viewport: running as "${viewport.name}" (${viewport.width}×${viewport.height}${viewport.isMobile ? ", mobile/touch" : ""}). Verify the layout for that size — on mobile expect a hamburger menu/compact nav; on desktop, a horizontal nav.`;
 
-  const systemPrompt = `Você é Scout, um agente de QA que verifica cenários em um browser real.
+  const systemPrompt = `You are Scout, a QA agent that verifies scenarios in a real browser.
 
-App alvo: ${config.baseUrl}
+Target app: ${config.baseUrl}
 ${viewportInfo}
 ${profileInfo}
 ${envInfo}
 ${cookieInfo}
 
-Método de trabalho:
-1. Comece com browser_navigate para a página inicial do fluxo (ou browser_snapshot se já estiver lá).
-2. Execute o fluxo descrito no cenário, passo a passo, sempre lendo o snapshot antes de agir.
-3. Para CADA expectativa do cenário, use browser_assert — as asserções gravadas viram o teste determinístico que rodará em CI sem você.
-4. Quando o cenário menciona logs/erros de console ou chamadas de rede/API: use browser_inspect_logs para ver o que ocorreu, depois browser_assert_network e/ou browser_assert_no_console_errors para gravar a verificação.
-5. Capture browser_screenshot como evidência nos momentos-chave.
-6. Termine SEMPRE com scout_verdict:
-   - verified: todo o comportamento esperado foi confirmado por asserções
-   - failed: comportamento esperado está quebrado (descreva exatamente o quê)
-   - partial: parte funciona, parte não, ou não foi possível verificar tudo
-   - blocked: não conseguiu nem chegar ao fluxo (app fora do ar, login quebrado, etc.)
+Working method:
+1. Start with browser_navigate to the flow's starting page (or browser_snapshot if you're already there).
+2. Execute the flow described in the scenario, step by step, always reading the snapshot before acting.
+3. For EVERY scenario expectation, use browser_assert — the recorded assertions become the deterministic test that will run in CI without you.
+4. When the scenario mentions console logs/errors or network/API calls: use browser_inspect_logs to see what happened, then browser_assert_network and/or browser_assert_no_console_errors to record the check.
+5. Capture browser_screenshot as evidence at key moments.
+6. ALWAYS finish with scout_verdict:
+   - verified: all the expected behavior was confirmed by assertions
+   - failed: expected behavior is broken (describe exactly what)
+   - partial: part works, part doesn't, or not everything could be verified
+   - blocked: couldn't even reach the flow (app down, broken login, etc.)
 
-Regras:
-- Aja como um usuário real: um passo de cada vez, espere carregamentos com browser_wait_for.
-- Se um elemento não está no snapshot, tire novo snapshot ou role o fluxo de outro jeito — não invente refs.
-- UIs guiadas por gesto (feed vertical, carrossel, swipe entre itens) muitas vezes não reagem a teclado: use browser_wheel (scroll na posição) ou browser_drag (arrasto ponto a ponto) e confira o resultado no snapshot seguinte.
-- Nunca use segredos literais: use $ENV:VAR_NAME — vale tanto em browser_fill quanto em URLs de browser_navigate (ex: tokens na query string).
-- Não re-preencha um campo que você já preencheu, a menos que a página tenha limpado o valor — cada ação sua vira um passo do script gravado, e passos duplicados são ruído que fragiliza o replay.
-- Asserções de rede/console devem ser TOLERANTES: case requests por método + padrão de URL + status; só use responseIncludes com trechos estáveis (nomes de campos), nunca ids/timestamps. Asserção colada a valor volátil quebra no replay.
-- Seja econômico: não explore além do cenário. Seu orçamento é de ${config.maxTurns} ações.
-- Se você está repetindo tentativas sem progresso (overlay bloqueando, elemento que não aparece), PARE e chame scout_verdict (partial ou blocked) explicando o obstáculo — um veredito parcial vale mais que morrer sem veredito.`;
+Rules:
+- Act like a real user: one step at a time, wait for loads with browser_wait_for.
+- If an element isn't in the snapshot, take a new snapshot or advance the flow another way — don't invent refs.
+- Gesture-driven UIs (vertical feed, carousel, swipe between items) often don't respond to the keyboard: use browser_wheel (scroll at a position) or browser_drag (point-to-point drag) and check the result in the next snapshot.
+- Never use literal secrets: use $ENV:VAR_NAME — it works both in browser_fill and in browser_navigate URLs (e.g. tokens in the query string).
+- Don't re-fill a field you already filled, unless the page cleared the value — each of your actions becomes a step in the recorded script, and duplicate steps are noise that makes replay fragile.
+- Network/console assertions must be TOLERANT: match requests by method + URL pattern + status; only use responseIncludes with stable substrings (field names), never ids/timestamps. An assertion glued to a volatile value breaks on replay.
+- Be economical: don't explore beyond the scenario. Your budget is ${config.maxTurns} actions.
+- If you're repeating attempts without progress (a blocking overlay, an element that won't appear), STOP and call scout_verdict (partial or blocked) explaining the obstacle — a partial verdict is worth more than dying without a verdict.`;
 
-  const userPrompt = `Verifique este cenário de QA:\n\n## ${scenario.name}\n\n${scenario.scenario}${scenario.notes ? `\n\nNotas: ${scenario.notes}` : ""}`;
+  const userPrompt = `Verify this QA scenario:\n\n## ${scenario.name}\n\n${scenario.scenario}${scenario.notes ? `\n\nNotes: ${scenario.notes}` : ""}`;
 
   const provider = inferProvider(config.model);
   const engine = selectEngine(provider, config.engine);
@@ -115,17 +115,17 @@ Regras:
   const mainCause = verdict ? undefined : describeNoVerdict(endInfo, config.maxTurns);
   if (!verdict) {
     transcript.push(
-      `[scout] Agente encerrou sem veredito (${mainCause}) — resgate: exigindo scout_verdict com o que foi observado.`
+      `[scout] Agent ended without a verdict (${mainCause}) — rescue: demanding scout_verdict with what was observed.`
     );
     try {
       const rescue = await run.resume(
-        "Sua verificação atingiu o limite de ações. NÃO execute mais nenhuma ação de browser. Chame scout_verdict AGORA com base no que você já observou: 'partial' se a verificação ficou incompleta, 'blocked' se você nem chegou ao fluxo, 'failed'/'verified' apenas se já tinha evidência suficiente.",
+        "Your verification hit the action limit. Do NOT run any more browser actions. Call scout_verdict NOW based on what you already observed: 'partial' if the verification was incomplete, 'blocked' if you didn't even reach the flow, 'failed'/'verified' only if you already had enough evidence.",
         4
       );
       transcript.push(...rescue.transcript);
       endInfo = rescue.end;
     } catch (error) {
-      transcript.push(`[scout] Resgate de veredito falhou: ${error instanceof Error ? error.message : String(error)}`);
+      transcript.push(`[scout] Verdict rescue failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -133,7 +133,7 @@ Regras:
     const cause = mainCause ?? describeNoVerdict(endInfo, config.maxTurns);
     return {
       verdict: "blocked",
-      reason: `Falha do RUNNER, não veredito de UI: ${cause}; scout_verdict não foi chamado nem no resgate de veredito.`,
+      reason: `RUNNER failure, not a UI verdict: ${cause}; scout_verdict was not called, even in the verdict rescue.`,
       steps,
       transcript,
       runnerFailure: cause,

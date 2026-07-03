@@ -62,7 +62,7 @@ function fakeSession(): { session: BrowserSession; calls: string[] } {
     tabCount: () => 1,
     click: async (ref: number) => {
       calls.push(`click:${ref}`);
-      return target("Entrar");
+      return target("Sign in");
     },
     fill: async (ref: number, value: string) => {
       calls.push(`fill:${ref}:${value}`);
@@ -113,11 +113,11 @@ function buildRun(
 
 test("ai-sdk engine drives the full tool sequence and captures the verdict", async () => {
   const h = buildRun([
-    turn({ text: "vou navegar", toolName: "browser_navigate", input: { url: "/login" } }),
+    turn({ text: "will navigate", toolName: "browser_navigate", input: { url: "/login" } }),
     turn({ toolName: "browser_click", input: { ref: 1 } }),
-    turn({ toolName: "browser_assert", input: { visibleText: "Bem-vindo" } }),
-    turn({ text: "tudo certo", toolName: "scout_verdict", input: { verdict: "verified", reason: "ok" } }),
-    turn({ text: "feito", finishReason: "stop" }),
+    turn({ toolName: "browser_assert", input: { visibleText: "Welcome" } }),
+    turn({ text: "all good", toolName: "scout_verdict", input: { verdict: "verified", reason: "ok" } }),
+    turn({ text: "done", finishReason: "stop" }),
   ]);
 
   const session = await h.run();
@@ -131,9 +131,9 @@ test("ai-sdk engine drives the full tool sequence and captures the verdict", asy
   // Verdict captured through the engine-neutral sink.
   assert.deepEqual(h.getVerdict(), { verdict: "verified", reason: "ok" });
   // Browser was actually driven.
-  assert.deepEqual(h.calls, ["navigate:/login", "click:1", "assertVisible:Bem-vindo"]);
+  assert.deepEqual(h.calls, ["navigate:/login", "click:1", "assertVisible:Welcome"]);
   // Assistant text collected into the transcript.
-  assert.ok(session.transcript.includes("vou navegar"));
+  assert.ok(session.transcript.includes("will navigate"));
   assert.equal(session.end.subtype, "success");
 });
 

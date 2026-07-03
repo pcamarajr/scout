@@ -54,7 +54,7 @@ test("matchNetwork: reports a miss when nothing matches", async () => {
   const entries = [req("GET", "https://app.test/api/me", 200)];
   const r = await matchNetwork(entries, { method: "POST", urlGlob: "**/api/checkout" });
   assert.equal(r.ok, false);
-  assert.match(r.reason ?? "", /Nenhum request/);
+  assert.match(r.reason ?? "", /No observed request/);
 });
 
 test("matchNetwork: responseIncludes requires all substrings in one response", async () => {

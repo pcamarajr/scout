@@ -40,15 +40,15 @@ export interface ScoutToolContext {
 
 const ok = (text: string): ToolResult => ({ text });
 const fail = (error: unknown): ToolResult => ({
-  text: `ERRO: ${error instanceof Error ? error.message : String(error)}`,
+  text: `ERROR: ${error instanceof Error ? error.message : String(error)}`,
   isError: true,
 });
 
 /**
- * Builds the browser tools + scout_verdict as engine-neutral definitions.
- * The Portuguese descriptions/messages are intentionally verbatim from the
- * original ai-runner — they are part of the verifier's behavior and are tracked
- * for a separate English-sweep chore, NOT to be translated here.
+ * Builds the browser tools + scout_verdict as engine-neutral definitions. Each
+ * tool wraps a BrowserSession action, records the deterministic Step it produced
+ * (via `record`), and returns an updated page snapshot so the agent can decide
+ * its next move; scout_verdict writes the run's verdict through `setVerdict`.
  */
 export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
   const { session, config, record, setVerdict } = ctx;
@@ -73,8 +73,8 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
   return [
     define(
       "browser_navigate",
-      "Navega para uma URL (absoluta ou relativa ao baseUrl do app). Para tokens/segredos na URL use placeholder $ENV:VAR_NAME — resolvido em runtime, nunca passa por você.",
-      z.object({ url: z.string().describe("Ex: /login, /renovar?token=$ENV:TOKEN ou https://...") }),
+      "Navigates to a URL (absolute or relative to the app's baseUrl). For tokens/secrets in the URL use the placeholder $ENV:VAR_NAME — resolved at runtime, never passes through you.",
+      z.object({ url: z.string().describe("E.g. /login, /renew?token=$ENV:TOKEN or https://...") }),
       async ({ url }) => {
         try {
           await session.navigate(url);
@@ -87,7 +87,7 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_snapshot",
-      "Retorna o estado atual da página: URL, título, elementos interativos numerados [ref] e texto visível. Use sempre que precisar decidir a próxima ação.",
+      "Returns the current page state: URL, title, numbered interactive elements [ref] and visible text. Use it whenever you need to decide the next action.",
       z.object({}),
       async () => {
         try {
@@ -99,8 +99,8 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_click",
-      "Clica no elemento identificado pelo [ref] do último snapshot.",
-      z.object({ ref: z.number().int().describe("Ref numérico do snapshot") }),
+      "Clicks the element identified by the [ref] from the last snapshot.",
+      z.object({ ref: z.number().int().describe("Numeric ref from the snapshot") }),
       async ({ ref }) => {
         try {
           const before = session.tabCount();
@@ -108,9 +108,9 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
           record({ kind: "click", target });
           const opened =
             session.tabCount() > before
-              ? "\n\n⚠️ Um novo tab/aba foi aberto por esse clique. Use browser_switch_tab para interagir com ele antes de continuar."
+              ? "\n\n⚠️ A new tab was opened by this click. Use browser_switch_tab to interact with it before continuing."
               : "";
-          return ok(`Cliquei em ${target.description}.${opened}\n\n${await afterAction()}`);
+          return ok(`Clicked ${target.description}.${opened}\n\n${await afterAction()}`);
         } catch (e) {
           return fail(e);
         }
@@ -118,18 +118,18 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_switch_tab",
-      "Troca o controle para outro tab/aba do navegador (ex: após um clique que abre um popup). Sem urlGlob, vai para o tab mais recém-aberto. Com urlGlob, vai para o tab cuja URL casa o padrão (* dentro de um segmento, ** entre segmentos). Espera o tab carregar. Vira passo determinístico.",
+      "Switches control to another browser tab (e.g. after a click that opens a popup). Without urlGlob, goes to the most recently opened tab. With urlGlob, goes to the tab whose URL matches the pattern (* within a segment, ** across segments). Waits for the tab to load. Becomes a deterministic step.",
       z.object({
         urlGlob: z
           .string()
           .optional()
-          .describe("Glob da URL do tab alvo, ex: **/booking**. Omitido = tab mais recente."),
+          .describe("Glob of the target tab's URL, e.g. **/booking**. Omitted = most recent tab."),
       }),
       async ({ urlGlob }) => {
         try {
           await session.switchTab(urlGlob);
           record({ kind: "switchTab", ...(urlGlob ? { urlGlob } : {}) });
-          return ok(`Troquei para o tab: ${session.page.url()}.\n\n${await afterAction()}`);
+          return ok(`Switched to tab: ${session.page.url()}.\n\n${await afterAction()}`);
         } catch (e) {
           return fail(e);
         }
@@ -137,16 +137,16 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_fill",
-      "Preenche um campo. Para credenciais/segredos use placeholder $ENV:VAR_NAME — o valor real vem do ambiente e nunca passa por você.",
+      "Fills a field. For credentials/secrets use the placeholder $ENV:VAR_NAME — the real value comes from the environment and never passes through you.",
       z.object({
         ref: z.number().int(),
-        value: z.string().describe("Texto literal ou $ENV:VAR_NAME"),
+        value: z.string().describe("Literal text or $ENV:VAR_NAME"),
       }),
       async ({ ref, value }) => {
         try {
           const target = await session.fill(ref, resolveEnvValue(value));
           record({ kind: "fill", target, value });
-          return ok(`Preenchi ${target.description}.`);
+          return ok(`Filled ${target.description}.`);
         } catch (e) {
           return fail(e);
         }
@@ -154,13 +154,13 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_select",
-      "Seleciona uma opção em um <select> pelo value ou label.",
+      "Selects an option in a <select> by value or label.",
       z.object({ ref: z.number().int(), value: z.string() }),
       async ({ ref, value }) => {
         try {
           const target = await session.select(ref, resolveEnvValue(value));
           record({ kind: "select", target, value });
-          return ok(`Selecionei "${value}" em ${target.description}.\n\n${await afterAction()}`);
+          return ok(`Selected "${value}" in ${target.description}.\n\n${await afterAction()}`);
         } catch (e) {
           return fail(e);
         }
@@ -168,7 +168,7 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_press",
-      "Pressiona uma tecla (Enter, Escape, Tab, ArrowDown...).",
+      "Presses a key (Enter, Escape, Tab, ArrowDown...).",
       z.object({ key: z.string() }),
       async ({ key }) => {
         try {
@@ -182,12 +182,12 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_wheel",
-      "Dispara um gesto de scroll (roda do mouse) na posição (x, y) — omitidos = centro do viewport. deltaY positivo rola para baixo. Use em UIs guiadas por scroll/gesto (feeds verticais, carrosséis, paginação por swipe) que não reagem a teclado.",
+      "Dispatches a scroll gesture (mouse wheel) at position (x, y) — omitted = viewport center. Positive deltaY scrolls down. Use on scroll/gesture-driven UIs (vertical feeds, carousels, swipe pagination) that don't respond to the keyboard.",
       z.object({
-        deltaX: z.number().describe("Delta horizontal em px (positivo = direita)"),
-        deltaY: z.number().describe("Delta vertical em px (positivo = para baixo)"),
-        x: z.number().int().optional().describe("Posição X do gesto (omitido = centro)"),
-        y: z.number().int().optional().describe("Posição Y do gesto (omitido = centro)"),
+        deltaX: z.number().describe("Horizontal delta in px (positive = right)"),
+        deltaY: z.number().describe("Vertical delta in px (positive = down)"),
+        x: z.number().int().optional().describe("Gesture X position (omitted = center)"),
+        y: z.number().int().optional().describe("Gesture Y position (omitted = center)"),
       }),
       async ({ deltaX, deltaY, x, y }) => {
         try {
@@ -207,7 +207,7 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_drag",
-      "Arrasta o mouse de (fromX, fromY) até (toX, toY) — down, movimento em passos intermediários, up. Emula swipe/arrasto (avançar item num feed, fechar bottom-sheet, slider). Coordenadas em px relativas ao viewport.",
+      "Drags the mouse from (fromX, fromY) to (toX, toY) — down, movement in intermediate steps, up. Emulates swipe/drag (advancing an item in a feed, closing a bottom-sheet, slider). Coordinates in px relative to the viewport.",
       z.object({
         fromX: z.number().int(),
         fromY: z.number().int(),
@@ -226,16 +226,16 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_wait_for",
-      "Espera texto aparecer na página OU a URL conter um trecho. Use após ações que disparam carregamento.",
+      "Waits for text to appear on the page OR the URL to contain a substring. Use after actions that trigger loading.",
       z.object({
-        text: z.string().optional().describe("Texto que deve ficar visível"),
-        urlContains: z.string().optional().describe("Trecho esperado na URL"),
+        text: z.string().optional().describe("Text that should become visible"),
+        urlContains: z.string().optional().describe("Substring expected in the URL"),
         timeoutMs: z
           .number()
           .int()
           .positive()
           .optional()
-          .describe("Timeout em ms desta espera (default 10000)"),
+          .describe("Timeout in ms for this wait (default 10000)"),
       }),
       async ({ text, urlContains, timeoutMs }) => {
         try {
@@ -259,22 +259,22 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_assert",
-      "Registra uma verificação do comportamento esperado. Use para CADA expectativa do cenário — essas asserções viram o teste determinístico.",
+      "Records a check of the expected behavior. Use it for EVERY scenario expectation — these assertions become the deterministic test.",
       z.object({
-        visibleText: z.string().optional().describe("Texto que DEVE estar visível"),
-        notVisibleText: z.string().optional().describe("Texto que NÃO deve estar visível"),
-        urlContains: z.string().optional().describe("Trecho que a URL deve conter"),
+        visibleText: z.string().optional().describe("Text that MUST be visible"),
+        notVisibleText: z.string().optional().describe("Text that must NOT be visible"),
+        urlContains: z.string().optional().describe("Substring the URL must contain"),
         timeoutMs: z
           .number()
           .int()
           .positive()
           .optional()
-          .describe("Timeout em ms destas asserções (default 10000)"),
+          .describe("Timeout in ms for these assertions (default 10000)"),
         oneShot: z
           .boolean()
           .optional()
           .describe(
-            "Só para visibleText: espera a página assentar (network idle, cap 2s) e checa UMA vez em vez de pollar o timeout inteiro. Use apenas quando o texto já deveria estar presente na página carregada — conteúdo que chega tarde (streaming, hidratação lenta) precisa do poll default."
+            "For visibleText only: waits for the page to settle (network idle, capped at 2s) and checks ONCE instead of polling the whole timeout. Use only when the text should already be present on the loaded page — content that arrives late (streaming, slow hydration) needs the default poll."
           ),
       }),
       async ({ visibleText, notVisibleText, urlContains, timeoutMs, oneShot }) => {
@@ -304,7 +304,7 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
               ...(timeoutMs ? { timeout: timeoutMs } : {}),
             });
           }
-          return ok("Asserção passou.");
+          return ok("Assertion passed.");
         } catch (e) {
           return fail(e);
         }
@@ -312,7 +312,7 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_inspect_logs",
-      "Mostra o que o tab ATIVO registrou: requests de rede (método, status, URL) e mensagens de console — errors/warnings E outras (log/debug/info). Use ANTES de browser_assert_network / browser_assert_no_console_errors / browser_assert_console_message para ver o que de fato aconteceu e escrever uma asserção tolerante (case por padrão de URL + status ou por um trecho ESTÁVEL da mensagem, nunca por valores voláteis).",
+      "Shows what the ACTIVE tab recorded: network requests (method, status, URL) and console messages — errors/warnings AND others (log/debug/info). Use it BEFORE browser_assert_network / browser_assert_no_console_errors / browser_assert_console_message to see what actually happened and write a tolerant assertion (match by URL pattern + status or by a STABLE part of the message, never by volatile values).",
       z.object({}),
       async () => {
         try {
@@ -324,25 +324,25 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_assert_network",
-      'Verifica que uma chamada de rede esperada aconteceu. Case o request por método + padrão de URL (urlGlob com * e **) e, opcionalmente, status. Para inspecionar o corpo da resposta use responseIncludes com trechos ESTÁVEIS (nomes de campos como "orderId"), nunca valores voláteis (ids, timestamps). Vira teste determinístico.',
+      'Verifies that an expected network call happened. Match the request by method + URL pattern (urlGlob with * and **) and, optionally, status. To inspect the response body use responseIncludes with STABLE substrings (field names like "orderId"), never volatile values (ids, timestamps). Becomes a deterministic test.',
       z.object({
-        urlGlob: z.string().describe("Padrão da URL, ex: **/api/checkout/**"),
-        method: z.string().optional().describe("GET, POST, ... (omitido = qualquer método)"),
+        urlGlob: z.string().describe("URL pattern, e.g. **/api/checkout/**"),
+        method: z.string().optional().describe("GET, POST, ... (omitted = any method)"),
         status: z
           .union([z.number().int(), z.enum(["2xx", "3xx", "4xx", "5xx"])])
           .optional()
-          .describe("Status exato (200) ou classe (2xx)"),
+          .describe("Exact status (200) or class (2xx)"),
         responseIncludes: z
           .array(z.string())
           .optional()
-          .describe("Trechos que DEVEM aparecer no corpo da resposta"),
+          .describe("Substrings that MUST appear in the response body"),
       }),
       async ({ urlGlob, method, status, responseIncludes }) => {
         try {
           await session.assertNetwork({ urlGlob, method, status, responseIncludes });
           record({ kind: "assertNetwork", urlGlob, method, status, responseIncludes });
           return ok(
-            `Asserção de rede passou: ${method ?? "ANY"} ${urlGlob}${status ? ` (status ${status})` : ""}.`
+            `Network assertion passed: ${method ?? "ANY"} ${urlGlob}${status ? ` (status ${status})` : ""}.`
           );
         } catch (e) {
           return fail(e);
@@ -351,18 +351,18 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_assert_no_console_errors",
-      "Verifica que NÃO houve erros no console do browser (console.error + exceções não capturadas) durante o fluxo. Use ignore para tolerar erros conhecidos/esperados (casa por substring). Vira teste determinístico.",
+      "Verifies that there were NO errors in the browser console (console.error + uncaught exceptions) during the flow. Use ignore to tolerate known/expected errors (matched by substring). Becomes a deterministic test.",
       z.object({
         ignore: z
           .array(z.string())
           .optional()
-          .describe("Substrings de erros conhecidos a ignorar"),
+          .describe("Substrings of known errors to ignore"),
       }),
       async ({ ignore }) => {
         try {
           await session.assertNoConsoleErrors(ignore);
           record({ kind: "assertNoConsoleErrors", ignore });
-          return ok("Nenhum erro no console.");
+          return ok("No console errors.");
         } catch (e) {
           return fail(e);
         }
@@ -370,23 +370,23 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_assert_console_message",
-      'Verifica que o console do tab ATIVO registrou uma mensagem contendo TODOS os trechos informados, casados numa MESMA mensagem (não espalhados). Rode browser_inspect_logs antes para ver o texto real e escolher trechos ESTÁVEIS (ex: o prefixo "DEBUG:[FEATURE/...]"), nunca valores voláteis. Opcionalmente restrinja por tipo. Vira teste determinístico.',
+      'Verifies that the ACTIVE tab\'s console logged a message containing ALL of the given substrings, matched within a SINGLE message (not spread across messages). Run browser_inspect_logs first to see the real text and pick STABLE substrings (e.g. the prefix "DEBUG:[FEATURE/...]"), never volatile values. Optionally constrain by type. Becomes a deterministic test.',
       z.object({
         includes: z
           .array(z.string().min(1))
           .min(1)
-          .describe("Trechos NÃO-VAZIOS que devem TODOS aparecer numa mesma mensagem"),
+          .describe("NON-EMPTY substrings that must ALL appear within a single message"),
         type: z
           .string()
           .optional()
-          .describe("Tipo do console: log, debug, info, warning, error (omitido = qualquer)"),
+          .describe("Console type: log, debug, info, warning, error (omitted = any)"),
       }),
       async ({ includes, type }) => {
         try {
           await session.assertConsoleMessage(includes, type);
           record({ kind: "assertConsoleMessage", includes, ...(type ? { type } : {}) });
           return ok(
-            `Asserção de console passou: mensagem contendo ${includes.join(" + ")}${type ? ` (tipo ${type})` : ""}.`
+            `Console assertion passed: message containing ${includes.join(" + ")}${type ? ` (type ${type})` : ""}.`
           );
         } catch (e) {
           return fail(e);
@@ -395,13 +395,13 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_screenshot",
-      "Captura screenshot como evidência. Use em momentos-chave (estado final, paywall, erro encontrado).",
-      z.object({ label: z.string().describe("Rótulo curto, ex: 'paywall-exibido'") }),
+      "Captures a screenshot as evidence. Use it at key moments (final state, paywall, error encountered).",
+      z.object({ label: z.string().describe("Short label, e.g. 'paywall-shown'") }),
       async ({ label }) => {
         try {
           await session.screenshot(label);
           record({ kind: "screenshot", label });
-          return ok(`Screenshot "${label}" salvo.`);
+          return ok(`Screenshot "${label}" saved.`);
         } catch (e) {
           return fail(e);
         }
@@ -409,14 +409,14 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "scout_verdict",
-      "OBRIGATÓRIO ao final: registra o veredito da verificação. Após chamar, encerre.",
+      "MANDATORY at the end: records the verification verdict. After calling it, stop.",
       z.object({
         verdict: z.enum(["verified", "failed", "partial", "blocked"]),
-        reason: z.string().describe("Justificativa objetiva, citando o que foi observado"),
+        reason: z.string().describe("Objective justification, citing what was observed"),
       }),
       async (args) => {
         setVerdict(args);
-        return ok("Veredito registrado. Encerre agora.");
+        return ok("Verdict recorded. Stop now.");
       }
     ),
   ];

@@ -156,7 +156,7 @@ export function resolveStorageState(
   const profile = config.profiles[profileName];
   if (!profile) {
     throw new Error(
-      `Profile "${profileName}" não existe no ${CONFIG_FILE}. Profiles: ${Object.keys(config.profiles).join(", ") || "(nenhum)"}`
+      `Profile "${profileName}" does not exist in ${CONFIG_FILE}. Profiles: ${Object.keys(config.profiles).join(", ") || "(none)"}`
     );
   }
   const statePath = path.resolve(
@@ -164,12 +164,12 @@ export function resolveStorageState(
     profile.storageState ?? path.join(SCOUT_DIR, "state", `${profileName}.json`)
   );
   if (!fs.existsSync(statePath)) {
-    // Caminho explícito configurado e ausente = erro do usuário.
-    // Caminho default ausente = contexto fresh — cobre profiles logged-out
-    // e profiles que logam dentro do cenário via $ENV.
+    // Explicit configured path that is missing = user error.
+    // Missing default path = fresh context — covers logged-out profiles
+    // and profiles that log in within the scenario via $ENV.
     if (profile.storageState) {
       throw new Error(
-        `storageState do profile "${profileName}" não encontrado em ${statePath} (caminho configurado em ${CONFIG_FILE}). Rode: scout login ${profileName}`
+        `storageState for profile "${profileName}" not found at ${statePath} (path configured in ${CONFIG_FILE}). Run: scout login ${profileName}`
       );
     }
     return undefined;
