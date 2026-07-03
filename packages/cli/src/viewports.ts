@@ -51,8 +51,15 @@ export function viewportRegistry(config: ScoutConfig): Record<string, Viewport> 
   return { ...BUILTIN_VIEWPORTS, ...(config.viewports ?? {}) };
 }
 
+/**
+ * The slice of config that drives viewport selection. Both fields are
+ * optional, so report helpers can run on a bare `{}` (0.10-style two-argument
+ * calls) and fall back to the built-in default.
+ */
+export type ViewportSelectionConfig = Pick<ScoutConfig, "viewports" | "defaultViewport">;
+
 /** The default viewport name — config override, else the built-in. */
-export function defaultViewportName(config: ScoutConfig): string {
+export function defaultViewportName(config: ViewportSelectionConfig): string {
   return config.defaultViewport ?? DEFAULT_VIEWPORT;
 }
 
@@ -102,7 +109,7 @@ export function resolveViewport(name: string, config: ScoutConfig): ResolvedView
  */
 export function runnableViewports(
   scenario: Scenario,
-  config: ScoutConfig,
+  config: ViewportSelectionConfig,
   override?: string
 ): string[] {
   if (override) return [override];
@@ -116,7 +123,7 @@ export interface ScenarioViewport {
 }
 
 /** Expand scenarios into their (scenario × viewport) units, for list/report. */
-export function expandScenarios(scenarios: Scenario[], config: ScoutConfig): ScenarioViewport[] {
+export function expandScenarios(scenarios: Scenario[], config: ViewportSelectionConfig): ScenarioViewport[] {
   return scenarios.flatMap((scenario) =>
     runnableViewports(scenario, config).map((viewport) => ({ scenario, viewport }))
   );

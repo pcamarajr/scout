@@ -1,7 +1,6 @@
 import path from "node:path";
 import { describeStep } from "./runner/script-runner.js";
-import { expandScenarios, runKey } from "./viewports.js";
-import type { ScoutConfig } from "./config.js";
+import { expandScenarios, runKey, type ViewportSelectionConfig } from "./viewports.js";
 import type { RunResult, Scenario, ScenarioStatus, Step } from "./types.js";
 
 const ICON: Record<ScenarioStatus, string> = {
@@ -99,11 +98,30 @@ export function runStatus(slug: string, viewport: string, latest: Map<string, Ru
   return latest.get(runKey(slug, viewport))?.verdict ?? "pending";
 }
 
+/**
+ * Status of a scenario regardless of viewport: the verdict of its most recent
+ * run, else `"pending"` — the pre-0.11 per-slug semantics. Scans map values,
+ * so it accepts both 0.10 maps (keyed by slug) and current ones (keyed
+ * `<slug>@<viewport>`).
+ *
+ * @deprecated Since 0.11 each (scenario × viewport) is verified independently —
+ * use {@link runStatus} for a per-viewport status. Kept as a stable alias for
+ * pre-0.11 consumers.
+ */
+export function scenarioStatus(slug: string, latest: Map<string, RunResult>): ScenarioStatus {
+  let newest: RunResult | undefined;
+  for (const run of latest.values()) {
+    if (run.slug !== slug) continue;
+    if (!newest || run.startedAt > newest.startedAt) newest = run;
+  }
+  return newest?.verdict ?? "pending";
+}
+
 /** Structured suite report (the `scout report --json` output) — for CI/PR gates. */
 export function buildReport(
   scenarios: Scenario[],
   latest: Map<string, RunResult>,
-  config: ScoutConfig
+  config: ViewportSelectionConfig = {}
 ): ReportData {
   const rows: ReportScenario[] = expandScenarios(scenarios, config).map(({ scenario, viewport }) => ({
     slug: scenario.slug,
@@ -132,7 +150,7 @@ export function buildReport(
 export function renderSummary(
   scenarios: Scenario[],
   latest: Map<string, RunResult>,
-  config: ScoutConfig
+  config: ViewportSelectionConfig = {}
 ): string {
   const units = expandScenarios(scenarios, config);
   const lines = [
