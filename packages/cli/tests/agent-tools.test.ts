@@ -33,6 +33,10 @@ function fakeSession(overrides: Partial<Record<string, unknown>> = {}): {
       return target("Plan");
     },
     press: async (key: string) => void calls.push(`press:${key}`),
+    wheel: async (dx: number, dy: number, x?: number, y?: number) =>
+      void calls.push(`wheel:${dx}:${dy}:${x ?? "center"}:${y ?? "center"}`),
+    drag: async (fx: number, fy: number, tx: number, ty: number) =>
+      void calls.push(`drag:${fx}:${fy}:${tx}:${ty}`),
     waitForText: async (text: string) => void calls.push(`waitForText:${text}`),
     waitForUrl: async (p: string) => void calls.push(`waitForUrl:${p}`),
     assertVisible: async (text: string) => void calls.push(`assertVisible:${text}`),
@@ -86,6 +90,7 @@ test("exposes the browser tools plus scout_verdict", () => {
       "browser_assert_network",
       "browser_assert_no_console_errors",
       "browser_click",
+      "browser_drag",
       "browser_fill",
       "browser_inspect_logs",
       "browser_navigate",
@@ -95,6 +100,7 @@ test("exposes the browser tools plus scout_verdict", () => {
       "browser_snapshot",
       "browser_switch_tab",
       "browser_wait_for",
+      "browser_wheel",
       "scout_verdict",
     ]
   );
@@ -204,6 +210,27 @@ test("a handler that throws is normalized to an isError result and records nothi
   assert.equal(r.isError, true);
   assert.match(r.text, /ERRO: net down/);
   assert.equal(steps.length, 0);
+});
+
+test("browser_wheel dispatches the gesture and records a wheel step", async () => {
+  const { byName, steps, calls } = harness();
+
+  await byName("browser_wheel").handler({ deltaX: 0, deltaY: 400, x: 200, y: 300 });
+  assert.deepEqual(steps, [{ kind: "wheel", deltaX: 0, deltaY: 400, x: 200, y: 300 }]);
+  assert.deepEqual(calls, ["wheel:0:400:200:300"]);
+
+  // No coordinates → the step omits x/y (replay recenters from the viewport).
+  steps.length = 0;
+  await byName("browser_wheel").handler({ deltaX: 0, deltaY: -120 });
+  assert.deepEqual(steps, [{ kind: "wheel", deltaX: 0, deltaY: -120 }]);
+  assert.ok(calls.includes("wheel:0:-120:center:center"));
+});
+
+test("browser_drag drags between points and records a drag step", async () => {
+  const { byName, steps, calls } = harness();
+  await byName("browser_drag").handler({ fromX: 195, fromY: 600, toX: 195, toY: 200 });
+  assert.deepEqual(steps, [{ kind: "drag", fromX: 195, fromY: 600, toX: 195, toY: 200 }]);
+  assert.deepEqual(calls, ["drag:195:600:195:200"]);
 });
 
 test("browser_switch_tab switches and records a switchTab step", async () => {

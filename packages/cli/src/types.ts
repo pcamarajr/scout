@@ -102,6 +102,8 @@ export type Step =
   | { kind: "fill"; target: Target; value: string }
   | { kind: "select"; target: Target; value: string }
   | { kind: "press"; key: string }
+  | { kind: "wheel"; deltaX: number; deltaY: number; x?: number; y?: number }
+  | { kind: "drag"; fromX: number; fromY: number; toX: number; toY: number }
   | { kind: "waitForText"; text: string }
   | { kind: "waitForUrl"; pattern: string }
   | { kind: "assertVisible"; text: string }
