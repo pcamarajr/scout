@@ -32,16 +32,16 @@ export interface QueryEndInfo {
  * an agent that simply stopped talking.
  */
 export function describeNoVerdict(end: QueryEndInfo | undefined, maxTurns: number): string {
-  if (!end) return "a sessão do agente terminou sem emitir resultado (subprocesso morreu?)";
+  if (!end) return "the agent session ended without emitting a result (subprocess died?)";
   switch (end.subtype) {
     case "error_max_turns":
-      return `o agente estourou o limite de ${maxTurns} turns sem chamar scout_verdict`;
+      return `the agent hit the ${maxTurns}-turn limit without calling scout_verdict`;
     case "error_during_execution":
-      return `erro durante a execução do agente${end.errors?.length ? `: ${end.errors.join("; ")}` : ""}`;
+      return `error during the agent's execution${end.errors?.length ? `: ${end.errors.join("; ")}` : ""}`;
     case "success":
-      return "o agente encerrou normalmente sem chamar scout_verdict";
+      return "the agent ended normally without calling scout_verdict";
     default:
-      return `a sessão do agente terminou com "${end.subtype}"${end.errors?.length ? `: ${end.errors.join("; ")}` : ""}`;
+      return `the agent session ended with "${end.subtype}"${end.errors?.length ? `: ${end.errors.join("; ")}` : ""}`;
   }
 }
 

@@ -16,8 +16,8 @@ import {
 } from "../src/runner/video.js";
 
 const TIMELINE: TimelineEntry[] = [
-  { label: "1/2 · navegar para /login", tMs: 200 },
-  { label: "2/2 · verificar texto visível \"Dashboard\"", tMs: 2200 },
+  { label: "1/2 · navigate to /login", tMs: 200 },
+  { label: "2/2 · assert text visible \"Dashboard\"", tMs: 2200 },
 ];
 
 test("pacingFor maps videoSpeed to slowMo/dwell/cursor-travel; 1.0 is natural speed", () => {
@@ -117,9 +117,9 @@ test("buildOverlayFilter bakes title, captions and verdict card", () => {
   });
   assert.match(graph, /drawtext/);
   assert.match(graph, /scout demo/);
-  assert.match(graph, /VERIFICADO/);
+  assert.match(graph, /VERIFIED/);
   assert.match(graph, /Free user hits paywall/);
-  assert.match(graph, /navegar para \/login/);
+  assert.match(graph, /navigate to \/login/);
   assert.match(graph, /expansion=none/); // % is never interpreted
 });
 
@@ -133,7 +133,7 @@ test("buildOverlayFilter escapes ':' so a URL caption can't break the filtergrap
     durationMs: 6000,
     scenarioName: "Login",
     verdict: "verified",
-    timeline: [{ label: "1/1 · navegar para https://x.co/a", tMs: 200 }],
+    timeline: [{ label: "1/1 · navigate to https://x.co/a", tMs: 200 }],
     pacing: pacingFor(0.35),
   });
   assert.ok(graph.includes("https\\://"), "the colon must be escaped as \\:");
@@ -155,7 +155,7 @@ test("buildOverlayFilter strips quotes/backslashes and truncates overflowing tit
   assert.ok(!graph.includes("'great'"), "single quotes must be removed");
   assert.ok(!graph.includes("\\o/"), "backslashes must be removed");
   assert.match(graph, /…/); // long title truncated with ellipsis
-  assert.match(graph, /FALHOU/);
+  assert.match(graph, /FAILED/);
 });
 
 test(

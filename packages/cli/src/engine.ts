@@ -342,7 +342,7 @@ async function runAi(
   let trace: string | undefined;
 
   const { outcome, attempts } = await runAiWithRetry(async (attemptNo) => {
-    if (attemptNo > 1) transcript.push(`[scout] Tentativa ${attemptNo}: run anterior falhou no runner — browser novo, agente novo.`);
+    if (attemptNo > 1) transcript.push(`[scout] Attempt ${attemptNo}: previous run failed in the runner — new browser, new agent.`);
     const session = await BrowserSession.launch({
       baseUrl: config.baseUrl,
       headless: opts.headed ? false : config.headless,
@@ -381,7 +381,7 @@ async function runAi(
       mode: "ai",
       verdict: outcome.verdict,
       reason: outcome.runnerFailure
-        ? `${outcome.reason} (${attempts} tentativas de AI run — investigue os artifacts em ${runDir})`
+        ? `${outcome.reason} (${attempts} AI run attempts — investigate the artifacts in ${runDir})`
         : outcome.reason,
       stepCount: outcome.steps.length,
       runDir,

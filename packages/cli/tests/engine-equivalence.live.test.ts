@@ -28,7 +28,7 @@ const scenario: Scenario = {
   slug: "live/example-loads",
   name: "example.com loads",
   scenario:
-    "Navegue para https://example.com e confirme que o título 'Example Domain' está visível. Em seguida chame scout_verdict.",
+    "Navigate to https://example.com and confirm that the title 'Example Domain' is visible. Then call scout_verdict.",
   feature: "live",
   file: "(live harness)",
 };

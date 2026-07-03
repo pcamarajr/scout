@@ -57,7 +57,7 @@ function fakeSession(overrides: Partial<Record<string, unknown>> = {}): {
     tabCount: () => 1,
     switchTab: async (urlGlob?: string) => void calls.push(`switchTab:${urlGlob ?? "newest"}`),
     page: { url: () => "http://localhost:3000/x" },
-    formatLogs: () => "Network (0 requests total, últimos 0):\n  (nenhum)",
+    formatLogs: () => "Network (0 requests total, last 0):\n  (none)",
     screenshot: async (label: string) => {
       calls.push(`screenshot:${label}`);
       return `/runs/${label}.png`;
@@ -237,12 +237,12 @@ test("browser_inspect_logs is read-only — returns the dump and records nothing
 test("a failing network assertion is an isError result and records nothing", async () => {
   const { byName, steps } = harness({
     assertNetwork: async () => {
-      throw new Error("Nenhum request observado casou com POST **/api/x.");
+      throw new Error("No observed request matched POST **/api/x.");
     },
   });
   const r = await byName("browser_assert_network").handler({ urlGlob: "**/api/x", method: "POST" });
   assert.equal(r.isError, true);
-  assert.match(r.text, /Nenhum request observado/);
+  assert.match(r.text, /No observed request/);
   assert.equal(steps.length, 0);
 });
 
@@ -262,7 +262,7 @@ test("a handler that throws is normalized to an isError result and records nothi
   });
   const r = await byName("browser_navigate").handler({ url: "/x" });
   assert.equal(r.isError, true);
-  assert.match(r.text, /ERRO: net down/);
+  assert.match(r.text, /ERROR: net down/);
   assert.equal(steps.length, 0);
 });
 
@@ -306,13 +306,13 @@ test("browser_click hints when a click opens a new tab", async () => {
   const { byName } = harness({ tabCount: () => count });
   // Simulate the click opening a tab: count grows during the handler.
   const res = await byName("browser_click").handler({ ref: 1 });
-  assert.doesNotMatch(res.text, /novo tab/); // no growth → no hint
+  assert.doesNotMatch(res.text, /new tab/); // no growth → no hint
 
   const { byName: byName2 } = harness({
     tabCount: () => count++, // 1 before click, 2 after
   });
   const res2 = await byName2("browser_click").handler({ ref: 1 });
-  assert.match(res2.text, /novo tab\/aba foi aberto/);
+  assert.match(res2.text, /A new tab was opened/);
 });
 
 test("browser_assert_console_message records an assertConsoleMessage step", async () => {

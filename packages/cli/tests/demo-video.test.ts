@@ -114,7 +114,7 @@ test("both attempts failing yields no video and surfaces the failing step", asyn
       passed: false,
       webm: writeWebm(runDir),
       timeline: TIMELINE,
-      failure: 'step 3 (verificar texto visível "Manage my preferences"): Timeout 10000ms exceeded.',
+      failure: 'step 3 (assert text visible "Manage my preferences"): Timeout 10000ms exceeded.',
     });
     let out: string | undefined = "sentinel";
     const warnings = await captureWarnings(async () => {

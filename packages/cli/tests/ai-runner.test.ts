@@ -36,7 +36,7 @@ test("relativizeUrl leaves external and already-relative URLs untouched", () => 
 
 test("describeNoVerdict names the turn budget on error_max_turns", () => {
   const msg = describeNoVerdict({ subtype: "error_max_turns", numTurns: 40 }, 40);
-  assert.match(msg, /40 turns/);
+  assert.match(msg, /40-turn/);
   assert.match(msg, /scout_verdict/);
 });
 
@@ -46,11 +46,11 @@ test("describeNoVerdict surfaces SDK execution errors", () => {
 });
 
 test("describeNoVerdict distinguishes a normally-ended-but-mute agent", () => {
-  assert.match(describeNoVerdict({ subtype: "success" }, 40), /encerrou normalmente/);
+  assert.match(describeNoVerdict({ subtype: "success" }, 40), /ended normally/);
 });
 
 test("describeNoVerdict handles a query that produced no result message", () => {
-  assert.match(describeNoVerdict(undefined, 40), /sem emitir resultado/);
+  assert.match(describeNoVerdict(undefined, 40), /without emitting a result/);
 });
 
 // --- runAiWithRetry: retry runner failures once, never retry real verdicts ---

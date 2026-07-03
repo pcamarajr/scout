@@ -25,7 +25,7 @@ export async function startMcpServer(): Promise<void> {
   server.registerTool(
     "scout_list_scenarios",
     {
-      description: "Lista os cenários de QA do projeto com status e se há script cacheado.",
+      description: "Lists the project's QA scenarios with status and whether a cached script exists.",
       inputSchema: {},
     },
     async () => {
@@ -49,20 +49,20 @@ export async function startMcpServer(): Promise<void> {
     "scout_create_scenario",
     {
       description:
-        "Cria um cenário de verificação em linguagem natural num arquivo de feature (.scout/specs/<feature>.scout.md). Descreva o FLUXO (passos do usuário) e o COMPORTAMENTO ESPERADO (o que deve/não deve acontecer). Não escreva seletores nem código — o runner descobre sozinho no browser.",
+        "Creates a natural-language verification scenario in a feature file (.scout/specs/<feature>.scout.md). Describe the FLOW (user steps) and the EXPECTED BEHAVIOR (what should/shouldn't happen). Don't write selectors or code — the runner figures it out in the browser.",
       inputSchema: {
-        feature: z.string().describe("Feature/component — o arquivo de spec onde o cenário entra (agrupa cenários relacionados)"),
-        name: z.string().describe("Nome curto do cenário (vira o heading)"),
-        scenario: z.string().describe("Fluxo + expectativas em linguagem natural"),
-        profile: z.string().optional().describe("Profile de auth de scout.config.json (omitir = anônimo)"),
-        notes: z.string().optional().describe("Contexto extra para o runner"),
+        feature: z.string().describe("Feature/component — the spec file the scenario goes into (groups related scenarios)"),
+        name: z.string().describe("Short scenario name (becomes the heading)"),
+        scenario: z.string().describe("Flow + expectations in natural language"),
+        profile: z.string().optional().describe("Auth profile from scout.config.json (omit = anonymous)"),
+        notes: z.string().optional().describe("Extra context for the runner"),
       },
     },
     async ({ feature, name, scenario, profile, notes }) => {
       const created = addScenario({ feature, name, scenario, profile, notes });
       return {
         content: [
-          { type: "text", text: `Cenário ${created.slug} criado em ${created.file}. Rode com scout_run.` },
+          { type: "text", text: `Scenario ${created.slug} created in ${created.file}. Run it with scout_run.` },
         ],
       };
     }
@@ -72,18 +72,18 @@ export async function startMcpServer(): Promise<void> {
     "scout_run",
     {
       description:
-        "Roda a verificação de um cenário (ou todos). Usa o script determinístico cacheado quando existe; cai pro agente AI no primeiro run ou quando o script quebra (self-healing). Retorna veredito + evidências.",
+        "Runs the verification of one scenario (or all). Uses the cached deterministic script when it exists; falls back to the AI agent on the first run or when the script breaks (self-healing). Returns verdict + evidence.",
       inputSchema: {
-        scenario: z.string().optional().describe("slug do cenário (<feature>/<cenário>); omitir = todos"),
-        forceAi: z.boolean().optional().describe("Ignora o cache e re-grava o script via AI"),
+        scenario: z.string().optional().describe("scenario slug (<feature>/<scenario>); omit = all"),
+        forceAi: z.boolean().optional().describe("Ignore the cache and re-record the script via AI"),
         viewport: z
           .string()
           .optional()
-          .describe("Força este viewport, ad-hoc (deve existir no registry; não persiste script). Omitir = roda os viewports declarados pelo cenário."),
+          .describe("Force this viewport, ad-hoc (must exist in the registry; does not persist a script). Omit = runs the viewports declared by the scenario."),
         baseUrl: z
           .string()
           .optional()
-          .describe("Override do app alvo só para esta execução (ex: server efêmero de um worktree). Precedência: param > SCOUT_BASE_URL > scout.config.json"),
+          .describe("Override the target app for this run only (e.g. an ephemeral server from a worktree). Precedence: param > SCOUT_BASE_URL > scout.config.json"),
       },
     },
     async ({ scenario, forceAi, viewport, baseUrl }) => {
@@ -100,7 +100,7 @@ export async function startMcpServer(): Promise<void> {
         ? all.filter((s) => s.slug === scenario || s.name === scenario)
         : all;
       if (!targets.length) {
-        return { content: [{ type: "text", text: `Nenhum cenário encontrado para "${scenario}".` }], isError: true };
+        return { content: [{ type: "text", text: `No scenario found for "${scenario}".` }], isError: true };
       }
       const results = [];
       for (const s of targets) {
@@ -136,7 +136,7 @@ export async function startMcpServer(): Promise<void> {
   server.registerTool(
     "scout_report",
     {
-      description: "Resumo markdown da suíte (embedável em corpo de PR) — status por cenário + falhas.",
+      description: "Markdown summary of the suite (embeddable in a PR body) — status per scenario + failures.",
       inputSchema: {},
     },
     async () => ({
@@ -147,13 +147,13 @@ export async function startMcpServer(): Promise<void> {
   server.registerTool(
     "scout_get_run_report",
     {
-      description: "Lê o report.md de um run específico (passe o runDir retornado por scout_run).",
+      description: "Reads the report.md of a specific run (pass the runDir returned by scout_run).",
       inputSchema: { runDir: z.string() },
     },
     async ({ runDir }) => {
       const file = path.join(runDir, "report.md");
       if (!fs.existsSync(file)) {
-        return { content: [{ type: "text", text: `Sem report em ${runDir}` }], isError: true };
+        return { content: [{ type: "text", text: `No report in ${runDir}` }], isError: true };
       }
       return { content: [{ type: "text", text: fs.readFileSync(file, "utf8") }] };
     }
