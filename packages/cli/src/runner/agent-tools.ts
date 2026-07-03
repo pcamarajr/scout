@@ -230,16 +230,26 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
       z.object({
         text: z.string().optional().describe("Texto que deve ficar visível"),
         urlContains: z.string().optional().describe("Trecho esperado na URL"),
+        timeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Timeout em ms desta espera (default 10000)"),
       }),
-      async ({ text, urlContains }) => {
+      async ({ text, urlContains, timeoutMs }) => {
         try {
           if (text) {
-            await session.waitForText(text);
-            record({ kind: "waitForText", text });
+            await session.waitForText(text, timeoutMs);
+            record({ kind: "waitForText", text, ...(timeoutMs ? { timeout: timeoutMs } : {}) });
           }
           if (urlContains) {
-            await session.waitForUrl(urlContains);
-            record({ kind: "waitForUrl", pattern: urlContains });
+            await session.waitForUrl(urlContains, timeoutMs);
+            record({
+              kind: "waitForUrl",
+              pattern: urlContains,
+              ...(timeoutMs ? { timeout: timeoutMs } : {}),
+            });
           }
           return ok(await afterAction());
         } catch (e) {
@@ -254,20 +264,45 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
         visibleText: z.string().optional().describe("Texto que DEVE estar visível"),
         notVisibleText: z.string().optional().describe("Texto que NÃO deve estar visível"),
         urlContains: z.string().optional().describe("Trecho que a URL deve conter"),
+        timeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Timeout em ms destas asserções (default 10000)"),
+        oneShot: z
+          .boolean()
+          .optional()
+          .describe(
+            "Só para visibleText: espera a página assentar (network idle, cap 2s) e checa UMA vez em vez de pollar o timeout inteiro. Use apenas quando o texto já deveria estar presente na página carregada — conteúdo que chega tarde (streaming, hidratação lenta) precisa do poll default."
+          ),
       }),
-      async ({ visibleText, notVisibleText, urlContains }) => {
+      async ({ visibleText, notVisibleText, urlContains, timeoutMs, oneShot }) => {
         try {
           if (visibleText) {
-            await session.assertVisible(visibleText);
-            record({ kind: "assertVisible", text: visibleText });
+            await session.assertVisible(visibleText, { timeout: timeoutMs, oneShot });
+            record({
+              kind: "assertVisible",
+              text: visibleText,
+              ...(timeoutMs ? { timeout: timeoutMs } : {}),
+              ...(oneShot ? { oneShot: true } : {}),
+            });
           }
           if (notVisibleText) {
-            await session.assertNotVisible(notVisibleText);
-            record({ kind: "assertNotVisible", text: notVisibleText });
+            await session.assertNotVisible(notVisibleText, timeoutMs);
+            record({
+              kind: "assertNotVisible",
+              text: notVisibleText,
+              ...(timeoutMs ? { timeout: timeoutMs } : {}),
+            });
           }
           if (urlContains) {
-            await session.assertUrl(urlContains);
-            record({ kind: "assertUrl", pattern: urlContains });
+            await session.assertUrl(urlContains, timeoutMs);
+            record({
+              kind: "assertUrl",
+              pattern: urlContains,
+              ...(timeoutMs ? { timeout: timeoutMs } : {}),
+            });
           }
           return ok("Asserção passou.");
         } catch (e) {

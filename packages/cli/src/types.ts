@@ -104,11 +104,11 @@ export type Step =
   | { kind: "press"; key: string }
   | { kind: "wheel"; deltaX: number; deltaY: number; x?: number; y?: number }
   | { kind: "drag"; fromX: number; fromY: number; toX: number; toY: number }
-  | { kind: "waitForText"; text: string }
-  | { kind: "waitForUrl"; pattern: string }
-  | { kind: "assertVisible"; text: string }
-  | { kind: "assertNotVisible"; text: string }
-  | { kind: "assertUrl"; pattern: string }
+  | { kind: "waitForText"; text: string; timeout?: number }
+  | { kind: "waitForUrl"; pattern: string; timeout?: number }
+  | { kind: "assertVisible"; text: string; timeout?: number; oneShot?: boolean }
+  | { kind: "assertNotVisible"; text: string; timeout?: number }
+  | { kind: "assertUrl"; pattern: string; timeout?: number }
   | ({ kind: "assertNetwork" } & NetworkMatcher)
   | { kind: "assertNoConsoleErrors"; ignore?: string[] }
   | { kind: "assertConsoleMessage"; includes: string[]; type?: string }

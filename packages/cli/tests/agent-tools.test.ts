@@ -37,11 +37,18 @@ function fakeSession(overrides: Partial<Record<string, unknown>> = {}): {
       void calls.push(`wheel:${dx}:${dy}:${x ?? "center"}:${y ?? "center"}`),
     drag: async (fx: number, fy: number, tx: number, ty: number) =>
       void calls.push(`drag:${fx}:${fy}:${tx}:${ty}`),
-    waitForText: async (text: string) => void calls.push(`waitForText:${text}`),
-    waitForUrl: async (p: string) => void calls.push(`waitForUrl:${p}`),
-    assertVisible: async (text: string) => void calls.push(`assertVisible:${text}`),
-    assertNotVisible: async (text: string) => void calls.push(`assertNotVisible:${text}`),
-    assertUrl: async (p: string) => void calls.push(`assertUrl:${p}`),
+    waitForText: async (text: string, timeout?: number) =>
+      void calls.push(`waitForText:${text}:${timeout ?? "default"}`),
+    waitForUrl: async (p: string, timeout?: number) =>
+      void calls.push(`waitForUrl:${p}:${timeout ?? "default"}`),
+    assertVisible: async (text: string, opts?: { timeout?: number; oneShot?: boolean }) =>
+      void calls.push(
+        `assertVisible:${text}:${opts?.timeout ?? "default"}:${opts?.oneShot ? "one-shot" : "poll"}`
+      ),
+    assertNotVisible: async (text: string, timeout?: number) =>
+      void calls.push(`assertNotVisible:${text}:${timeout ?? "default"}`),
+    assertUrl: async (p: string, timeout?: number) =>
+      void calls.push(`assertUrl:${p}:${timeout ?? "default"}`),
     assertNetwork: async (m: { urlGlob: string }) => void calls.push(`assertNetwork:${m.urlGlob}`),
     assertNoConsoleErrors: async (ignore?: string[]) =>
       void calls.push(`assertNoConsoleErrors:${(ignore ?? []).join(",")}`),
@@ -142,6 +149,53 @@ test("browser_assert records one step per provided expectation", async () => {
     { kind: "assertVisible", text: "Welcome" },
     { kind: "assertUrl", pattern: "/home" },
   ]);
+});
+
+test("browser_assert without timeout/oneShot records bare steps (backward compatible)", async () => {
+  const { byName, steps, calls } = harness();
+  await byName("browser_assert").handler({ visibleText: "Welcome" });
+  // The recorded step carries NO timeout/oneShot keys, so existing scripts and
+  // freshly recorded ones stay byte-identical to the previous format.
+  assert.deepEqual(steps, [{ kind: "assertVisible", text: "Welcome" }]);
+  assert.deepEqual(calls, ["assertVisible:Welcome:default:poll"]);
+});
+
+test("browser_assert forwards timeoutMs and oneShot and records them on the steps", async () => {
+  const { byName, steps, calls } = harness();
+  await byName("browser_assert").handler({
+    visibleText: "Total",
+    notVisibleText: "Loading",
+    urlContains: "/done",
+    timeoutMs: 1500,
+    oneShot: true,
+  });
+  assert.deepEqual(steps, [
+    { kind: "assertVisible", text: "Total", timeout: 1500, oneShot: true },
+    { kind: "assertNotVisible", text: "Loading", timeout: 1500 },
+    { kind: "assertUrl", pattern: "/done", timeout: 1500 },
+  ]);
+  assert.deepEqual(calls, [
+    "assertVisible:Total:1500:one-shot",
+    "assertNotVisible:Loading:1500",
+    "assertUrl:/done:1500",
+  ]);
+});
+
+test("browser_wait_for forwards timeoutMs and records it on the steps", async () => {
+  const { byName, steps, calls } = harness();
+  await byName("browser_wait_for").handler({ text: "Ready", urlContains: "/next", timeoutMs: 3000 });
+  assert.deepEqual(steps, [
+    { kind: "waitForText", text: "Ready", timeout: 3000 },
+    { kind: "waitForUrl", pattern: "/next", timeout: 3000 },
+  ]);
+  assert.deepEqual(calls, ["waitForText:Ready:3000", "waitForUrl:/next:3000"]);
+
+  // Without timeoutMs the steps stay bare and the session sees the default.
+  steps.length = 0;
+  calls.length = 0;
+  await byName("browser_wait_for").handler({ text: "Ready" });
+  assert.deepEqual(steps, [{ kind: "waitForText", text: "Ready" }]);
+  assert.deepEqual(calls, ["waitForText:Ready:default"]);
 });
 
 test("browser_assert_network records a network assertion with only the provided fields", async () => {

@@ -155,6 +155,13 @@ export function demoCursorStub(): string {
 
 const STEP_TIMEOUT = 10_000;
 
+/**
+ * Cap on the "let the page settle" wait of one-shot presence checks. Network
+ * idle usually resolves immediately on a loaded page; the cap only exists so
+ * an app with permanent background traffic can't stall the fast path.
+ */
+const SETTLE_TIMEOUT = 2_000;
+
 /** Cap the ring buffers so a long-running session can't grow them unbounded. */
 const NETWORK_LOG_CAP = 300;
 const CONSOLE_LOG_CAP = 500;
@@ -468,21 +475,47 @@ export class BrowserSession {
     await this.page.mouse.up();
   }
 
-  async waitForText(text: string): Promise<void> {
-    await this.page.getByText(text).first().waitFor({ state: "visible", timeout: STEP_TIMEOUT });
+  async waitForText(text: string, timeout = STEP_TIMEOUT): Promise<void> {
+    await this.page.getByText(text).first().waitFor({ state: "visible", timeout });
   }
 
-  async waitForUrl(pattern: string): Promise<void> {
-    await this.page.waitForURL((u) => u.toString().includes(pattern), { timeout: STEP_TIMEOUT });
+  async waitForUrl(pattern: string, timeout = STEP_TIMEOUT): Promise<void> {
+    await this.page.waitForURL((u) => u.toString().includes(pattern), { timeout });
   }
 
-  async assertVisible(text: string): Promise<void> {
-    await this.page.getByText(text).first().waitFor({ state: "visible", timeout: STEP_TIMEOUT });
+  /**
+   * Asserts a text is visible. Default is Playwright's polling wait (up to
+   * `timeout`, STEP_TIMEOUT when omitted) — right for content that may still
+   * be loading. `oneShot` is the fast path for content that should already be
+   * on a loaded page: let the page settle (network idle, capped so a chatty
+   * app can't stall the check) and probe visibility ONCE, so a definitive miss
+   * costs ~1-2s instead of the full poll — mirroring assertNotVisible.
+   */
+  async assertVisible(
+    text: string,
+    opts: { timeout?: number; oneShot?: boolean } = {}
+  ): Promise<void> {
+    if (opts.oneShot) {
+      await this.page
+        .waitForLoadState("networkidle", { timeout: Math.min(opts.timeout ?? SETTLE_TIMEOUT, SETTLE_TIMEOUT) })
+        .catch(() => {}); // settled "enough" — the probe below is the judgment
+      const visible = await this.page
+        .getByText(text)
+        .first()
+        .isVisible()
+        .catch(() => false);
+      if (!visible) throw new Error(`Texto "${text}" não está visível (checagem one-shot pós-settle).`);
+      return;
+    }
+    await this.page
+      .getByText(text)
+      .first()
+      .waitFor({ state: "visible", timeout: opts.timeout ?? STEP_TIMEOUT });
   }
 
-  async assertNotVisible(text: string): Promise<void> {
+  async assertNotVisible(text: string, timeout?: number): Promise<void> {
     // give the page a beat to render, then require absence
-    await this.page.waitForTimeout(1000);
+    await this.page.waitForTimeout(timeout ?? 1000);
     const visible = await this.page
       .getByText(text)
       .first()
@@ -491,7 +524,20 @@ export class BrowserSession {
     if (visible) throw new Error(`Texto "${text}" está visível, mas não deveria estar.`);
   }
 
-  async assertUrl(pattern: string): Promise<void> {
+  /**
+   * Asserts the current URL contains the pattern. Instant one-shot by default
+   * (backward compatible); with `timeout` it tolerates an in-flight redirect
+   * by waiting up to that long for the URL to match.
+   */
+  async assertUrl(pattern: string, timeout?: number): Promise<void> {
+    if (timeout !== undefined) {
+      try {
+        await this.page.waitForURL((u) => u.toString().includes(pattern), { timeout });
+        return;
+      } catch {
+        throw new Error(`URL atual "${this.page.url()}" não contém "${pattern}" (após ${timeout}ms).`);
+      }
+    }
     const url = this.page.url();
     if (!url.includes(pattern)) {
       throw new Error(`URL atual "${url}" não contém "${pattern}".`);
@@ -592,15 +638,15 @@ export class BrowserSession {
       case "drag":
         return this.drag(step.fromX, step.fromY, step.toX, step.toY);
       case "waitForText":
-        return this.waitForText(step.text);
+        return this.waitForText(step.text, step.timeout);
       case "waitForUrl":
-        return this.waitForUrl(step.pattern);
+        return this.waitForUrl(step.pattern, step.timeout);
       case "assertVisible":
-        return this.assertVisible(step.text);
+        return this.assertVisible(step.text, { timeout: step.timeout, oneShot: step.oneShot });
       case "assertNotVisible":
-        return this.assertNotVisible(step.text);
+        return this.assertNotVisible(step.text, step.timeout);
       case "assertUrl":
-        return this.assertUrl(step.pattern);
+        return this.assertUrl(step.pattern, step.timeout);
       case "assertNetwork":
         return this.assertNetwork(step);
       case "assertNoConsoleErrors":

@@ -79,6 +79,8 @@ export async function replayForDemo(
   return { passed: true, timeline };
 }
 
+const timeoutSuffix = (timeout?: number): string => (timeout ? ` (timeout ${timeout}ms)` : "");
+
 /** Describes a step for reports/errors. */
 export function describeStep(step: Step): string {
   switch (step.kind) {
@@ -97,15 +99,15 @@ export function describeStep(step: Step): string {
     case "drag":
       return `arrastar de (${step.fromX}, ${step.fromY}) até (${step.toX}, ${step.toY})`;
     case "waitForText":
-      return `esperar texto "${step.text}"`;
+      return `esperar texto "${step.text}"${timeoutSuffix(step.timeout)}`;
     case "waitForUrl":
-      return `esperar URL conter "${step.pattern}"`;
+      return `esperar URL conter "${step.pattern}"${timeoutSuffix(step.timeout)}`;
     case "assertVisible":
-      return `verificar texto visível "${step.text}"`;
+      return `verificar texto visível "${step.text}"${step.oneShot ? " (one-shot)" : ""}${timeoutSuffix(step.timeout)}`;
     case "assertNotVisible":
-      return `verificar texto AUSENTE "${step.text}"`;
+      return `verificar texto AUSENTE "${step.text}"${timeoutSuffix(step.timeout)}`;
     case "assertUrl":
-      return `verificar URL contém "${step.pattern}"`;
+      return `verificar URL contém "${step.pattern}"${timeoutSuffix(step.timeout)}`;
     case "assertNetwork":
       return `verificar request ${step.method ?? "ANY"} ${step.urlGlob}${step.status ? ` (status ${step.status})` : ""}${step.responseIncludes?.length ? ` contendo ${step.responseIncludes.join(", ")}` : ""}`;
     case "assertNoConsoleErrors":
