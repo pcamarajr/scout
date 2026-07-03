@@ -181,6 +181,50 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
       }
     ),
     define(
+      "browser_wheel",
+      "Dispara um gesto de scroll (roda do mouse) na posição (x, y) — omitidos = centro do viewport. deltaY positivo rola para baixo. Use em UIs guiadas por scroll/gesto (feeds verticais, carrosséis, paginação por swipe) que não reagem a teclado.",
+      z.object({
+        deltaX: z.number().describe("Delta horizontal em px (positivo = direita)"),
+        deltaY: z.number().describe("Delta vertical em px (positivo = para baixo)"),
+        x: z.number().int().optional().describe("Posição X do gesto (omitido = centro)"),
+        y: z.number().int().optional().describe("Posição Y do gesto (omitido = centro)"),
+      }),
+      async ({ deltaX, deltaY, x, y }) => {
+        try {
+          await session.wheel(deltaX, deltaY, x, y);
+          record({
+            kind: "wheel",
+            deltaX,
+            deltaY,
+            ...(x !== undefined ? { x } : {}),
+            ...(y !== undefined ? { y } : {}),
+          });
+          return ok(await afterAction());
+        } catch (e) {
+          return fail(e);
+        }
+      }
+    ),
+    define(
+      "browser_drag",
+      "Arrasta o mouse de (fromX, fromY) até (toX, toY) — down, movimento em passos intermediários, up. Emula swipe/arrasto (avançar item num feed, fechar bottom-sheet, slider). Coordenadas em px relativas ao viewport.",
+      z.object({
+        fromX: z.number().int(),
+        fromY: z.number().int(),
+        toX: z.number().int(),
+        toY: z.number().int(),
+      }),
+      async ({ fromX, fromY, toX, toY }) => {
+        try {
+          await session.drag(fromX, fromY, toX, toY);
+          record({ kind: "drag", fromX, fromY, toX, toY });
+          return ok(await afterAction());
+        } catch (e) {
+          return fail(e);
+        }
+      }
+    ),
+    define(
       "browser_wait_for",
       "Espera texto aparecer na página OU a URL conter um trecho. Use após ações que disparam carregamento.",
       z.object({

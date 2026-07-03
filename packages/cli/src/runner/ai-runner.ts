@@ -87,6 +87,7 @@ Método de trabalho:
 Regras:
 - Aja como um usuário real: um passo de cada vez, espere carregamentos com browser_wait_for.
 - Se um elemento não está no snapshot, tire novo snapshot ou role o fluxo de outro jeito — não invente refs.
+- UIs guiadas por gesto (feed vertical, carrossel, swipe entre itens) muitas vezes não reagem a teclado: use browser_wheel (scroll na posição) ou browser_drag (arrasto ponto a ponto) e confira o resultado no snapshot seguinte.
 - Nunca use segredos literais: use $ENV:VAR_NAME — vale tanto em browser_fill quanto em URLs de browser_navigate (ex: tokens na query string).
 - Não re-preencha um campo que você já preencheu, a menos que a página tenha limpado o valor — cada ação sua vira um passo do script gravado, e passos duplicados são ruído que fragiliza o replay.
 - Asserções de rede/console devem ser TOLERANTES: case requests por método + padrão de URL + status; só use responseIncludes com trechos estáveis (nomes de campos), nunca ids/timestamps. Asserção colada a valor volátil quebra no replay.

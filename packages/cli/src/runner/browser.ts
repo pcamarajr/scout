@@ -442,6 +442,32 @@ export class BrowserSession {
     await this.page.keyboard.press(key);
   }
 
+  /**
+   * Dispatches a wheel gesture at (x, y) — viewport center when omitted, since
+   * wheel events fire at the current mouse position and (0,0) may sit outside
+   * the scroll container the gesture is meant for. The center is derived from
+   * the resolved viewport, so a recorded step without coordinates replays at
+   * the same spot (viewport is part of the run identity).
+   */
+  async wheel(deltaX: number, deltaY: number, x?: number, y?: number): Promise<void> {
+    const vp = this.opts.viewport;
+    await this.page.mouse.move(x ?? Math.round(vp.width / 2), y ?? Math.round(vp.height / 2));
+    await this.page.mouse.wheel(deltaX, deltaY);
+  }
+
+  /**
+   * Drags the mouse from one point to another (down → move → up), emulating a
+   * swipe/drag gesture. The move is split into intermediate events so handlers
+   * that track movement deltas (drag-to-dismiss, swipe navigation) see a
+   * realistic gesture instead of a single jump.
+   */
+  async drag(fromX: number, fromY: number, toX: number, toY: number): Promise<void> {
+    await this.page.mouse.move(fromX, fromY);
+    await this.page.mouse.down();
+    await this.page.mouse.move(toX, toY, { steps: 12 });
+    await this.page.mouse.up();
+  }
+
   async waitForText(text: string): Promise<void> {
     await this.page.getByText(text).first().waitFor({ state: "visible", timeout: STEP_TIMEOUT });
   }
@@ -561,6 +587,10 @@ export class BrowserSession {
         return void (await this.targetLocator(step.target).selectOption(resolveEnvValue(step.value)));
       case "press":
         return this.press(step.key);
+      case "wheel":
+        return this.wheel(step.deltaX, step.deltaY, step.x, step.y);
+      case "drag":
+        return this.drag(step.fromX, step.fromY, step.toX, step.toY);
       case "waitForText":
         return this.waitForText(step.text);
       case "waitForUrl":

@@ -92,6 +92,10 @@ export function describeStep(step: Step): string {
       return `selecionar "${step.value}" em ${step.target.description}`;
     case "press":
       return `pressionar ${step.key}`;
+    case "wheel":
+      return `scroll (wheel) deltaX=${step.deltaX} deltaY=${step.deltaY}${step.x !== undefined || step.y !== undefined ? ` em (${step.x ?? "centro"}, ${step.y ?? "centro"})` : ""}`;
+    case "drag":
+      return `arrastar de (${step.fromX}, ${step.fromY}) até (${step.toX}, ${step.toY})`;
     case "waitForText":
       return `esperar texto "${step.text}"`;
     case "waitForUrl":
