@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.0](https://github.com/pcamarajr/scout/compare/scout-v0.11.2...scout-v0.12.0) (2026-07-03)
+
+
+### Features
+
+* **cli:** add browser_wheel and browser_drag gesture primitives ([#58](https://github.com/pcamarajr/scout/issues/58)) ([fd048fc](https://github.com/pcamarajr/scout/commit/fd048fc886060f3cdb0e2bf11f37330bbcf4fbef))
+* **cli:** per-assertion timeout and one-shot presence checks ([#60](https://github.com/pcamarajr/scout/issues/60)) ([fa3fa69](https://github.com/pcamarajr/scout/commit/fa3fa69ccadae461f2f80f959649c7ef5b50bd95))
+
 ## [0.11.2](https://github.com/pcamarajr/scout/compare/scout-v0.11.1...scout-v0.11.2) (2026-07-03)
 
 
