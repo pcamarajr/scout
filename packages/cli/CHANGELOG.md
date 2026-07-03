@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/pcamarajr/scout/compare/scout-v0.11.1...scout-v0.11.2) (2026-07-03)
+
+
+### Bug Fixes
+
+* **cli:** restore scenarioStatus export dropped in 0.11.0 ([#56](https://github.com/pcamarajr/scout/issues/56)) ([c7773ea](https://github.com/pcamarajr/scout/commit/c7773eae1c89937e5940f0d83288385515ba81e9))
+
 ## [0.11.1](https://github.com/pcamarajr/scout/compare/scout-v0.11.0...scout-v0.11.1) (2026-06-30)
 
 
