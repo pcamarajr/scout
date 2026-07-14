@@ -1,4 +1,4 @@
-import { resolveCookies, type ScoutConfig } from "../config.js";
+import { resolveCookies, resolveStorage, type ScoutConfig } from "../config.js";
 import { inferProvider } from "../credentials.js";
 import type { ResolvedViewport } from "../viewports.js";
 import type { Scenario, Step, Verdict } from "../types.js";
@@ -62,6 +62,21 @@ export async function runWithAgent(
     ? `Cookies already set in the browser before the flow (precondition satisfied — do NOT try to set them, you have no tool for that): ${presetCookies.map((c) => c.name).join(", ")}.`
     : "";
 
+  // Web storage is seeded into the context before the app loads, exactly like
+  // cookies. Announce only the KEYS (values may be secrets) so the agent treats
+  // the precondition as satisfied and never tries to set storage itself.
+  const presetStorage = resolveStorage(scenario, config);
+  const storageInfo = (() => {
+    if (!presetStorage) return "";
+    const seeded = [...Object.keys(presetStorage.local ?? {}), ...Object.keys(presetStorage.session ?? {})];
+    const parts: string[] = [];
+    if (seeded.length) parts.push(`seeded: ${seeded.join(", ")}`);
+    if (presetStorage.remove?.length) parts.push(`cleared: ${presetStorage.remove.join(", ")}`);
+    return parts.length
+      ? `Browser storage (localStorage/sessionStorage) already applied before the flow loads (precondition satisfied — do NOT try to set or clear storage, you have no tool for that): ${parts.join("; ")}.`
+      : "";
+  })();
+
   const viewportInfo = `Viewport: running as "${viewport.name}" (${viewport.width}×${viewport.height}${viewport.isMobile ? ", mobile/touch" : ""}). Verify the layout for that size — on mobile expect a hamburger menu/compact nav; on desktop, a horizontal nav.`;
 
   const systemPrompt = `You are Scout, a QA agent that verifies scenarios in a real browser.
@@ -71,6 +86,7 @@ ${viewportInfo}
 ${profileInfo}
 ${envInfo}
 ${cookieInfo}
+${storageInfo}
 
 Working method:
 1. Start with browser_navigate to the flow's starting page (or browser_snapshot if you're already there).

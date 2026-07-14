@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { mergeCookiesByName, validateCookie } from "./cookies.js";
-import type { Scenario, ScenarioCookie, Viewport } from "./types.js";
+import { isEmptyStorage, mergeStorage, validateStorage } from "./storage.js";
+import type { Scenario, ScenarioCookie, ScenarioStorage, Viewport } from "./types.js";
 
 /** Filesystem/report-safe viewport names (mirrors viewports.ts, kept inline so
  *  config has no Playwright dependency). */
@@ -27,6 +28,13 @@ export interface ScoutProfile {
    * sameSite? }); `value` may carry a $ENV:VAR placeholder.
    */
   cookies?: ScenarioCookie[];
+  /**
+   * Web storage seeded into the context for every scenario on this profile (the
+   * shared base). A scenario's own storage merges on top (per key per namespace;
+   * `remove` concatenated). Shape: `{ local?, session?, remove? }`; values may
+   * carry a $ENV:VAR placeholder.
+   */
+  storage?: ScenarioStorage;
 }
 
 export interface ScoutConfig {
@@ -192,4 +200,22 @@ export function resolveCookies(scenario: Scenario, config: ScoutConfig): Scenari
     : [];
   const merged = mergeCookiesByName(profileCookies, scenario.cookies ?? []);
   return merged.length ? merged : undefined;
+}
+
+/**
+ * Resolves the web storage for one scenario: the profile's storage is the shared
+ * base, the scenario's own storage (file frontmatter + section override, already
+ * merged in specs.ts) wins on top — per key per namespace, `remove` concatenated.
+ * Profile storage comes from JSON, so it's validated here (lazily, like
+ * resolveCookies) and a bad one fails loud. Returns undefined when neither side
+ * seeds or removes anything.
+ */
+export function resolveStorage(scenario: Scenario, config: ScoutConfig): ScenarioStorage | undefined {
+  const profileName = scenario.profile;
+  const profileRaw = profileName ? config.profiles[profileName]?.storage : undefined;
+  const profileStorage = profileRaw
+    ? validateStorage(profileRaw, `${CONFIG_FILE} profile "${profileName}" storage`)
+    : {};
+  const merged = mergeStorage(profileStorage, scenario.storage ?? {});
+  return isEmptyStorage(merged) ? undefined : merged;
 }

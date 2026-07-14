@@ -1,6 +1,13 @@
 import path from "node:path";
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "playwright";
-import type { NetworkMatcher, PermissionPolicy, ScenarioCookie, Step, Target } from "../types.js";
+import type {
+  NetworkMatcher,
+  PermissionPolicy,
+  ScenarioCookie,
+  ScenarioStorage,
+  Step,
+  Target,
+} from "../types.js";
 import type { ResolvedViewport } from "../viewports.js";
 import {
   findConsoleErrors,
@@ -56,6 +63,13 @@ export interface LaunchOptions {
    * resolved here at launch — never persisted resolved.
    */
   cookies?: ScenarioCookie[];
+  /**
+   * Web storage to seed before the app loads (profile + scenario, already
+   * merged). Applied via a context init-script that runs before any page
+   * script, AFTER storageState — so declared storage wins over the profile's.
+   * Values may carry a `$ENV:VAR` placeholder, resolved here at launch.
+   */
+  storage?: ScenarioStorage;
   /**
    * Extra HTTP headers sent on every request in the context. Set from
    * `scout.config.json` `headers` or `SCOUT_EXTRA_HEADERS`. The canonical use is
@@ -228,6 +242,14 @@ export class BrowserSession {
     // storageState load → declared cookies win over the auth session by name.
     if (opts.cookies?.length) {
       await context.addCookies(opts.cookies.map((c) => toPlaywrightCookie(c, opts.baseUrl)));
+    }
+    // Seed web storage before any page script (covers sessionStorage, which
+    // storageState does not carry), AFTER the storageState load so declared
+    // storage wins over the profile's — same ordering as cookies. `$ENV:VAR`
+    // in values is resolved here at launch, never persisted resolved.
+    if (opts.storage) {
+      const script = buildStorageInitScript(opts.storage);
+      if (script) await context.addInitScript(script);
     }
     // Demo cursor stub: a context init-script so the cursor API re-exists after
     // every navigation (the element itself is re-created lazily on first move).
@@ -765,6 +787,42 @@ export function toPlaywrightCookie(c: ScenarioCookie, baseUrl: string): AddCooki
     cookie.url = baseUrl;
   }
   return cookie;
+}
+
+/** Resolve `$ENV:VAR` in each value of a storage record (keys are left as-is). */
+function resolveStorageRecord(record: Record<string, string> | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(record ?? {})) out[key] = resolveEnvValue(value);
+  return out;
+}
+
+/**
+ * Builds the context init-script that seeds web storage before any page script.
+ * `remove` runs first (clearing the key from BOTH localStorage and
+ * sessionStorage for a clean precondition), then the declared `local`/`session`
+ * values are set — so a declared value always wins over a removal of the same
+ * key. Every access is wrapped so a storage-less context (about:blank, a
+ * sandboxed frame) can never throw and break the run. Returns "" when nothing
+ * is seeded or removed. `$ENV:VAR` in values is resolved at build time (launch).
+ */
+export function buildStorageInitScript(storage: ScenarioStorage): string {
+  const local = resolveStorageRecord(storage.local);
+  const session = resolveStorageRecord(storage.session);
+  const remove = storage.remove ?? [];
+  if (!Object.keys(local).length && !Object.keys(session).length && !remove.length) return "";
+  return `(() => {
+    try {
+      const remove = ${JSON.stringify(remove)};
+      const local = ${JSON.stringify(local)};
+      const session = ${JSON.stringify(session)};
+      for (const k of remove) {
+        try { localStorage.removeItem(k); } catch (e) {}
+        try { sessionStorage.removeItem(k); } catch (e) {}
+      }
+      for (const k in local) { try { localStorage.setItem(k, local[k]); } catch (e) {} }
+      for (const k in session) { try { sessionStorage.setItem(k, session[k]); } catch (e) {} }
+    } catch (e) {}
+  })();`;
 }
 
 /** Replaces $ENV:VAR_NAME placeholders so secrets never live in committed scripts. */

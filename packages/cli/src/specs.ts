@@ -3,7 +3,8 @@ import path from "node:path";
 import matter from "gray-matter";
 import { SCOUT_DIR } from "./config.js";
 import { mergeCookiesByName, parseCookieList, parseInlineCookies } from "./cookies.js";
-import type { GeoCoords, PermissionPolicy, Scenario, ScenarioCookie } from "./types.js";
+import { isEmptyStorage, mergeStorage, parseInlineStorage, parseStorageBlock } from "./storage.js";
+import type { GeoCoords, PermissionPolicy, Scenario, ScenarioCookie, ScenarioStorage } from "./types.js";
 
 /**
  * Scenario specs live as markdown files under `.scout/specs/**\/*.scout.md`.
@@ -29,6 +30,7 @@ const OVERRIDE_KEYS = new Set([
   "denyPermissions",
   "geolocation",
   "cookies",
+  "storage",
 ]);
 
 /** Filesystem/report-safe viewport names (mirrors viewports.ts, kept inline so
@@ -261,6 +263,7 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
   const fileViewports = parseViewportList(data.viewports, `${path.relative(cwd, specFile)} frontmatter`);
   const relFile = path.relative(cwd, specFile);
   const fileCookies = parseCookieList(data.cookies, relFile);
+  const fileStorage = parseStorageBlock(data.storage, relFile);
 
   const sections = splitSections(content);
   const scenarios: Scenario[] = [];
@@ -303,6 +306,11 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
       "cookies" in overrides ? parseInlineCookies(overrides.cookies, ctx) : [];
     const merged = mergeCookiesByName(fileCookies, sectionCookies);
     const cookies: ScenarioCookie[] | undefined = merged.length ? merged : undefined;
+    // Per-section override (inline) wins over the file frontmatter, per key per
+    // namespace; the profile's storage merges under both at launch.
+    const sectionStorage = "storage" in overrides ? parseInlineStorage(overrides.storage, ctx) : {};
+    const mergedStorage = mergeStorage(fileStorage ?? {}, sectionStorage);
+    const storage: ScenarioStorage | undefined = isEmptyStorage(mergedStorage) ? undefined : mergedStorage;
     scenarios.push({
       slug: `${fileSlug}/${scenarioSlug}`,
       name: section.name,
@@ -314,6 +322,7 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
       viewports,
       permissions,
       cookies,
+      storage,
       file: relFile,
     });
   }

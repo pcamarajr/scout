@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { loadConfig, resolveCookies, resolveStorageState, type ScoutConfig } from "./config.js";
+import { loadConfig, resolveCookies, resolveStorage, resolveStorageState, type ScoutConfig } from "./config.js";
 import { detectAiCredentials, inferProvider } from "./credentials.js";
 import { renderRunReport } from "./report.js";
 import { Store } from "./store.js";
@@ -9,7 +9,7 @@ import { runWithAgent } from "./runner/ai-runner.js";
 import { describeStep, replayForDemo, replaySteps } from "./runner/script-runner.js";
 import { generateVideo, pacingFor, type TimelineEntry, type VideoPacing } from "./runner/video.js";
 import { defaultViewportName, resolveViewport, type ResolvedViewport } from "./viewports.js";
-import type { RunResult, Scenario, ScenarioCookie, Step, Target } from "./types.js";
+import type { RunResult, Scenario, ScenarioCookie, ScenarioStorage, Step, Target } from "./types.js";
 
 export interface RunOptions {
   /** Skip the cached script and force an AI run (re-record) */
@@ -49,6 +49,7 @@ export async function runScenario(
   const runDir = store.newRunDir(scenario.slug, viewportName);
   const storageState = resolveStorageState(scenario.profile, config);
   const cookies = resolveCookies(scenario, config);
+  const storage = resolveStorage(scenario, config);
   const cached = opts.forceAi ? undefined : store.loadSteps(scenario.slug, viewportName);
   const aiCreds = detectAiCredentials(inferProvider(config.model), { engine: config.engine });
 
@@ -62,6 +63,7 @@ export async function runScenario(
       viewport,
       permissions: scenario.permissions,
       cookies,
+      storage,
       extraHeaders: config.headers,
     });
 
@@ -93,7 +95,7 @@ export async function runScenario(
       };
     } else if (heal && aiCreds.ok) {
       // cached script broke — re-verify with the agent and re-record
-      const ai = await runAi(scenario, config, store, runDir, viewport, storageState, cookies, opts);
+      const ai = await runAi(scenario, config, store, runDir, viewport, storageState, cookies, storage, opts);
       verifiedSteps = ai.steps;
       result = {
         ...ai.result,
@@ -122,7 +124,7 @@ export async function runScenario(
     if (!aiCreds.ok) {
       throw new Error(aiCreds.remediation);
     }
-    const ai = await runAi(scenario, config, store, runDir, viewport, storageState, cookies, opts);
+    const ai = await runAi(scenario, config, store, runDir, viewport, storageState, cookies, storage, opts);
     verifiedSteps = ai.steps;
     result = { ...ai.result, startedAt, durationMs: Date.now() - start };
   }
@@ -135,7 +137,7 @@ export async function runScenario(
     const persisted = store.loadSteps(scenario.slug, viewportName);
     const steps = persisted ?? (verifiedSteps ? pruneSteps(verifiedSteps) : undefined);
     if (steps?.length) {
-      result.video = await recordDemoVideo(scenario, steps, config, viewport, storageState, cookies, runDir);
+      result.video = await recordDemoVideo(scenario, steps, config, viewport, storageState, cookies, storage, runDir);
     }
   }
 
@@ -268,6 +270,7 @@ async function recordDemoVideo(
   viewport: ResolvedViewport,
   storageState: string | undefined,
   cookies: ScenarioCookie[] | undefined,
+  storage: ScenarioStorage | undefined,
   runDir: string
 ): Promise<string | undefined> {
   const attempt = async (pacing: VideoPacing): Promise<RecordedReplay> => {
@@ -285,6 +288,7 @@ async function recordDemoVideo(
         slowMoMs: pacing.slowMoMs,
         permissions: scenario.permissions,
         cookies,
+        storage,
         extraHeaders: config.headers,
       });
     } catch {
@@ -333,6 +337,7 @@ async function runAi(
   viewport: ResolvedViewport,
   storageState: string | undefined,
   cookies: ScenarioCookie[] | undefined,
+  storage: ScenarioStorage | undefined,
   opts: RunOptions
 ): Promise<{ result: RunResult; steps: Step[] }> {
   const startedAt = new Date().toISOString();
@@ -352,6 +357,7 @@ async function runAi(
       viewport,
       permissions: scenario.permissions,
       cookies,
+      storage,
       extraHeaders: config.headers,
     });
     let result;
