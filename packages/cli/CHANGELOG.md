@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/pcamarajr/scout/compare/scout-v0.12.0...scout-v0.13.0) (2026-07-14)
+
+
+### Features
+
+* **cli:** seed localStorage/sessionStorage per scenario ([#63](https://github.com/pcamarajr/scout/issues/63)) ([ee3ac93](https://github.com/pcamarajr/scout/commit/ee3ac932a645b896ae3d2efd7d5b33a7f5812802))
+
 ## [0.12.0](https://github.com/pcamarajr/scout/compare/scout-v0.11.2...scout-v0.12.0) (2026-07-03)
 
 
