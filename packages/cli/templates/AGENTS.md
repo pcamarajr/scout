@@ -53,9 +53,9 @@ Logged-in subscriber opens ep 3; the episode plays with no paywall.
 
 Rules that matter when you author:
 
-- **Frontmatter** (YAML, optional): `feature` (defaults to the filename), `profile` (default auth profile), `tags`, `viewports`.
+- **Frontmatter** (YAML, optional): `feature` (defaults to the filename), `profile` (default auth profile), `tags`, `viewports`, `cookies`, `storage`.
 - **Each `## heading` is one scenario.** Its logical slug is `<file-slug>/<scenario-slug>` (e.g. `paywall/free-user-hits-paywall-on-ep-3`) and must be unique across the suite. Duplicate headings in a file, or a scenario with no body text, are hard errors.
-- **Per-scenario overrides:** immediately under a heading you may place `profile:`, `notes:`, `tags:`, `viewports:`, `grantPermissions:`, `denyPermissions:`, and `geolocation:` lines (before the prose) to override the file-level defaults.
+- **Per-scenario overrides:** immediately under a heading you may place `profile:`, `notes:`, `tags:`, `viewports:`, `grantPermissions:`, `denyPermissions:`, `geolocation:`, `cookies:`, and `storage:` lines (before the prose) to override the file-level defaults.
 - **Body = flow + expected behavior, in plain language.** Describe what the user does and what must (or must not) be true. No CSS selectors, no Playwright code — the agent discovers the real elements at run time and records them.
 - A `.scout.md` whose every `##` lives inside a fenced ```` ``` ```` block parses as **zero scenarios** (that is how `example.scout.md` documents the format without polluting the suite).
 
@@ -126,6 +126,75 @@ Notes:
 - Granting `geolocation` **requires** a `geolocation: <latitude>, <longitude>` line; supplying coordinates implies granting it.
 - **Grant wins over deny:** a scenario that grants a permission overrides a file-level deny of the same permission (as in the example above).
 - `denyPermissions` matters mainly in **headed** runs (headless already denies silently). What changes behavior in CI is `grantPermissions` and a granted `geolocation` with coordinates.
+
+## Cookies
+
+When a flow's precondition is a cookie — forcing a server-side experiment variant, a feature flag, a consent state — declare it and Scout seeds it into the browser **before the first navigation**, for both the AI run and deterministic replay. Like `storageState`, it's a context-creation parameter, never a recorded step, so replay stays deterministic and the agent never needs a "set cookie" tool.
+
+Two forms. In the **frontmatter** (file default) or a **profile** (shared base in `scout.config.json`), `cookies:` is a list of objects — the place for attributes:
+
+```markdown
+---
+feature: Checkout
+cookies:
+  - name: hn_checkout_variant
+    value: A                 # file default: variant A
+  - name: consent
+    value: "yes"
+    httpOnly: true
+    sameSite: Lax            # Strict | Lax | None
+---
+
+## Default variant
+Open checkout; the file-level variant A is in effect.
+
+## Force variant C
+cookies: hn_checkout_variant=C   # per-scenario override: inline name=value
+
+Open checkout; variant C is forced.
+```
+
+Notes:
+
+- **Merge by name:** a profile's cookies are the base; the file frontmatter and then the per-scenario override win, keyed by cookie name. The per-`##` override is the terse inline `name=value[, n2=v2]` form (no attributes — those belong in the frontmatter/profile).
+- **`name` and `value` are required;** `domain`, `path`, `expires` (unix seconds), `httpOnly`, `secure`, `sameSite` are optional. `domain`/`path` default to the host of `baseUrl` and `/`.
+- **Secrets:** a `value` may use the `$ENV:VAR` placeholder (e.g. `cookies: session=$ENV:SESSION_TOKEN`) — resolved at launch, so the secret never lands in the committed spec or the agent's context. Only `value` is resolved.
+- **Fail-fast:** an unknown field, a bad `sameSite`, or a missing env var is a hard error — a silently skipped cookie precondition would produce a misleading verdict.
+
+## Local & session storage
+
+Some features are gated not by a cookie or the server, but by the browser's own **web storage** — an open-count threshold, a "you've seen this" flag, a dismissed prompt. The agent can't set storage (it has no `page.evaluate` tool), so declare a `storage:` seed and Scout applies it **before the app loads**, for both the AI run and deterministic replay. Like `cookies`/`storageState`, it's a context-creation parameter, never a recorded step — replay re-resolves it fresh from the spec, so it stays deterministic and the agent never needs a "set storage" tool.
+
+It seeds **both** `localStorage` and `sessionStorage` (the latter is something `storageState` can't carry) via an init-script that runs before any page script, and it can `remove` keys to guarantee a clean precondition.
+
+Two forms. In the **frontmatter** (file default) or a **profile** (shared base in `scout.config.json`), `storage:` is an object with `local`, `session` and/or `remove`:
+
+```markdown
+---
+feature: PWA install prompt
+storage:
+  local:
+    hn_app_open_count: "2"      # file default: two prior opens
+  remove:
+    - hn_pwa_prompt_dismissed   # start from a non-dismissed state
+---
+
+## Below the threshold — no prompt yet
+Open the app; the install prompt does not appear.
+
+## At the threshold — prompt appears
+storage: local.hn_app_open_count=3, remove=hn_other_flag
+
+Open the app; the install prompt appears.
+```
+
+Notes:
+
+- **Inline override form:** the per-`##` override is a single line of comma-separated tokens — `local.<key>=<value>`, `session.<key>=<value>`, or `remove=<key>`. The namespace is spelled inline because a heading override line can't carry a nested YAML object; nested objects belong in the frontmatter/profile.
+- **Merge:** a profile's storage is the base; the file frontmatter and then the per-scenario override win, **per key per namespace**. `remove` lists **concatenate and dedupe** across all levels.
+- **`remove` clears both namespaces:** a removed key is dropped from `localStorage` **and** `sessionStorage`. Removals apply before the seed, so a declared value always wins over a removal of the same key.
+- **Secrets:** a value may use the `$ENV:VAR` placeholder — resolved at launch, so the secret never lands in the committed spec or the agent's context.
+- **Fail-fast:** an unknown field (only `local`/`session`/`remove` are allowed), a non-string value, or a malformed inline token is a hard error — a silently skipped storage precondition would produce a misleading verdict.
 
 ## New tabs / popups
 
