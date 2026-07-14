@@ -111,10 +111,13 @@ feature: Example
 # How to write a scout spec
 
 One file per feature/component. File-level frontmatter sets defaults
-(\`feature\`, \`profile\`, \`tags\`, \`viewports\`). Each \`##\` heading is one scenario;
-optional \`profile\`/\`notes\`/\`tags\`/\`viewports\` override lines may follow a heading
-before the prose. A scenario's \`viewports\` list (built-ins: mobile/desktop/tablet)
-REPLACES the file-level one and fans the scenario out into one run per viewport.
+(\`feature\`, \`profile\`, \`tags\`, \`viewports\`, \`cookies\`, \`storage\`). Each \`##\`
+heading is one scenario; optional \`profile\`/\`notes\`/\`tags\`/\`viewports\`/
+\`cookies\`/\`storage\` override lines may follow a heading before the prose. A
+scenario's \`viewports\` list (built-ins: mobile/desktop/tablet) REPLACES the
+file-level one and fans the scenario out into one run per viewport.
+\`cookies:\`/\`storage:\` seed browser preconditions before the app loads (never
+recorded steps); a \`value\` may use a \`$ENV:VAR\` placeholder resolved at launch.
 Write the flow + expected behavior in plain language — no selectors, no code.
 
 Copy the block below into a new \`*.scout.md\` file (outside the fence) to start:
@@ -125,6 +128,14 @@ feature: Paywall
 profile: anon
 tags: [monetization]
 viewports: [mobile]
+cookies:                      # list of objects (attributes go here)
+  - name: hn_checkout_variant
+    value: A
+storage:                      # object with local / session / remove
+  local:
+    hn_app_open_count: "2"
+  remove:
+    - hn_pwa_prompt_dismissed
 ---
 
 ## Free user hits paywall on ep 3
@@ -133,6 +144,8 @@ Open ep 3 of series X without login; paywall appears with a signup CTA.
 ## Subscriber bypasses paywall
 profile: qa
 viewports: [mobile, desktop]
+cookies: hn_checkout_variant=C                    # inline override: name=value[, n2=v2]
+storage: local.hn_app_open_count=3, remove=flag   # inline: local./session. keys, remove=key
 
 Logged-in subscriber opens ep 3; plays with no paywall.
 \`\`\`
