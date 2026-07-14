@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { CONFIG_FILE, loadConfig, parseHeadersEnv, resolveCookies, type ScoutConfig } from "../src/config.js";
+import { CONFIG_FILE, loadConfig, parseHeadersEnv, resolveCookies, resolveStorage, type ScoutConfig } from "../src/config.js";
 import type { Scenario } from "../src/types.js";
 
 function tmpProject(config?: object): string {
@@ -156,4 +156,35 @@ test("resolveCookies validates profile cookies and rejects a bad sameSite", () =
     qa: { cookies: [{ name: "v", value: "A", sameSite: "Nope" } as never] },
   });
   assert.throws(() => resolveCookies(scenarioWith({ profile: "qa" }), config), /sameSite/);
+});
+
+test("resolveStorage merges profile storage (base) under scenario storage (per key)", () => {
+  const config = configWith({
+    qa: { storage: { local: { a: "1", b: "2" }, remove: ["k1"] } },
+  });
+  const scenario = scenarioWith({ profile: "qa", storage: { local: { b: "9" }, remove: ["k2"] } });
+  // Scenario's `b` wins; profile's `a` is inherited; remove lists concatenate.
+  assert.deepEqual(resolveStorage(scenario, config), {
+    local: { a: "1", b: "9" },
+    remove: ["k1", "k2"],
+  });
+});
+
+test("resolveStorage returns undefined when neither profile nor scenario declare storage", () => {
+  const config = configWith({ qa: {} });
+  assert.equal(resolveStorage(scenarioWith({ profile: "qa" }), config), undefined);
+  assert.equal(resolveStorage(scenarioWith({}), config), undefined);
+});
+
+test("resolveStorage uses scenario storage when there is no profile", () => {
+  const config = configWith({});
+  const scenario = scenarioWith({ storage: { session: { s: "x" } } });
+  assert.deepEqual(resolveStorage(scenario, config), { session: { s: "x" } });
+});
+
+test("resolveStorage validates profile storage and rejects an unknown field", () => {
+  const config = configWith({
+    qa: { storage: { locals: { a: "1" } } as never },
+  });
+  assert.throws(() => resolveStorage(scenarioWith({ profile: "qa" }), config), /Unknown storage field/);
 });

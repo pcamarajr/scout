@@ -417,6 +417,83 @@ test("scenarios without cookies have undefined cookies", () => {
   assert.equal(s.cookies, undefined);
 });
 
+test("parses storage: frontmatter object + per-section inline override merged per key", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "pwa.scout.md",
+    `---
+feature: PWA prompt
+storage:
+  local:
+    hn_app_open_count: "1"
+  remove:
+    - hn_pwa_prompt_dismissed
+---
+
+## Below the open-count threshold
+Open the app; the install prompt does not appear yet.
+
+## At the open-count threshold
+storage: local.hn_app_open_count=3, remove=hn_other_flag
+
+Open the app; the install prompt appears.
+`
+  );
+
+  const [below, at] = loadScenarios(cwd);
+
+  // File frontmatter applies to the first scenario as-is.
+  assert.deepEqual(below.storage, {
+    local: { hn_app_open_count: "1" },
+    remove: ["hn_pwa_prompt_dismissed"],
+  });
+
+  // Section inline override wins per key; remove lists concatenate + dedupe.
+  assert.deepEqual(at.storage, {
+    local: { hn_app_open_count: "3" },
+    remove: ["hn_pwa_prompt_dismissed", "hn_other_flag"],
+  });
+});
+
+test("inline storage override keeps the raw $ENV placeholder (never resolved at parse)", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "token-storage.scout.md",
+    `---\nfeature: Token\n---\n\n## Seeds a token in storage\nstorage: local.token=$ENV:APP_TOKEN\n\nBody text.\n`
+  );
+  const [s] = loadScenarios(cwd);
+  assert.deepEqual(s.storage, { local: { token: "$ENV:APP_TOKEN" } });
+});
+
+test("rejects an unknown storage field", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "badstorage.scout.md",
+    `---\nfeature: Bad\nstorage:\n  locals:\n    a: "1"\n---\n\n## Typo\nBody text.\n`
+  );
+  assert.throws(() => loadScenarios(cwd), /Unknown storage field "locals"/);
+});
+
+test("rejects a malformed inline storage override", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "badinlinestorage.scout.md",
+    `---\nfeature: Bad\n---\n\n## No prefix\nstorage: justkey=value\n\nBody text.\n`
+  );
+  assert.throws(() => loadScenarios(cwd), /Expected local\.key=value/);
+});
+
+test("scenarios without storage have undefined storage", () => {
+  const cwd = tmpProject();
+  writeSpec(cwd, "nostorage.scout.md", `---\nfeature: Plain\n---\n\n## Nothing\nJust prose.\n`);
+  const [s] = loadScenarios(cwd);
+  assert.equal(s.storage, undefined);
+});
+
 test("grant wins over an inherited deny for the same permission", () => {
   const cwd = tmpProject();
   writeSpec(

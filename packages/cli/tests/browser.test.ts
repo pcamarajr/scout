@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { demoCursorStub, resolveEnvValue, toPlaywrightCookie } from "../src/runner/browser.js";
+import {
+  buildStorageInitScript,
+  demoCursorStub,
+  resolveEnvValue,
+  toPlaywrightCookie,
+} from "../src/runner/browser.js";
 
 // resolveEnvValue powers both browser_fill values AND browser_navigate URLs:
 // secrets/tokens live as $ENV:VAR in the committed script and resolve at runtime.
@@ -73,4 +78,46 @@ test("toPlaywrightCookie resolves $ENV in the value and carries attributes", () 
     url: "https://app.example.com/",
   });
   delete process.env.SCOUT_TEST_COOKIE;
+});
+
+// buildStorageInitScript seeds local/session and clears removed keys, resolving
+// $ENV in values — it must never throw inside a storage-less context.
+
+test("buildStorageInitScript sets local + session and removes keys from both", () => {
+  const script = buildStorageInitScript({
+    local: { count: "3" },
+    session: { flag: "on" },
+    remove: ["dismissed"],
+  });
+  assert.match(script, /localStorage\.setItem/);
+  assert.match(script, /sessionStorage\.setItem/);
+  assert.match(script, /localStorage\.removeItem/);
+  assert.match(script, /sessionStorage\.removeItem/);
+  // values are embedded as JSON literals
+  assert.match(script, /"count":"3"/);
+  assert.match(script, /"flag":"on"/);
+  assert.match(script, /"dismissed"/);
+  // every access is guarded so a storage-less context can't throw
+  assert.match(script, /try \{/);
+});
+
+test("buildStorageInitScript resolves $ENV in values (never persisted resolved)", () => {
+  process.env.SCOUT_TEST_STORAGE = "secret-token";
+  const script = buildStorageInitScript({ local: { token: "$ENV:SCOUT_TEST_STORAGE" } });
+  assert.match(script, /"token":"secret-token"/);
+  assert.doesNotMatch(script, /\$ENV:/);
+  delete process.env.SCOUT_TEST_STORAGE;
+});
+
+test("buildStorageInitScript throws when a referenced env var is undefined", () => {
+  delete process.env.SCOUT_TEST_STORAGE_MISSING;
+  assert.throws(
+    () => buildStorageInitScript({ local: { t: "$ENV:SCOUT_TEST_STORAGE_MISSING" } }),
+    /SCOUT_TEST_STORAGE_MISSING/
+  );
+});
+
+test("buildStorageInitScript returns empty string when nothing is seeded or removed", () => {
+  assert.equal(buildStorageInitScript({}), "");
+  assert.equal(buildStorageInitScript({ local: {}, session: {}, remove: [] }), "");
 });

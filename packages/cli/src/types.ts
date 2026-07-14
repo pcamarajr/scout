@@ -78,6 +78,29 @@ export interface ScenarioCookie {
 }
 
 /**
+ * Web storage seeded into the browser context before the app loads, resolved
+ * from a scenario's spec (profile default + file frontmatter + per-section
+ * override, merged per key per namespace; `remove` concatenated). It is a
+ * context-creation parameter — re-resolved fresh from the spec each run and
+ * applied via an init-script that runs before any page script, so the seed is
+ * in place before the app reads it. It is NEVER a recorded/replayable Step and
+ * never lands in the committed script JSON (like storageState/cookies).
+ *
+ * Use it to make verifiable a feature whose trigger lives in storage: a "seen"
+ * flag, an open-count threshold, a dismissed prompt. Values may carry a
+ * `$ENV:VAR` placeholder, resolved only at launch. `remove` clears keys from
+ * BOTH localStorage and sessionStorage, guaranteeing a clean precondition.
+ */
+export interface ScenarioStorage {
+  /** localStorage key→value pairs to seed (value may be a `$ENV:VAR`). */
+  local?: Record<string, string>;
+  /** sessionStorage key→value pairs to seed (value may be a `$ENV:VAR`). */
+  session?: Record<string, string>;
+  /** Keys removed from both localStorage and sessionStorage before the seed. */
+  remove?: string[];
+}
+
+/**
  * Browser permission policy resolved from a scenario's spec (file frontmatter
  * is the default, per-section keys override it, merged per-axis). Three states
  * per permission: absent = native browser behavior (untouched); granted =
@@ -153,6 +176,14 @@ export interface Scenario {
    * these. Carries raw `$ENV:VAR` placeholders — resolved only at launch.
    */
   cookies?: ScenarioCookie[];
+  /**
+   * Web storage seeded on the scenario (profile default + file frontmatter +
+   * per-section override, merged per key per namespace). A context-creation
+   * parameter re-resolved each run, applied before the app loads — never baked
+   * into the recorded script. Carries raw `$ENV:VAR` placeholders — resolved
+   * only at launch.
+   */
+  storage?: ScenarioStorage;
   /** Source spec file, relative to the project root */
   file: string;
 }
