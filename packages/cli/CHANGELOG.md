@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/pcamarajr/scout/compare/scout-v0.13.0...scout-v0.14.0) (2026-07-15)
+
+
+### Features
+
+* **cli:** click by selector and assert element state (opacity/class/attr) ([#66](https://github.com/pcamarajr/scout/issues/66)) ([6d9c179](https://github.com/pcamarajr/scout/commit/6d9c179d258073307fa9c959d9e9546cd63fcb4d))
+
 ## [0.13.0](https://github.com/pcamarajr/scout/compare/scout-v0.12.0...scout-v0.13.0) (2026-07-14)
 
 
