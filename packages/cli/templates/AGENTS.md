@@ -206,6 +206,14 @@ Console and network observers are **per-tab**: assertions (`browser_assert_no_co
 
 Beyond *absence* of errors, you can assert a **specific log was emitted** (e.g. a `DEBUG:[...]` line gated behind a debug flag). `browser_assert_console_message` requires a message on the **active tab** that contains **all** of the given substrings **within a single message**, optionally constrained to a `type` (`log`, `debug`, `error`, …). Inspect first (`browser_inspect_logs` now also lists `log`/`debug`/`info` messages), then assert on a **stable** substring — a prefix like `DEBUG:[FEATURE/x]`, never a volatile value — so the check tolerates unrelated console noise. It becomes a recorded step that fails the deterministic replay if the log goes missing.
 
+## Clicking role-less elements (by `data-testid`)
+
+`browser_click` only takes a numbered `[ref]` from the accessibility snapshot, so an element with **no ARIA role or name** — a gesture/tap layer, an overlay `<div data-testid="…">`, a purely visual control — never gets a `[ref]` and can't be clicked that way. When you hit one, use **`browser_click_selector`**: it clicks by `data-testid` (**preferred** — stabler than a CSS path) or, if there is none, a `css` selector. It records as a plain deterministic `click` step, so replay needs no LLM. Reach for it only for elements the snapshot can't reference; a normal button still goes through `browser_click`.
+
+## Asserting visual/structural state (opacity, class, attribute)
+
+`browser_assert` covers text and URL, but it **can't confirm an element is hidden by `opacity:0`** — Playwright counts an opacity-hidden node (still in the DOM, still laid out) as *visible*, so a `notVisibleText`-style check would false-pass. For show/hide toggles and other purely visual state, use **`browser_assert_state`**: locate the element by `data-testid` (preferred) or `css`, then assert one or more of a class token (`hasClass` / `notHasClass`, e.g. `opacity-0` vs `opacity-100`), an `attribute` (present, or equal to a value like `aria-expanded=true`), or a `computedStyle` (e.g. `opacity` = `0`). It polls until every check holds or the timeout, then records a deterministic `assertState` step. This is what lets a scenario verify a reveal/hide control that stays mounted — describe the toggle in plain prose ("the drawer becomes hidden") and the agent records the class/style check.
+
 ## Base URL and secrets
 
 There is a **default base URL** set at `scout init` (in `scout.config.json`). It can be **overridden per run** without editing the file:

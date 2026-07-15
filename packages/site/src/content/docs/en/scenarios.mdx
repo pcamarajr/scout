@@ -1,6 +1,6 @@
 ---
 title: "Writing scenarios"
-description: "The .scout.md format: one file per feature, plain-language flows, browser permissions, multi-tab follows, and console/network assertions — versioned and reviewed like the rest of your tests."
+description: "The .scout.md format: one file per feature, plain-language flows, browser permissions, multi-tab follows, show/hide (opacity) checks, and console/network assertions — versioned and reviewed like the rest of your tests."
 sidebarLabel: "Writing scenarios"
 order: 4
 group: "Getting started"
@@ -162,6 +162,18 @@ Open the app; the install prompt appears.
 ## Flows that open a new tab
 
 When a click opens a new tab or popup (a booking tool, an OAuth window), just describe it — the agent follows into the new tab and scout records the switch as a deterministic step. Console, network, and text assertions always run on the **active tab**, so a check after the switch verifies the new tab, not the one you came from.
+
+## Show/hide toggles (opacity, class, attribute)
+
+Some controls aren't added and removed from the page — they're revealed and hidden **in place**, with `opacity`, a class swap, or an attribute flip, while staying mounted in the DOM. A plain "is it visible?" text check can't tell those apart (a browser treats an `opacity:0` element that's still laid out as visible). Just describe the visual state and scout records a **structural** assertion — a class token (`opacity-0` vs `opacity-100`), an attribute (`aria-expanded`), or a computed style — that replay re-checks deterministically.
+
+```markdown
+## Menu button toggles the drawer
+Tap the menu button; the navigation drawer becomes visible. Tap it again;
+the drawer is hidden (it stays in the page, just faded out).
+```
+
+The agent also reaches elements that have **no accessible role or name** — a gesture/tap layer, an overlay `<div>` identified only by `data-testid` — which a role-based click can't target. You don't declare selectors; the agent discovers the real element at run time and records a stable `data-testid` (or CSS fallback) locator.
 
 ## Asserting console logs & API calls
 
