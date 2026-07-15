@@ -14,6 +14,7 @@ const ASSERTION_KINDS = new Set<Step["kind"]>([
   "waitForUrl",
   "assertVisible",
   "assertNotVisible",
+  "assertState",
   "assertUrl",
   "assertNetwork",
   "assertNoConsoleErrors",
@@ -106,6 +107,19 @@ export function describeStep(step: Step): string {
       return `assert text visible "${step.text}"${step.oneShot ? " (one-shot)" : ""}${timeoutSuffix(step.timeout)}`;
     case "assertNotVisible":
       return `assert text ABSENT "${step.text}"${timeoutSuffix(step.timeout)}`;
+    case "assertState": {
+      const parts = [
+        step.hasClass !== undefined ? `hasClass "${step.hasClass}"` : "",
+        step.notHasClass !== undefined ? `notHasClass "${step.notHasClass}"` : "",
+        step.attribute !== undefined
+          ? `attr "${step.attribute.name}"${step.attribute.value !== undefined ? `="${step.attribute.value}"` : ""}`
+          : "",
+        step.computedStyle !== undefined
+          ? `style ${step.computedStyle.property}="${step.computedStyle.value}"`
+          : "",
+      ].filter(Boolean);
+      return `assert state of ${step.target.description}: ${parts.join(", ")}${timeoutSuffix(step.timeout)}`;
+    }
     case "assertUrl":
       return `assert URL contains "${step.pattern}"${timeoutSuffix(step.timeout)}`;
     case "assertNetwork":

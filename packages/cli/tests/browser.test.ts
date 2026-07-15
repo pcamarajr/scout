@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  buildSelectorTarget,
   buildStorageInitScript,
   demoCursorStub,
+  describeStateMismatch,
   resolveEnvValue,
   toPlaywrightCookie,
 } from "../src/runner/browser.js";
@@ -120,4 +122,85 @@ test("buildStorageInitScript throws when a referenced env var is undefined", () 
 test("buildStorageInitScript returns empty string when nothing is seeded or removed", () => {
   assert.equal(buildStorageInitScript({}), "");
   assert.equal(buildStorageInitScript({ local: {}, session: {}, remove: [] }), "");
+});
+
+// buildSelectorTarget maps a raw {testId|css} to a durable Target — testId wins,
+// and a missing selector throws so a selector click/assert can't target nothing.
+
+test("buildSelectorTarget prefers testId and builds a data-testid description", () => {
+  assert.deepEqual(buildSelectorTarget({ testId: "tap-layer" }), {
+    testId: "tap-layer",
+    description: '[data-testid="tap-layer"]',
+  });
+});
+
+test("buildSelectorTarget falls back to css when there is no testId", () => {
+  assert.deepEqual(buildSelectorTarget({ css: ".overlay .tap" }), {
+    css: ".overlay .tap",
+    description: ".overlay .tap",
+  });
+  // testId wins when both are present.
+  assert.deepEqual(buildSelectorTarget({ testId: "t", css: ".c" }), {
+    testId: "t",
+    description: '[data-testid="t"]',
+  });
+});
+
+test("buildSelectorTarget throws when neither testId nor css is given", () => {
+  assert.throws(() => buildSelectorTarget({}), /needs testId or css/);
+});
+
+// describeStateMismatch is the pure comparator behind assertState's poll: "" when
+// every provided check holds, else a reason for the first failing one. This is
+// what makes the opacity-toggle pattern assertable (opacity-0 present/absent).
+
+const target = { testId: "rail", description: '[data-testid="rail"]' };
+
+test("describeStateMismatch returns empty when every provided check holds", () => {
+  const observed = { classes: ["opacity-0", "flex"], attrs: { "data-testid": "rail" }, styleValue: "0" };
+  assert.equal(describeStateMismatch(target, { hasClass: "opacity-0" }, observed), "");
+  assert.equal(describeStateMismatch(target, { notHasClass: "opacity-100" }, observed), "");
+  assert.equal(
+    describeStateMismatch(target, { computedStyle: { property: "opacity", value: "0" } }, observed),
+    ""
+  );
+  // All checks together still hold.
+  assert.equal(
+    describeStateMismatch(
+      target,
+      { hasClass: "opacity-0", notHasClass: "opacity-100", computedStyle: { property: "opacity", value: "0" } },
+      observed
+    ),
+    ""
+  );
+});
+
+test("describeStateMismatch reports the failing class check", () => {
+  const observed = { classes: ["opacity-100"], attrs: {}, styleValue: null };
+  assert.match(describeStateMismatch(target, { hasClass: "opacity-0" }, observed), /Expected class "opacity-0"/);
+  assert.match(
+    describeStateMismatch(target, { notHasClass: "opacity-100" }, observed),
+    /"opacity-100" must be absent/
+  );
+});
+
+test("describeStateMismatch checks attribute presence and value", () => {
+  const observed = { classes: [], attrs: { "aria-expanded": "false" }, styleValue: null };
+  assert.equal(describeStateMismatch(target, { attribute: { name: "aria-expanded" } }, observed), "");
+  assert.match(
+    describeStateMismatch(target, { attribute: { name: "aria-expanded", value: "true" } }, observed),
+    /Expected attribute "aria-expanded"="true".*"false"/
+  );
+  assert.match(
+    describeStateMismatch(target, { attribute: { name: "hidden" } }, observed),
+    /Expected attribute "hidden".*absent/
+  );
+});
+
+test("describeStateMismatch reports a computed-style mismatch", () => {
+  const observed = { classes: [], attrs: {}, styleValue: "1" };
+  assert.match(
+    describeStateMismatch(target, { computedStyle: { property: "opacity", value: "0" } }, observed),
+    /Expected computed opacity="0".*"1"/
+  );
 });

@@ -407,6 +407,7 @@ const INERT_BETWEEN_FILLS = new Set<Step["kind"]>([
   "waitForUrl",
   "assertVisible",
   "assertNotVisible",
+  "assertState",
   "assertUrl",
   "assertNetwork",
   "assertNoConsoleErrors",
@@ -415,7 +416,7 @@ const INERT_BETWEEN_FILLS = new Set<Step["kind"]>([
 ]);
 
 function targetKey(target: Target): string {
-  return JSON.stringify([target.role ?? null, target.name ?? null, target.css ?? null]);
+  return JSON.stringify([target.role ?? null, target.name ?? null, target.css ?? null, target.testId ?? null]);
 }
 
 /**
