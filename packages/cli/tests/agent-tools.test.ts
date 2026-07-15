@@ -24,6 +24,17 @@ function fakeSession(overrides: Partial<Record<string, unknown>> = {}): {
       calls.push(`click:${ref}`);
       return target("Login");
     },
+    clickSelector: async (sel: { testId?: string; css?: string }) => {
+      calls.push(`clickSelector:${sel.testId ?? ""}:${sel.css ?? ""}`);
+      return sel.testId
+        ? { testId: sel.testId, description: `[data-testid="${sel.testId}"]` }
+        : { css: sel.css!, description: sel.css! };
+    },
+    assertState: async (
+      t: Target,
+      checks: Record<string, unknown>,
+      timeout?: number
+    ) => void calls.push(`assertState:${t.testId ?? t.css}:${JSON.stringify(checks)}:${timeout ?? "default"}`),
     fill: async (ref: number, value: string) => {
       calls.push(`fill:${ref}:${value}`);
       return target("Email");
@@ -96,7 +107,9 @@ test("exposes the browser tools plus scout_verdict", () => {
       "browser_assert_console_message",
       "browser_assert_network",
       "browser_assert_no_console_errors",
+      "browser_assert_state",
       "browser_click",
+      "browser_click_selector",
       "browser_drag",
       "browser_fill",
       "browser_inspect_logs",
@@ -338,4 +351,73 @@ test("browser_assert_console_message rejects an empty substring (no false-pass)"
   // Schema rejects [""] and [] at the tool boundary (parse throws synchronously).
   await assert.rejects(async () => byName("browser_assert_console_message").handler({ includes: [""] }));
   await assert.rejects(async () => byName("browser_assert_console_message").handler({ includes: [] }));
+});
+
+test("browser_click_selector clicks by testId and records a click step with a testId target", async () => {
+  const { byName, steps, calls } = harness();
+  const r = await byName("browser_click_selector").handler({ testId: "tap-layer" });
+  assert.equal(r.isError, undefined);
+  // Recorded as a plain click step — one replay path, testId resolved by targetLocator.
+  assert.deepEqual(steps, [
+    { kind: "click", target: { testId: "tap-layer", description: '[data-testid="tap-layer"]' } },
+  ]);
+  assert.ok(calls.includes("clickSelector:tap-layer:"));
+});
+
+test("browser_click_selector falls back to a CSS selector", async () => {
+  const { byName, steps } = harness();
+  await byName("browser_click_selector").handler({ css: ".overlay .tap-layer" });
+  assert.deepEqual(steps, [
+    { kind: "click", target: { css: ".overlay .tap-layer", description: ".overlay .tap-layer" } },
+  ]);
+});
+
+test("browser_click_selector with neither testId nor css is an isError and records nothing", async () => {
+  const { byName, steps } = harness();
+  const r = await byName("browser_click_selector").handler({});
+  assert.equal(r.isError, true);
+  assert.equal(steps.length, 0);
+});
+
+test("browser_assert_state records a state assertion with only the provided checks", async () => {
+  const { byName, steps, calls } = harness();
+  const r = await byName("browser_assert_state").handler({
+    testId: "menu-toggle",
+    hasClass: "opacity-0",
+    timeoutMs: 2000,
+  });
+  assert.equal(r.isError, undefined);
+  assert.deepEqual(steps, [
+    {
+      kind: "assertState",
+      target: { testId: "menu-toggle", description: '[data-testid="menu-toggle"]' },
+      hasClass: "opacity-0",
+      timeout: 2000,
+    },
+  ]);
+  assert.ok(calls.some((c) => c.startsWith("assertState:menu-toggle:")));
+});
+
+test("browser_assert_state supports computedStyle and omits absent fields", async () => {
+  const { byName, steps } = harness();
+  await byName("browser_assert_state").handler({
+    css: "#rail",
+    computedStyle: { property: "opacity", value: "1" },
+  });
+  assert.deepEqual(steps, [
+    {
+      kind: "assertState",
+      target: { css: "#rail", description: "#rail" },
+      computedStyle: { property: "opacity", value: "1" },
+    },
+  ]);
+});
+
+test("browser_assert_state requires a target and at least one check (isError, records nothing)", async () => {
+  const { byName, steps } = harness();
+  const noTarget = await byName("browser_assert_state").handler({ hasClass: "opacity-0" });
+  assert.equal(noTarget.isError, true);
+  const noCheck = await byName("browser_assert_state").handler({ testId: "x" });
+  assert.equal(noCheck.isError, true);
+  assert.equal(steps.length, 0);
 });

@@ -5,8 +5,36 @@ export interface Target {
   name?: string;
   /** CSS path fallback when role+name is not unique */
   css?: string;
+  /**
+   * data-testid — the location strategy for elements OUTSIDE the accessibility
+   * tree (a gesture layer, an overlay `<div>` with no role/name). Preferred over
+   * `css` when present: stable across DOM refactors and resolved via Playwright's
+   * `getByTestId`. Populated by selector clicks / state assertions.
+   */
+  testId?: string;
   /** Human-readable label for reports */
   description: string;
+}
+
+/**
+ * Matcher for a state assertion on an element found by a {@link Target}. Asserts
+ * VISUAL/structural state that text- and URL-based checks can't reach: a class
+ * token, an attribute, or a computed style. Its reason for being is the opacity
+ * toggle pattern — a control kept in the DOM but hidden with `opacity:0`, which
+ * Playwright's visibility (and therefore `assertNotVisible`) still counts as
+ * VISIBLE. Assert `opacity-0`/computed `opacity === "0"` instead. Every provided
+ * check must hold; polled until they do or the timeout elapses, so it is
+ * deterministic on replay.
+ */
+export interface ElementStateMatcher {
+  /** A class token that MUST be present (e.g. "opacity-0"). Membership, not full-string equality. */
+  hasClass?: string;
+  /** A class token that must NOT be present (e.g. "opacity-100"). */
+  notHasClass?: string;
+  /** An attribute that must be present; with `value`, it must equal `value`. */
+  attribute?: { name: string; value?: string };
+  /** A computed style that must equal `value` (e.g. property "opacity", value "0"). */
+  computedStyle?: { property: string; value: string };
 }
 
 /** HTTP status family used by network assertions when an exact code is too strict. */
@@ -131,6 +159,7 @@ export type Step =
   | { kind: "waitForUrl"; pattern: string; timeout?: number }
   | { kind: "assertVisible"; text: string; timeout?: number; oneShot?: boolean }
   | { kind: "assertNotVisible"; text: string; timeout?: number }
+  | ({ kind: "assertState"; target: Target; timeout?: number } & ElementStateMatcher)
   | { kind: "assertUrl"; pattern: string; timeout?: number }
   | ({ kind: "assertNetwork" } & NetworkMatcher)
   | { kind: "assertNoConsoleErrors"; ignore?: string[] }

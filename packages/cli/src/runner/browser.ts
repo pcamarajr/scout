@@ -1,6 +1,7 @@
 import path from "node:path";
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "playwright";
 import type {
+  ElementStateMatcher,
   NetworkMatcher,
   PermissionPolicy,
   ScenarioCookie,
@@ -455,6 +456,69 @@ export class BrowserSession {
     return target;
   }
 
+  /**
+   * Clicks an element located directly by data-testid or CSS — no snapshot ref
+   * involved. This is the escape hatch for elements OUTSIDE the accessibility
+   * tree (a gesture layer, an overlay `<div>` with only a data-testid): they
+   * never get a numbered [ref], so ref-based click can't reach them. Returns the
+   * durable Target so the caller records a deterministic `click` step (the same
+   * kind as a ref click — one replay path, testId/css resolved by targetLocator).
+   */
+  async clickSelector(sel: { testId?: string; css?: string }): Promise<Target> {
+    const target = buildSelectorTarget(sel);
+    await this.targetLocator(target).click();
+    return target;
+  }
+
+  /**
+   * Asserts an element's VISUAL/structural state (class token, attribute,
+   * computed style) — the check text/URL assertions can't express. Polls until
+   * every provided condition holds or `timeout` elapses, so it is deterministic
+   * on replay. The canonical use is the opacity toggle: a control kept in the DOM
+   * but hidden with `opacity:0` (which Playwright still reports as "visible", so
+   * assertNotVisible would false-pass) — assert `opacity-0`/computed opacity
+   * instead. The element must at least be attached; a missing element fails.
+   */
+  async assertState(target: Target, checks: ElementStateMatcher, timeout = STEP_TIMEOUT): Promise<void> {
+    if (
+      checks.hasClass === undefined &&
+      checks.notHasClass === undefined &&
+      checks.attribute === undefined &&
+      checks.computedStyle === undefined
+    ) {
+      throw new Error("assertState needs at least one of hasClass/notHasClass/attribute/computedStyle.");
+    }
+    const locator = this.targetLocator(target);
+    await locator.waitFor({ state: "attached", timeout }).catch(() => {
+      throw new Error(`Element ${target.description} not found within ${timeout}ms.`);
+    });
+    const styleProp = checks.computedStyle?.property ?? null;
+    const deadline = Date.now() + timeout;
+    let lastReason = "";
+    for (;;) {
+      const observed = await locator
+        .evaluate(
+          (el, prop) => ({
+            classes: Array.from((el as Element).classList),
+            attrs: Object.fromEntries(Array.from((el as Element).attributes).map((a) => [a.name, a.value])),
+            styleValue: prop ? getComputedStyle(el as Element).getPropertyValue(prop).trim() : null,
+          }),
+          styleProp
+        )
+        .catch(() => null);
+      if (observed) {
+        lastReason = describeStateMismatch(target, checks, observed);
+        if (!lastReason) return; // every provided check holds
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(
+          lastReason || `Could not read the state of ${target.description} within ${timeout}ms.`
+        );
+      }
+      await this.page.waitForTimeout(100);
+    }
+  }
+
   async fill(ref: number, value: string): Promise<Target> {
     const { locator, target } = await this.resolveRef(ref);
     await locator.fill(value);
@@ -667,6 +731,17 @@ export class BrowserSession {
         return this.assertVisible(step.text, { timeout: step.timeout, oneShot: step.oneShot });
       case "assertNotVisible":
         return this.assertNotVisible(step.text, step.timeout);
+      case "assertState":
+        return this.assertState(
+          step.target,
+          {
+            hasClass: step.hasClass,
+            notHasClass: step.notHasClass,
+            attribute: step.attribute,
+            computedStyle: step.computedStyle,
+          },
+          step.timeout
+        );
       case "assertUrl":
         return this.assertUrl(step.pattern, step.timeout);
       case "assertNetwork":
@@ -683,6 +758,8 @@ export class BrowserSession {
   }
 
   private targetLocator(target: Target): Locator {
+    // testId first: the strategy for elements outside the a11y tree (no role/name).
+    if (target.testId) return this.page.getByTestId(target.testId).first();
     if (target.role && target.name) {
       return this.page
         .getByRole(target.role as Parameters<Page["getByRole"]>[0], {
@@ -823,6 +900,59 @@ export function buildStorageInitScript(storage: ScenarioStorage): string {
       for (const k in session) { try { sessionStorage.setItem(k, session[k]); } catch (e) {} }
     } catch (e) {}
   })();`;
+}
+
+/**
+ * Builds a durable Target for an element located directly by data-testid or CSS
+ * (no snapshot ref). testId wins when both are given — it is the stabler handle
+ * for elements outside the a11y tree. Throws when neither is provided, so a
+ * selector click/assert can never silently target nothing.
+ */
+export function buildSelectorTarget(sel: { testId?: string; css?: string }): Target {
+  if (sel.testId) return { testId: sel.testId, description: `[data-testid="${sel.testId}"]` };
+  if (sel.css) return { css: sel.css, description: sel.css };
+  throw new Error("A selector click/assert needs testId or css.");
+}
+
+/** The element state observed by {@link BrowserSession.assertState}'s in-page probe. */
+export interface ObservedElementState {
+  classes: string[];
+  attrs: Record<string, string>;
+  styleValue: string | null;
+}
+
+/**
+ * Compares an observed element state against a matcher, returning "" when every
+ * provided check holds or a human-readable reason for the FIRST failing one.
+ * Pure, so it is unit-testable without a browser and shared by the live poll.
+ */
+export function describeStateMismatch(
+  target: Target,
+  checks: ElementStateMatcher,
+  observed: ObservedElementState
+): string {
+  const where = ` on ${target.description}`;
+  if (checks.hasClass !== undefined && !observed.classes.includes(checks.hasClass)) {
+    return `Expected class "${checks.hasClass}"${where}, but classes are [${observed.classes.join(", ")}].`;
+  }
+  if (checks.notHasClass !== undefined && observed.classes.includes(checks.notHasClass)) {
+    return `Class "${checks.notHasClass}" must be absent${where}, but it is present [${observed.classes.join(", ")}].`;
+  }
+  if (checks.attribute !== undefined) {
+    const { name, value } = checks.attribute;
+    const has = Object.prototype.hasOwnProperty.call(observed.attrs, name);
+    if (!has) return `Expected attribute "${name}"${where}, but it is absent.`;
+    if (value !== undefined && observed.attrs[name] !== value) {
+      return `Expected attribute "${name}"="${value}"${where}, but it is "${observed.attrs[name]}".`;
+    }
+  }
+  if (checks.computedStyle !== undefined) {
+    const { property, value } = checks.computedStyle;
+    if (observed.styleValue !== value) {
+      return `Expected computed ${property}="${value}"${where}, but it is "${observed.styleValue ?? "(unread)"}".`;
+    }
+  }
+  return "";
 }
 
 /** Replaces $ENV:VAR_NAME placeholders so secrets never live in committed scripts. */

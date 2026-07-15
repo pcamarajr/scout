@@ -103,6 +103,8 @@ Working method:
 Rules:
 - Act like a real user: one step at a time, wait for loads with browser_wait_for.
 - If an element isn't in the snapshot, take a new snapshot or advance the flow another way — don't invent refs.
+- Elements with NO ARIA role/name never get a numbered [ref] (a gesture/tap layer, an overlay <div> with only a data-testid, a purely visual control). Click them with browser_click_selector (by data-testid, or CSS as a fallback) — don't invent a ref for them.
+- To check an element's VISUAL state rather than its text (a control shown/hidden, an attribute, a computed style), use browser_assert_state. This is the ONLY reliable way to assert opacity-based show/hide: an element with opacity:0 stays in the DOM and Playwright counts it as "visible", so notVisibleText false-passes — assert hasClass "opacity-0" (or computedStyle opacity="0") for hidden, "opacity-100"/opacity="1" for shown.
 - Gesture-driven UIs (vertical feed, carousel, swipe between items) often don't respond to the keyboard: use browser_wheel (scroll at a position) or browser_drag (point-to-point drag) and check the result in the next snapshot.
 - Never use literal secrets: use $ENV:VAR_NAME — it works both in browser_fill and in browser_navigate URLs (e.g. tokens in the query string).
 - Don't re-fill a field you already filled, unless the page cleared the value — each of your actions becomes a step in the recorded script, and duplicate steps are noise that makes replay fragile.

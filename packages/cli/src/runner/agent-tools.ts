@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ScoutConfig } from "../config.js";
 import type { Step, Verdict } from "../types.js";
-import { BrowserSession, resolveEnvValue } from "./browser.js";
+import { BrowserSession, buildSelectorTarget, resolveEnvValue } from "./browser.js";
 import { relativizeUrl } from "./engines/types.js";
 
 /** Normalized result every engine adapter maps into its own SDK shape. */
@@ -105,6 +105,35 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
         try {
           const before = session.tabCount();
           const target = await session.click(ref);
+          record({ kind: "click", target });
+          const opened =
+            session.tabCount() > before
+              ? "\n\n⚠️ A new tab was opened by this click. Use browser_switch_tab to interact with it before continuing."
+              : "";
+          return ok(`Clicked ${target.description}.${opened}\n\n${await afterAction()}`);
+        } catch (e) {
+          return fail(e);
+        }
+      }
+    ),
+    define(
+      "browser_click_selector",
+      'Clicks an element by data-testid (preferred) or CSS selector — use this for elements that DON\'T appear as a numbered [ref] in the snapshot because they have no ARIA role/name (a gesture/tap layer, an overlay <div data-testid="...">, a purely visual control). Prefer data-testid; it is stabler than a CSS path. Records a deterministic click step.',
+      z.object({
+        testId: z
+          .string()
+          .optional()
+          .describe('Value of the element\'s data-testid attribute, e.g. "tap-layer"'),
+        css: z
+          .string()
+          .optional()
+          .describe("CSS selector, used only when there is no data-testid"),
+      }),
+      async ({ testId, css }) => {
+        try {
+          if (!testId && !css) return fail(new Error("Provide testId or css."));
+          const before = session.tabCount();
+          const target = await session.clickSelector({ testId, css });
           record({ kind: "click", target });
           const opened =
             session.tabCount() > before
@@ -305,6 +334,60 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
             });
           }
           return ok("Assertion passed.");
+        } catch (e) {
+          return fail(e);
+        }
+      }
+    ),
+    define(
+      "browser_assert_state",
+      'Records a check of an element\'s VISUAL/structural state — the check text/URL assertions can\'t express. Locate the element by data-testid (preferred) or CSS, then assert a class token (hasClass/notHasClass), an attribute, or a computed style. Its reason for being is the OPACITY toggle: a control kept in the DOM but hidden with opacity:0 — Playwright counts that as visible, so notVisibleText would false-pass. Assert hasClass "opacity-0" (or computedStyle opacity="0") for hidden, "opacity-100"/opacity="1" for shown. Becomes a deterministic test.',
+      z.object({
+        testId: z.string().optional().describe('data-testid of the element, e.g. "menu-toggle"'),
+        css: z.string().optional().describe("CSS selector, used only when there is no data-testid"),
+        hasClass: z
+          .string()
+          .optional()
+          .describe('A class token that MUST be present, e.g. "opacity-0" (membership, not full class string)'),
+        notHasClass: z.string().optional().describe('A class token that must be ABSENT, e.g. "opacity-100"'),
+        attribute: z
+          .object({ name: z.string(), value: z.string().optional() })
+          .optional()
+          .describe("Attribute that must be present; with value, must equal it (e.g. aria-expanded=true)"),
+        computedStyle: z
+          .object({ property: z.string(), value: z.string() })
+          .optional()
+          .describe('Computed style that must equal value, e.g. { property: "opacity", value: "0" }'),
+        timeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Timeout in ms to poll for the state (default 10000)"),
+      }),
+      async ({ testId, css, hasClass, notHasClass, attribute, computedStyle, timeoutMs }) => {
+        try {
+          if (!testId && !css) return fail(new Error("Provide testId or css."));
+          if (
+            hasClass === undefined &&
+            notHasClass === undefined &&
+            attribute === undefined &&
+            computedStyle === undefined
+          ) {
+            return fail(new Error("Provide at least one of hasClass/notHasClass/attribute/computedStyle."));
+          }
+          const target = buildSelectorTarget({ testId, css });
+          await session.assertState(target, { hasClass, notHasClass, attribute, computedStyle }, timeoutMs);
+          record({
+            kind: "assertState",
+            target,
+            ...(hasClass !== undefined ? { hasClass } : {}),
+            ...(notHasClass !== undefined ? { notHasClass } : {}),
+            ...(attribute !== undefined ? { attribute } : {}),
+            ...(computedStyle !== undefined ? { computedStyle } : {}),
+            ...(timeoutMs ? { timeout: timeoutMs } : {}),
+          });
+          return ok("State assertion passed.");
         } catch (e) {
           return fail(e);
         }
