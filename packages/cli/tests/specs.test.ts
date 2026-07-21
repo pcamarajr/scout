@@ -494,6 +494,86 @@ test("scenarios without storage have undefined storage", () => {
   assert.equal(s.storage, undefined);
 });
 
+test("parses device: frontmatter object + per-section inline override merged per field", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "device.scout.md",
+    `---
+feature: Add to Home Screen
+device:
+  device: iPhone 14
+  userAgent: file-level UA
+---
+
+## Sheet renders on the file-level device
+Open the app; the Add-to-Home-Screen sheet renders under the iOS Safari UA.
+
+## Overridden to a different device
+device: Pixel 7
+
+Open the app; the sheet adapts to the overridden device.
+`
+  );
+
+  const [def, forced] = loadScenarios(cwd);
+
+  // File frontmatter applies to the first scenario as-is.
+  assert.deepEqual(def.device, { device: "iPhone 14", userAgent: "file-level UA" });
+
+  // Section inline override wins on the device name; the file-level userAgent
+  // survives (merge per field, not replace).
+  assert.deepEqual(forced.device, { device: "Pixel 7", userAgent: "file-level UA" });
+});
+
+test("parses device individual overrides without a named device", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "ua-only.scout.md",
+    `---\nfeature: UA gate\ndevice:\n  userAgent: iosSafariUA\n  hasTouch: true\n---\n\n## UA-gated banner\nOpen the app; the iOS banner shows.\n`
+  );
+  const [s] = loadScenarios(cwd);
+  assert.deepEqual(s.device, { userAgent: "iosSafariUA", hasTouch: true });
+});
+
+test("rejects an unknown device name in frontmatter", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "baddevice.scout.md",
+    `---\nfeature: Bad\ndevice:\n  device: Nokia 3310\n---\n\n## Bad device\nBody text.\n`
+  );
+  assert.throws(() => loadScenarios(cwd), /Unknown Playwright device "Nokia 3310"/);
+});
+
+test("rejects an unknown device field in frontmatter", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "baddevicefield.scout.md",
+    `---\nfeature: Bad\ndevice:\n  devcie: iPhone 14\n---\n\n## Typo\nBody text.\n`
+  );
+  assert.throws(() => loadScenarios(cwd), /Unknown device field "devcie"/);
+});
+
+test("rejects an unknown device name in an inline override", () => {
+  const cwd = tmpProject();
+  writeSpec(
+    cwd,
+    "badinlinedevice.scout.md",
+    `---\nfeature: Bad\n---\n\n## Bad inline device\ndevice: Nokia 3310\n\nBody text.\n`
+  );
+  assert.throws(() => loadScenarios(cwd), /Unknown Playwright device "Nokia 3310"/);
+});
+
+test("scenarios without a device have undefined device", () => {
+  const cwd = tmpProject();
+  writeSpec(cwd, "nodevice.scout.md", `---\nfeature: Plain\n---\n\n## Nothing\nJust prose.\n`);
+  const [s] = loadScenarios(cwd);
+  assert.equal(s.device, undefined);
+});
+
 test("grant wins over an inherited deny for the same permission", () => {
   const cwd = tmpProject();
   writeSpec(

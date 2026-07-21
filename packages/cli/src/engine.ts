@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { loadConfig, resolveCookies, resolveStorage, resolveStorageState, type ScoutConfig } from "./config.js";
+import { loadConfig, resolveCookies, resolveDevice, resolveStorage, resolveStorageState, type ScoutConfig } from "./config.js";
 import { detectAiCredentials, inferProvider } from "./credentials.js";
+import { effectiveViewportSize } from "./device.js";
 import { renderRunReport } from "./report.js";
 import { Store } from "./store.js";
 import { BrowserSession } from "./runner/browser.js";
@@ -9,7 +10,7 @@ import { runWithAgent } from "./runner/ai-runner.js";
 import { describeStep, replayForDemo, replaySteps } from "./runner/script-runner.js";
 import { generateVideo, pacingFor, type TimelineEntry, type VideoPacing } from "./runner/video.js";
 import { defaultViewportName, resolveViewport, type ResolvedViewport } from "./viewports.js";
-import type { RunResult, Scenario, ScenarioCookie, ScenarioStorage, Step, Target } from "./types.js";
+import type { RunResult, Scenario, ScenarioCookie, ScenarioDevice, ScenarioStorage, Step, Target } from "./types.js";
 
 export interface RunOptions {
   /** Skip the cached script and force an AI run (re-record) */
@@ -50,6 +51,7 @@ export async function runScenario(
   const storageState = resolveStorageState(scenario.profile, config);
   const cookies = resolveCookies(scenario, config);
   const storage = resolveStorage(scenario, config);
+  const device = resolveDevice(scenario, config);
   const cached = opts.forceAi ? undefined : store.loadSteps(scenario.slug, viewportName);
   const aiCreds = detectAiCredentials(inferProvider(config.model), { engine: config.engine });
 
@@ -64,6 +66,7 @@ export async function runScenario(
       permissions: scenario.permissions,
       cookies,
       storage,
+      device,
       extraHeaders: config.headers,
     });
 
@@ -95,7 +98,7 @@ export async function runScenario(
       };
     } else if (heal && aiCreds.ok) {
       // cached script broke — re-verify with the agent and re-record
-      const ai = await runAi(scenario, config, store, runDir, viewport, storageState, cookies, storage, opts);
+      const ai = await runAi(scenario, config, store, runDir, viewport, storageState, cookies, storage, device, opts);
       verifiedSteps = ai.steps;
       result = {
         ...ai.result,
@@ -124,7 +127,7 @@ export async function runScenario(
     if (!aiCreds.ok) {
       throw new Error(aiCreds.remediation);
     }
-    const ai = await runAi(scenario, config, store, runDir, viewport, storageState, cookies, storage, opts);
+    const ai = await runAi(scenario, config, store, runDir, viewport, storageState, cookies, storage, device, opts);
     verifiedSteps = ai.steps;
     result = { ...ai.result, startedAt, durationMs: Date.now() - start };
   }
@@ -137,7 +140,7 @@ export async function runScenario(
     const persisted = store.loadSteps(scenario.slug, viewportName);
     const steps = persisted ?? (verifiedSteps ? pruneSteps(verifiedSteps) : undefined);
     if (steps?.length) {
-      result.video = await recordDemoVideo(scenario, steps, config, viewport, storageState, cookies, storage, runDir);
+      result.video = await recordDemoVideo(scenario, steps, config, viewport, storageState, cookies, storage, device, runDir);
     }
   }
 
@@ -271,6 +274,7 @@ async function recordDemoVideo(
   storageState: string | undefined,
   cookies: ScenarioCookie[] | undefined,
   storage: ScenarioStorage | undefined,
+  device: ScenarioDevice | undefined,
   runDir: string
 ): Promise<string | undefined> {
   const attempt = async (pacing: VideoPacing): Promise<RecordedReplay> => {
@@ -289,6 +293,7 @@ async function recordDemoVideo(
         permissions: scenario.permissions,
         cookies,
         storage,
+        device,
         extraHeaders: config.headers,
       });
     } catch {
@@ -306,10 +311,16 @@ async function recordDemoVideo(
     return { passed: demo.passed, webm, timeline: demo.timeline, failure: demo.failure };
   };
 
-  return recordDemoVideoFrom(attempt, scenario, runDir, pacingFor(config.videoSpeed), {
-    width: viewport.width,
-    height: viewport.height,
-  });
+  // Size the rendered MP4 to the effective context size — when a device
+  // overrides the viewport dimensions, the WebM is device-sized, so the ffmpeg
+  // render must match or it distorts.
+  return recordDemoVideoFrom(
+    attempt,
+    scenario,
+    runDir,
+    pacingFor(config.videoSpeed),
+    effectiveViewportSize(viewport, device)
+  );
 }
 
 /**
@@ -338,6 +349,7 @@ async function runAi(
   storageState: string | undefined,
   cookies: ScenarioCookie[] | undefined,
   storage: ScenarioStorage | undefined,
+  device: ScenarioDevice | undefined,
   opts: RunOptions
 ): Promise<{ result: RunResult; steps: Step[] }> {
   const startedAt = new Date().toISOString();
@@ -358,6 +370,7 @@ async function runAi(
       permissions: scenario.permissions,
       cookies,
       storage,
+      device,
       extraHeaders: config.headers,
     });
     let result;

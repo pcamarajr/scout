@@ -3,8 +3,16 @@ import path from "node:path";
 import matter from "gray-matter";
 import { SCOUT_DIR } from "./config.js";
 import { mergeCookiesByName, parseCookieList, parseInlineCookies } from "./cookies.js";
+import { mergeDevice, parseDeviceBlock, parseInlineDevice } from "./device.js";
 import { isEmptyStorage, mergeStorage, parseInlineStorage, parseStorageBlock } from "./storage.js";
-import type { GeoCoords, PermissionPolicy, Scenario, ScenarioCookie, ScenarioStorage } from "./types.js";
+import type {
+  GeoCoords,
+  PermissionPolicy,
+  Scenario,
+  ScenarioCookie,
+  ScenarioDevice,
+  ScenarioStorage,
+} from "./types.js";
 
 /**
  * Scenario specs live as markdown files under `.scout/specs/**\/*.scout.md`.
@@ -31,6 +39,7 @@ const OVERRIDE_KEYS = new Set([
   "geolocation",
   "cookies",
   "storage",
+  "device",
 ]);
 
 /** Filesystem/report-safe viewport names (mirrors viewports.ts, kept inline so
@@ -264,6 +273,7 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
   const relFile = path.relative(cwd, specFile);
   const fileCookies = parseCookieList(data.cookies, relFile);
   const fileStorage = parseStorageBlock(data.storage, relFile);
+  const fileDevice = parseDeviceBlock(data.device, `${relFile} frontmatter`);
 
   const sections = splitSections(content);
   const scenarios: Scenario[] = [];
@@ -311,6 +321,11 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
     const sectionStorage = "storage" in overrides ? parseInlineStorage(overrides.storage, ctx) : {};
     const mergedStorage = mergeStorage(fileStorage ?? {}, sectionStorage);
     const storage: ScenarioStorage | undefined = isEmptyStorage(mergedStorage) ? undefined : mergedStorage;
+    // Per-section override (inline device name) wins over the file frontmatter,
+    // per field; the profile's device merges under both at launch. The inline
+    // form names a device only — individual overrides belong in frontmatter.
+    const sectionDevice = "device" in overrides ? parseInlineDevice(overrides.device, ctx) : undefined;
+    const device: ScenarioDevice | undefined = mergeDevice(fileDevice, sectionDevice);
     scenarios.push({
       slug: `${fileSlug}/${scenarioSlug}`,
       name: section.name,
@@ -323,6 +338,7 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
       permissions,
       cookies,
       storage,
+      device,
       file: relFile,
     });
   }

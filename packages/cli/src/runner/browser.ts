@@ -5,10 +5,12 @@ import type {
   NetworkMatcher,
   PermissionPolicy,
   ScenarioCookie,
+  ScenarioDevice,
   ScenarioStorage,
   Step,
   Target,
 } from "../types.js";
+import { resolveDeviceOptions } from "../device.js";
 import type { ResolvedViewport } from "../viewports.js";
 import {
   findConsoleErrors,
@@ -71,6 +73,13 @@ export interface LaunchOptions {
    * Values may carry a `$ENV:VAR` placeholder, resolved here at launch.
    */
   storage?: ScenarioStorage;
+  /**
+   * Device / user-agent emulation (profile + scenario, already merged). Resolved
+   * to Playwright context options and composed OVER the viewport at launch — the
+   * device's fields (viewport size, UA, deviceScaleFactor, isMobile, hasTouch)
+   * win over the viewport's when set. Its point is UA/device-gated UI.
+   */
+  device?: ScenarioDevice;
   /**
    * Extra HTTP headers sent on every request in the context. Set from
    * `scout.config.json` `headers` or `SCOUT_EXTRA_HEADERS`. The canonical use is
@@ -222,14 +231,23 @@ export class BrowserSession {
     const browser = await chromium.launch({ headless: opts.headless, slowMo: opts.slowMoMs });
     const perm = opts.permissions;
     const vp = opts.viewport;
-    const size = { width: vp.width, height: vp.height };
+    // Device emulation composes OVER the viewport: an explicit device field wins
+    // over the viewport's value; whatever the device doesn't set falls back to
+    // the viewport. This is how a scenario emulates a UA-gated environment (e.g.
+    // an iOS-Safari-only sheet) without changing which viewport it fans out in.
+    const dev = opts.device ? resolveDeviceOptions(opts.device) : undefined;
+    const size = dev?.viewport ?? { width: vp.width, height: vp.height };
+    const deviceScaleFactor = dev?.deviceScaleFactor ?? vp.deviceScaleFactor;
+    const isMobile = dev?.isMobile ?? vp.isMobile;
+    const hasTouch = dev?.hasTouch ?? vp.hasTouch;
+    const userAgent = dev?.userAgent ?? vp.userAgent;
     const context = await browser.newContext({
       locale: opts.locale ?? "pt-BR",
       viewport: size,
-      ...(vp.deviceScaleFactor != null ? { deviceScaleFactor: vp.deviceScaleFactor } : {}),
-      ...(vp.isMobile != null ? { isMobile: vp.isMobile } : {}),
-      ...(vp.hasTouch != null ? { hasTouch: vp.hasTouch } : {}),
-      ...(vp.userAgent != null ? { userAgent: vp.userAgent } : {}),
+      ...(deviceScaleFactor != null ? { deviceScaleFactor } : {}),
+      ...(isMobile != null ? { isMobile } : {}),
+      ...(hasTouch != null ? { hasTouch } : {}),
+      ...(userAgent != null ? { userAgent } : {}),
       storageState: opts.storageState,
       ...(opts.extraHeaders ? { extraHTTPHeaders: opts.extraHeaders } : {}),
       ...(perm?.grant?.length ? { permissions: perm.grant } : {}),
