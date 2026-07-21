@@ -1,5 +1,6 @@
 import path from "node:path";
 import { describeStep } from "./runner/script-runner.js";
+import { fragileWarning } from "./runner/selector-ladder.js";
 import { expandScenarios, runKey, type ViewportSelectionConfig } from "./viewports.js";
 import type { RunResult, Scenario, ScenarioStatus, Step } from "./types.js";
 
@@ -32,7 +33,32 @@ export function renderRunReport(result: RunResult, scenario: Scenario, steps?: S
 
   if (steps?.length) {
     lines.push(``, `## Recorded script (${steps.length} steps)`, ``);
-    steps.forEach((s, i) => lines.push(`${i + 1}. ${describeStep(s)}`));
+    steps.forEach((s, i) => {
+      const fragile = "target" in s && s.target.fragile ? " ⚠️ fragile (positional selector)" : "";
+      lines.push(`${i + 1}. ${describeStep(s)}${fragile}`);
+    });
+  }
+
+  if (result.fragileSteps?.length) {
+    lines.push(
+      ``,
+      `## ⚠️ Fragile selectors`,
+      ``,
+      `These steps recorded a positional selector — they replay now but break when the DOM shifts. Add a stable handle to make replay robust:`,
+      ``
+    );
+    for (const step of result.fragileSteps) lines.push(`- ${fragileWarning(step)}`);
+  }
+
+  if (result.usedFallbacks?.length) {
+    lines.push(
+      ``,
+      `## Fallback selectors used`,
+      ``,
+      `A primary selector no longer resolved; a recorded fallback rescued the step deterministically (no AI). Consider re-recording to refresh the primary:`,
+      ``
+    );
+    for (const note of result.usedFallbacks) lines.push(`- ${note}`);
   }
 
   if (result.screenshots.length) {

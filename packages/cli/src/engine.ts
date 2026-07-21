@@ -7,6 +7,7 @@ import { Store } from "./store.js";
 import { BrowserSession } from "./runner/browser.js";
 import { runWithAgent } from "./runner/ai-runner.js";
 import { describeStep, replayForDemo, replaySteps } from "./runner/script-runner.js";
+import { collectFragileSteps } from "./runner/selector-ladder.js";
 import { generateVideo, pacingFor, type TimelineEntry, type VideoPacing } from "./runner/video.js";
 import { defaultViewportName, resolveViewport, type ResolvedViewport } from "./viewports.js";
 import type { RunResult, Scenario, ScenarioCookie, ScenarioStorage, Step, Target } from "./types.js";
@@ -65,6 +66,7 @@ export async function runScenario(
       cookies,
       storage,
       extraHeaders: config.headers,
+      testIdAttribute: config.testIdAttribute,
     });
 
   let result: RunResult;
@@ -92,6 +94,7 @@ export async function runScenario(
         durationMs: Date.now() - start,
         screenshots: session.screenshots,
         trace,
+        ...(replay.fallbacks?.length ? { usedFallbacks: replay.fallbacks } : {}),
       };
     } else if (heal && aiCreds.ok) {
       // cached script broke — re-verify with the agent and re-record
@@ -118,6 +121,7 @@ export async function runScenario(
         durationMs: Date.now() - start,
         screenshots: session.screenshots,
         trace,
+        ...(replay.fallbacks?.length ? { usedFallbacks: replay.fallbacks } : {}),
       };
     }
   } else {
@@ -141,10 +145,17 @@ export async function runScenario(
     }
   }
 
+  // Surface fragility from the FINAL recorded script (persisted or, for an
+  // ephemeral run, just-verified) so a positional selector is flagged at record
+  // time — not discovered on a broken replay later.
+  const finalSteps = store.loadSteps(scenario.slug, viewportName) ?? verifiedSteps;
+  const fragile = finalSteps ? collectFragileSteps(finalSteps) : [];
+  if (fragile.length) result.fragileSteps = fragile;
+
   store.saveRunResult(result);
   fs.writeFileSync(
     path.join(runDir, "report.md"),
-    renderRunReport(result, scenario, store.loadSteps(scenario.slug, viewportName) ?? verifiedSteps)
+    renderRunReport(result, scenario, finalSteps)
   );
   return result;
 }
@@ -290,6 +301,7 @@ async function recordDemoVideo(
         cookies,
         storage,
         extraHeaders: config.headers,
+        testIdAttribute: config.testIdAttribute,
       });
     } catch {
       console.warn("[scout] video: could not open the browser for the demo replay.");
@@ -359,6 +371,7 @@ async function runAi(
       cookies,
       storage,
       extraHeaders: config.headers,
+      testIdAttribute: config.testIdAttribute,
     });
     let result;
     try {
@@ -416,7 +429,13 @@ const INERT_BETWEEN_FILLS = new Set<Step["kind"]>([
 ]);
 
 function targetKey(target: Target): string {
-  return JSON.stringify([target.role ?? null, target.name ?? null, target.css ?? null, target.testId ?? null]);
+  return JSON.stringify([
+    target.role ?? null,
+    target.name ?? null,
+    target.css ?? null,
+    target.testId ?? null,
+    target.text ?? null,
+  ]);
 }
 
 /**

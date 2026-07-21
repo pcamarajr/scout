@@ -7,6 +7,11 @@ export interface ReplayOutcome {
   failedStep?: string;
   failedIndex?: number;
   error?: string;
+  /**
+   * Notes for steps whose primary selector failed but a recorded fallback
+   * resolved — deterministic retry, no LLM. Empty when no fallback was needed.
+   */
+  fallbacks?: string[];
 }
 
 const ASSERTION_KINDS = new Set<Step["kind"]>([
@@ -140,10 +145,11 @@ export function describeStep(step: Step): string {
  * cheap path that runs on every CI push.
  */
 export async function replaySteps(session: BrowserSession, steps: Step[]): Promise<ReplayOutcome> {
+  const fallbacks: string[] = [];
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     try {
-      await session.executeStep(step);
+      await session.executeStep(step, (note) => fallbacks.push(`step ${i + 1}: ${note}`));
     } catch (error) {
       await session.screenshot(`replay-failed-step-${i + 1}`).catch(() => {});
       return {
@@ -151,9 +157,10 @@ export async function replaySteps(session: BrowserSession, steps: Step[]): Promi
         failedIndex: i,
         failedStep: describeStep(step),
         error: error instanceof Error ? error.message : String(error),
+        ...(fallbacks.length ? { fallbacks } : {}),
       };
     }
   }
   await session.screenshot("final-state").catch(() => {});
-  return { passed: true };
+  return { passed: true, ...(fallbacks.length ? { fallbacks } : {}) };
 }

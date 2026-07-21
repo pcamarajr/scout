@@ -210,6 +210,32 @@ Beyond *absence* of errors, you can assert a **specific log was emitted** (e.g. 
 
 `browser_click` only takes a numbered `[ref]` from the accessibility snapshot, so an element with **no ARIA role or name** — a gesture/tap layer, an overlay `<div data-testid="…">`, a purely visual control — never gets a `[ref]` and can't be clicked that way. When you hit one, use **`browser_click_selector`**: it clicks by `data-testid` (**preferred** — stabler than a CSS path) or, if there is none, a `css` selector. It records as a plain deterministic `click` step, so replay needs no LLM. Reach for it only for elements the snapshot can't reference; a normal button still goes through `browser_click`.
 
+## How selectors are recorded (the preference ladder)
+
+You never write selectors — Scout derives them at record time. For every interaction step (click, fill, select) it resolves the target element and walks a **preference ladder**, recording the most stable strategy that *uniquely* matches the live element:
+
+1. **`data-testid`** (or the configured testid attribute) — on the element or a close stable ancestor. The sturdiest handle; survives DOM refactors.
+2. **`id`** — but only a hand-authored-looking one. Framework-generated ids are rejected (any run of 3+ digits, or a `radix-` / `react-` / `headlessui-` / `mui-` / React `useId` `:r…` prefix), because they change between renders.
+3. **role + accessible name** — the accessible name is **computed from the live DOM** at record time (the real ARIA name), never guessed from the visible label. This matters: a button reading "Buy" with `aria-label="Purchase now"` is recorded with name **"Purchase now"** — the computed name — so the selector actually resolves on replay. (Guessing "Buy" from the visible label is exactly the mistake this prevents.)
+4. **visible text** — a stable, unique text anchor.
+5. **positional CSS path** — the last resort (`main > section:nth-of-type(3) > a:nth-of-type(2)`), used only when nothing above uniquely matched.
+
+The chosen strategy becomes the step's primary selector; the other strategies that *also* uniquely matched are kept as ordered **fallbacks** (below).
+
+**The testid attribute is configurable.** It defaults to `data-testid`; set `"testIdAttribute": "data-test"` (or `data-qa`, …) in `scout.config.json` if the app uses a different convention — the ladder reads it and `getByTestId` resolves it on replay.
+
+### Fragile selectors — a warning at record time, not a failure
+
+When the ladder **bottoms out at a positional CSS path**, the step is marked **fragile**: it replays today but breaks the moment the DOM shifts. Scout makes this visible immediately — `scout go` prints a warning and the run report lists the fragile steps:
+
+> `step 4 (click main > a:nth-of-type(2)) recorded with a positional selector — add a data-testid or a unique role/name to make replay robust.`
+
+This is deliberate: fragility surfaces **at record time**, not days later as a red CI replay. The fix lives in the **app**, not the spec — add a `data-testid` (or a unique, accessible role/name) to the element, then re-record with `scout go --ai -s <slug>`. Don't treat the warning as noise: a suite full of positional selectors is a suite about to rot.
+
+### Fallback selectors — deterministic retry, no LLM
+
+Each interaction step also stores the other ladder strategies that uniquely matched, as an ordered **fallback list**. On deterministic replay, if the primary selector no longer resolves, Scout tries the fallbacks in order **before failing** — a deterministic retry with **no AI involved**, so `--no-heal` semantics are fully preserved (this is *not* healing). When a fallback rescues a step, `scout go` and the report log which one (`step 3: testid "go" → fallback css #real`) — a nudge to re-record and refresh the primary. Scripts recorded before this feature (no fallbacks) keep replaying unchanged — the format is backward compatible.
+
 ## Asserting visual/structural state (opacity, class, attribute)
 
 `browser_assert` covers text and URL, but it **can't confirm an element is hidden by `opacity:0`** — Playwright counts an opacity-hidden node (still in the DOM, still laid out) as *visible*, so a `notVisibleText`-style check would false-pass. For show/hide toggles and other purely visual state, use **`browser_assert_state`**: locate the element by `data-testid` (preferred) or `css`, then assert one or more of a class token (`hasClass` / `notHasClass`, e.g. `opacity-0` vs `opacity-100`), an `attribute` (present, or equal to a value like `aria-expanded=true`), or a `computedStyle` (e.g. `opacity` = `0`). It polls until every check holds or the timeout, then records a deterministic `assertState` step. This is what lets a scenario verify a reveal/hide control that stays mounted — describe the toggle in plain prose ("the drawer becomes hidden") and the agent records the class/style check.
