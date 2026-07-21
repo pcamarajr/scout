@@ -53,9 +53,9 @@ Logged-in subscriber opens ep 3; the episode plays with no paywall.
 
 Rules that matter when you author:
 
-- **Frontmatter** (YAML, optional): `feature` (defaults to the filename), `profile` (default auth profile), `tags`, `viewports`, `cookies`, `storage`.
+- **Frontmatter** (YAML, optional): `feature` (defaults to the filename), `profile` (default auth profile), `tags`, `viewports`, `cookies`, `storage`, `device`.
 - **Each `## heading` is one scenario.** Its logical slug is `<file-slug>/<scenario-slug>` (e.g. `paywall/free-user-hits-paywall-on-ep-3`) and must be unique across the suite. Duplicate headings in a file, or a scenario with no body text, are hard errors.
-- **Per-scenario overrides:** immediately under a heading you may place `profile:`, `notes:`, `tags:`, `viewports:`, `grantPermissions:`, `denyPermissions:`, `geolocation:`, `cookies:`, and `storage:` lines (before the prose) to override the file-level defaults.
+- **Per-scenario overrides:** immediately under a heading you may place `profile:`, `notes:`, `tags:`, `viewports:`, `grantPermissions:`, `denyPermissions:`, `geolocation:`, `cookies:`, `storage:`, and `device:` lines (before the prose) to override the file-level defaults.
 - **Body = flow + expected behavior, in plain language.** Describe what the user does and what must (or must not) be true. No CSS selectors, no Playwright code — the agent discovers the real elements at run time and records them.
 - A `.scout.md` whose every `##` lives inside a fenced ```` ``` ```` block parses as **zero scenarios** (that is how `example.scout.md` documents the format without polluting the suite).
 
@@ -195,6 +195,38 @@ Notes:
 - **`remove` clears both namespaces:** a removed key is dropped from `localStorage` **and** `sessionStorage`. Removals apply before the seed, so a declared value always wins over a removal of the same key.
 - **Secrets:** a value may use the `$ENV:VAR` placeholder — resolved at launch, so the secret never lands in the committed spec or the agent's context.
 - **Fail-fast:** an unknown field (only `local`/`session`/`remove` are allowed), a non-string value, or a malformed inline token is a hard error — a silently skipped storage precondition would produce a misleading verdict.
+
+## Device / user-agent emulation
+
+Some UI is gated on **device or user-agent detection** — an "Add to Home Screen" sheet that only renders under an iOS-Safari UA, a layout branch that keys off touch support. By default Scout launches desktop Chromium with its own UA, so those flows can never pass. Declare a `device:` and Scout emulates it at browser launch, for both the AI run and deterministic replay. Like `cookies`/`storage`/`storageState`, it's a context-creation parameter, never a recorded step — replay re-reads the frontmatter, so it stays deterministic.
+
+`device` names a **Playwright device descriptor** (see the [device registry](https://playwright.dev/docs/emulation#devices), e.g. `iPhone 14`, `Pixel 7`). Individual fields — `userAgent`, `viewport` (`{ width, height }`), `deviceScaleFactor`, `isMobile`, `hasTouch` — compose on top of (or without) the named device; an explicit field always wins over the device's value.
+
+Two forms. In the **frontmatter** (file default) or a **profile** (shared base in `scout.config.json`), `device:` is an object:
+
+```markdown
+---
+feature: Add to Home Screen
+device:
+  device: iPhone 14          # a Playwright device name (the base)
+  userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) …"  # optional override
+---
+
+## Sheet renders under iOS Safari
+Open the app; the Add-to-Home-Screen sheet appears.
+
+## Same flow on Android
+device: Pixel 7              # per-scenario inline override: a device name
+Open the app; the native install banner appears instead.
+```
+
+Notes:
+
+- **Inline override form:** the per-`##` override is a single line naming a device — `device: <device name>`. It carries a device name only; individual overrides (`userAgent`, `viewport`, …) belong in the frontmatter/profile because a heading override line can't carry a nested YAML object.
+- **Merge:** a profile's device is the base; the file frontmatter and then the per-scenario override win, **per field** (an inline `device: Pixel 7` keeps a file-level `userAgent`). The `viewport` field is replaced wholesale (it's a width/height pair).
+- **Composes over the viewport:** the resolved device layers on top of the run's viewport — its `viewport`/UA/`isMobile`/`hasTouch`/`deviceScaleFactor` win over the viewport's. The named viewport still determines which sizes the scenario fans out in and the run identity (`<slug>@<viewport>`).
+- **Not secrets:** these fields are plain values, so there is no `$ENV:VAR` resolution (unlike cookies/storage).
+- **Fail-fast:** an unknown field, an unknown device name, or a bad shape is a hard error at parse — a silently ignored device would produce a misleading verdict.
 
 ## New tabs / popups
 
