@@ -46,6 +46,7 @@ draft: false
 | `videoSpeed` | number `(0,1]` | `0.35` | Playback pacing for the demo video. `0.35` is slower (easier to watch); `1` is natural speed. |
 | `defaultViewport` | string | `mobile` | The viewport a scenario runs in when it declares none. Must name a built-in or a `viewports` entry. |
 | `viewports` | object | — | Named viewports, merged over the built-ins `mobile`/`desktop`/`tablet` (a same-named entry overrides one). Each value is a Playwright `device` preset and/or explicit fields (`width`, `height`, `deviceScaleFactor`, `isMobile`, `hasTouch`, `userAgent`) — they compose. Names are limited to `[a-z0-9-]`. See [Viewports](/docs/scenarios/#viewports-screen-sizes). |
+| `testIdAttribute` | string | `data-testid` | The attribute the [selector ladder](/docs/how-verification-works/#stable-selectors) prefers when recording a stable handle for each interaction. Set it to `data-test`, `data-qa`, … if your app uses a different convention — the ladder reads it and `getByTestId` resolves it on replay. |
 | `profiles` | object | — | Named auth profiles. Each has a `description` and an optional `env` array naming the env vars its login needs. See [Auth profiles & secrets](/docs/auth/). |
 
 ## Environment overrides
