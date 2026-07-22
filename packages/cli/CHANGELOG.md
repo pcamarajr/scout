@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.15.0](https://github.com/pcamarajr/scout/compare/scout-v0.14.0...scout-v0.15.0) (2026-07-22)
+
+
+### Features
+
+* **cli:** per-scenario device / user-agent emulation ([#69](https://github.com/pcamarajr/scout/issues/69)) ([2155311](https://github.com/pcamarajr/scout/commit/2155311e946fbaed1939eb703c900a3dfb1f2160))
+* **cli:** record stable selectors via a preference ladder with fragility warnings and deterministic fallbacks ([#70](https://github.com/pcamarajr/scout/issues/70)) ([e30cfc7](https://github.com/pcamarajr/scout/commit/e30cfc7942057b31a28490fcde9429b886b97f24))
+
+
+### Performance Improvements
+
+* **cli:** reuse a pooled Chromium process across scenario runs ([#71](https://github.com/pcamarajr/scout/issues/71)) ([c9ff019](https://github.com/pcamarajr/scout/commit/c9ff019727ef77e19b2b33bf0a8399e519fb656b))
+
 ## [0.14.0](https://github.com/pcamarajr/scout/compare/scout-v0.13.0...scout-v0.14.0) (2026-07-15)
 
 
