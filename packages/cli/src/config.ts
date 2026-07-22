@@ -54,6 +54,12 @@ export interface ScoutConfig {
   viewports?: Record<string, Viewport>;
   /** Viewport used when a scenario declares none. Defaults to `mobile`. */
   defaultViewport?: string;
+  /**
+   * Attribute the selector ladder treats as the testid (its top rung) and that
+   * `getByTestId` resolves on replay. Defaults to `data-testid`. Set this if the
+   * app uses a different convention (e.g. `data-test`, `data-qa`).
+   */
+  testIdAttribute?: string;
   /** Locale forced on the browser context */
   locale?: string;
   /** Record a paced MP4 demo of the verified replay. Enable with --demo-video or SCOUT_RECORD_VIDEO=1. */

@@ -1,17 +1,46 @@
-/** How a recorded step finds its element on replay. */
+/**
+ * How a recorded step finds its element on replay. A Target is derived at record
+ * time by the selector preference ladder (see `runner/selector-ladder.ts`): the
+ * most stable strategy that *uniquely* matched the live element becomes the
+ * primary location fields, the other unique strategies are kept as ordered
+ * {@link Target.fallbacks}, and {@link Target.fragile} flags the case where only
+ * a positional CSS path was available. Exactly one primary strategy is set:
+ * `testId`, `role`+`name`, `text`, or `css`.
+ */
 export interface Target {
-  /** ARIA role + accessible name — preferred, resilient to DOM refactors */
+  /** ARIA role + accessible name — resilient to DOM refactors */
   role?: string;
   name?: string;
-  /** CSS path fallback when role+name is not unique */
+  /** CSS path — a stable `id` selector or, as a last resort, a positional path */
   css?: string;
   /**
-   * data-testid — the location strategy for elements OUTSIDE the accessibility
-   * tree (a gesture layer, an overlay `<div>` with no role/name). Preferred over
-   * `css` when present: stable across DOM refactors and resolved via Playwright's
-   * `getByTestId`. Populated by selector clicks / state assertions.
+   * data-testid (or the configured testid attribute) — the sturdiest handle:
+   * stable across DOM refactors and the strategy for elements OUTSIDE the
+   * accessibility tree (a gesture layer, an overlay `<div>` with no role/name).
+   * Resolved via Playwright's `getByTestId`. Top rung of the ladder.
    */
   testId?: string;
+  /**
+   * Visible-text anchor — resolved via Playwright's `getByText` (exact). Used
+   * when an element has no testid/id/role+name but a stable, unique visible
+   * label. Below role+name on the ladder, above a positional CSS path.
+   */
+  text?: string;
+  /**
+   * True when the primary strategy is a POSITIONAL CSS path (the ladder bottomed
+   * out) — the recorded step is fragile: it replays today but breaks as soon as
+   * the DOM shifts. Surfaced as a warning at record time and in the run report so
+   * a stable handle (a data-testid, a unique role/name) can be added.
+   */
+  fragile?: boolean;
+  /**
+   * Other ladder strategies that ALSO uniquely matched the element at record
+   * time, ordered most-stable first. On replay, if the primary strategy no
+   * longer resolves, these are tried in order — deterministically, with no LLM
+   * ("--no-heal" semantics preserved). Absent on steps recorded before this
+   * feature (backward compatible) and when no alternative uniquely matched.
+   */
+  fallbacks?: Target[];
   /** Human-readable label for reports */
   description: string;
 }
@@ -242,4 +271,25 @@ export interface RunResult {
    * but it is NOT a UI judgment — rerun instead of debugging the app.
    */
   runnerFailure?: string;
+  /**
+   * Interaction steps whose recorded selector is a positional CSS path (the
+   * ladder bottomed out). Populated from the persisted/verified script so the
+   * fragility is visible at record time (CLI output + report), not discovered on
+   * a broken replay days later. Empty/absent when every step has a stable handle.
+   */
+  fragileSteps?: FragileStep[];
+  /**
+   * Notes emitted during deterministic replay when a step's primary selector no
+   * longer resolved and a recorded fallback did — no LLM involved. Absent when
+   * no fallback was needed (the common case).
+   */
+  usedFallbacks?: string[];
+}
+
+/** One recorded step that replays on a fragile positional selector. */
+export interface FragileStep {
+  /** 1-based position of the step in the recorded script. */
+  step: number;
+  /** Human-readable description of the step (from `describeStep`). */
+  description: string;
 }

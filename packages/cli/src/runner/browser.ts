@@ -1,5 +1,5 @@
 import path from "node:path";
-import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "playwright";
+import { chromium, selectors, type Browser, type BrowserContext, type Locator, type Page } from "playwright";
 import type {
   ElementStateMatcher,
   NetworkMatcher,
@@ -10,6 +10,7 @@ import type {
   Target,
 } from "../types.js";
 import type { ResolvedViewport } from "../viewports.js";
+import { assembleTarget, buildLadderCandidates, runWithFallback, type LadderInfo } from "./selector-ladder.js";
 import {
   findConsoleErrors,
   globToRegex,
@@ -17,6 +18,12 @@ import {
   type CapturedRequest,
   type ConsoleMessage,
 } from "./network-match.js";
+
+/** Default testid attribute, when `scout.config.json` sets none. */
+export const DEFAULT_TESTID_ATTR = "data-testid";
+
+/** How many ancestors a click may borrow a testid from (self is checked first). */
+const TESTID_ANCESTOR_HOPS = 2;
 
 export interface ElementInfo {
   ref: number;
@@ -26,6 +33,14 @@ export interface ElementInfo {
   tag: string;
   value?: string;
   href?: string;
+  /** The element's own testid attribute value (for the selector ladder). */
+  testId?: string;
+  /** Nearest ancestor's testid within a few hops (borrowed by clicks only). */
+  ancestorTestId?: string;
+  /** The element's raw `id` attribute (validated before use by the ladder). */
+  id?: string;
+  /** Trimmed visible text, when short/stable enough to anchor a text selector. */
+  text?: string;
 }
 
 export interface PageSnapshot {
@@ -77,6 +92,12 @@ export interface LaunchOptions {
    * reaching a protected deploy — e.g. Vercel's `x-vercel-protection-bypass`.
    */
   extraHeaders?: Record<string, string>;
+  /**
+   * Attribute the selector ladder treats as the testid (top rung). Defaults to
+   * `data-testid`; override via `scout.config.json` `testIdAttribute`. Also set
+   * as Playwright's global testid attribute so `getByTestId` matches it.
+   */
+  testIdAttribute?: string;
 }
 
 /**
@@ -200,6 +221,9 @@ export class BrowserSession {
   /** The first page — it owns the recorded video for the whole context. */
   private readonly firstPage: Page;
 
+  /** Testid attribute the selector ladder reads and `getByTestId` matches. */
+  private readonly testIdAttr: string;
+
   private constructor(
     private browser: Browser,
     private context: BrowserContext,
@@ -211,6 +235,7 @@ export class BrowserSession {
   ) {
     this.activePage = page;
     this.firstPage = page;
+    this.testIdAttr = opts.testIdAttribute ?? DEFAULT_TESTID_ATTR;
   }
 
   /** The tab currently under control. Switching tabs reassigns it. */
@@ -219,6 +244,17 @@ export class BrowserSession {
   }
 
   static async launch(opts: LaunchOptions): Promise<BrowserSession> {
+    // Align Playwright's global testid attribute with the ladder's, so a
+    // recorded `testId` target resolves via getByTestId to the same attribute
+    // the ladder read at record time. Idempotent; safe to set every launch.
+    const testIdAttr = opts.testIdAttribute ?? DEFAULT_TESTID_ATTR;
+    if (testIdAttr !== DEFAULT_TESTID_ATTR) {
+      try {
+        selectors.setTestIdAttribute(testIdAttr);
+      } catch {
+        // Older Playwright without the setter — getByTestId keeps the default.
+      }
+    }
     const browser = await chromium.launch({ headless: opts.headless, slowMo: opts.slowMoMs });
     const perm = opts.permissions;
     const vp = opts.viewport;
@@ -400,7 +436,9 @@ export class BrowserSession {
    */
   async snapshot(): Promise<PageSnapshot> {
     await this.page.waitForLoadState("domcontentloaded").catch(() => {});
-    const raw = (await this.page.evaluate(snapshotScript)) as {
+    const raw = (await this.page.evaluate(
+      buildSnapshotScript(this.testIdAttr, TESTID_ANCESTOR_HOPS)
+    )) as {
       elements: ElementInfo[];
       text: string;
     };
@@ -430,28 +468,65 @@ export class BrowserSession {
 
   /**
    * Resolves a snapshot ref to a locator AND the durable Target recorded for
-   * replay: role+name when unique on the page, CSS path otherwise.
+   * replay, walking the selector preference ladder (testid → id → role+name →
+   * text → positional CSS) against the live page and recording the most stable
+   * rung that uniquely matches — with the other unique rungs kept as ordered
+   * fallbacks. `action` gates the ancestor-testid rung: a click may borrow a
+   * close ancestor's testid, an input (fill/select) may not (it must act on the
+   * field itself, not a wrapping container).
    */
-  private async resolveRef(ref: number): Promise<{ locator: Locator; target: Target }> {
+  private async resolveRef(
+    ref: number,
+    action: "click" | "input"
+  ): Promise<{ locator: Locator; target: Target }> {
     const info = this.refs.get(ref);
     if (!info) {
       throw new Error(`Ref [${ref}] unknown — take a new browser_snapshot, the page changed.`);
     }
-    const description = `${info.role} "${info.name}"`;
-    if (info.role && info.name) {
-      const byRole = this.page.getByRole(info.role as Parameters<Page["getByRole"]>[0], {
-        name: info.name,
-        exact: true,
-      });
-      if ((await byRole.count()) === 1) {
-        return { locator: byRole, target: { role: info.role, name: info.name, description } };
+    const ladderInfo: LadderInfo = {
+      role: info.role || undefined,
+      name: info.name || undefined,
+      css: info.css,
+      testId: info.testId,
+      ancestorTestId: info.ancestorTestId,
+      id: info.id,
+      text: info.text,
+    };
+    const target = await this.resolveTarget(ladderInfo, { allowAncestorTestId: action === "click" });
+    return { locator: this.targetLocator(target), target };
+  }
+
+  /**
+   * Walks the selector ladder against the live page: builds the ordered
+   * candidates, keeps those that match EXACTLY one element (so a recorded
+   * selector is never ambiguous), and assembles the primary + fallbacks + the
+   * fragile flag. Shared by ref-based interactions and selector-based clicks.
+   */
+  async resolveTarget(
+    info: LadderInfo,
+    opts: { allowAncestorTestId?: boolean } = {}
+  ): Promise<Target> {
+    const candidates = buildLadderCandidates(info, {
+      allowAncestorTestId: opts.allowAncestorTestId,
+      testIdAttr: this.testIdAttr,
+    });
+    const unique: typeof candidates = [];
+    for (const candidate of candidates) {
+      // A locator for an unsupported ARIA role (a tag used as a role fallback)
+      // may throw; treat any failure to count as "no match".
+      let count = 0;
+      try {
+        count = await this.rawLocator(candidate.target).count();
+      } catch {
+        count = 0;
       }
+      if (count === 1) unique.push(candidate);
     }
-    return { locator: this.page.locator(info.css), target: { css: info.css, description } };
+    return assembleTarget(candidates, unique);
   }
 
   async click(ref: number): Promise<Target> {
-    const { locator, target } = await this.resolveRef(ref);
+    const { locator, target } = await this.resolveRef(ref, "click");
     await locator.click();
     return target;
   }
@@ -465,9 +540,33 @@ export class BrowserSession {
    * kind as a ref click — one replay path, testId/css resolved by targetLocator).
    */
   async clickSelector(sel: { testId?: string; css?: string }): Promise<Target> {
-    const target = buildSelectorTarget(sel);
+    const base = buildSelectorTarget(sel);
+    // Upgrade the AI-supplied selector through the ladder: read the live
+    // element's signals and record the most stable rung (+ fallbacks). A
+    // role-less overlay with only a positional CSS still bottoms out as fragile,
+    // which is the signal to add a data-testid — surfaced as a warning.
+    const info = await this.ladderInfoFor(base);
+    const target = info
+      ? await this.resolveTarget(info, { allowAncestorTestId: true })
+      : base;
     await this.targetLocator(target).click();
     return target;
+  }
+
+  /**
+   * Reads the selector-ladder signals from the FIRST element the given
+   * testid/css target resolves to, in-page. Returns undefined when the element
+   * isn't found (the click below then fails on the base target, as before).
+   */
+  private async ladderInfoFor(target: Target): Promise<LadderInfo | undefined> {
+    const selector = target.testId
+      ? `[${cssAttrEscape(this.testIdAttr)}="${cssValueEscape(target.testId)}"]`
+      : target.css;
+    if (!selector) return undefined;
+    const raw = (await this.page.evaluate(
+      buildExtractScript(selector, this.testIdAttr, TESTID_ANCESTOR_HOPS)
+    )) as LadderInfo | null;
+    return raw ?? undefined;
   }
 
   /**
@@ -520,13 +619,13 @@ export class BrowserSession {
   }
 
   async fill(ref: number, value: string): Promise<Target> {
-    const { locator, target } = await this.resolveRef(ref);
+    const { locator, target } = await this.resolveRef(ref, "input");
     await locator.fill(value);
     return target;
   }
 
   async select(ref: number, value: string): Promise<Target> {
-    const { locator, target } = await this.resolveRef(ref);
+    const { locator, target } = await this.resolveRef(ref, "input");
     await locator.selectOption(value);
     return target;
   }
@@ -706,17 +805,31 @@ export class BrowserSession {
     return file;
   }
 
-  /** Replays one recorded step (used by the deterministic runner). */
-  async executeStep(step: Step): Promise<void> {
+  /**
+   * Replays one recorded step (used by the deterministic runner). For the
+   * interaction steps (click/fill/select) the action is tried on the primary
+   * selector and, if it fails, on each recorded fallback in order — a purely
+   * deterministic retry (no LLM, `--no-heal` intact). `onFallback` is notified
+   * when a fallback resolved, so the runner can log which selector rescued it.
+   */
+  async executeStep(step: Step, onFallback?: (note: string) => void): Promise<void> {
     switch (step.kind) {
       case "navigate":
         return this.navigate(step.url);
       case "click":
-        return void (await this.targetLocator(step.target).click());
+        return this.actWithFallback(step.target, (loc) => loc.click(), onFallback);
       case "fill":
-        return void (await this.targetLocator(step.target).fill(resolveEnvValue(step.value)));
+        return this.actWithFallback(
+          step.target,
+          (loc) => loc.fill(resolveEnvValue(step.value)),
+          onFallback
+        );
       case "select":
-        return void (await this.targetLocator(step.target).selectOption(resolveEnvValue(step.value)));
+        return this.actWithFallback(
+          step.target,
+          (loc) => loc.selectOption(resolveEnvValue(step.value)),
+          onFallback
+        );
       case "press":
         return this.press(step.key);
       case "wheel":
@@ -757,17 +870,40 @@ export class BrowserSession {
     }
   }
 
+  /**
+   * Attempts an action on the target's primary selector, then on each recorded
+   * fallback in order until one succeeds. The primary's own auto-wait runs
+   * first (unchanged happy path); only on failure are fallbacks tried, each with
+   * their own auto-wait. If every candidate fails, the PRIMARY's error is thrown
+   * — the most relevant one to debug. No LLM, so `--no-heal` semantics hold.
+   */
+  private actWithFallback(
+    target: Target,
+    act: (loc: Locator) => Promise<unknown>,
+    onFallback?: (note: string) => void
+  ): Promise<void> {
+    return runWithFallback(target, (t) => this.targetLocator(t), act, onFallback);
+  }
+
+  /** The replay locator: the primary strategy, narrowed to the first match. */
   private targetLocator(target: Target): Locator {
-    // testId first: the strategy for elements outside the a11y tree (no role/name).
-    if (target.testId) return this.page.getByTestId(target.testId).first();
+    return this.rawLocator(target).first();
+  }
+
+  /**
+   * The unnarrowed locator for a target's primary strategy — used for the record
+   * -time uniqueness check (its `count()` must reflect ALL matches, so no
+   * `.first()` here). testId → role+name → text → css, mirroring the ladder.
+   */
+  private rawLocator(target: Target): Locator {
+    if (target.testId) return this.page.getByTestId(target.testId);
     if (target.role && target.name) {
-      return this.page
-        .getByRole(target.role as Parameters<Page["getByRole"]>[0], {
-          name: target.name,
-          exact: true,
-        })
-        .first();
+      return this.page.getByRole(target.role as Parameters<Page["getByRole"]>[0], {
+        name: target.name,
+        exact: true,
+      });
     }
+    if (target.text) return this.page.getByText(target.text, { exact: true });
     if (target.css) return this.page.locator(target.css);
     throw new Error(`Target has no location strategy: ${target.description}`);
   }
@@ -914,6 +1050,16 @@ export function buildSelectorTarget(sel: { testId?: string; css?: string }): Tar
   throw new Error("A selector click/assert needs testId or css.");
 }
 
+/** Escapes a CSS attribute NAME for an attribute selector (identifier subset). */
+function cssAttrEscape(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+}
+
+/** Escapes a value for a double-quoted CSS attribute selector. */
+function cssValueEscape(value: string): string {
+  return value.replace(/(["\\])/g, "\\$1");
+}
+
 /** The element state observed by {@link BrowserSession.assertState}'s in-page probe. */
 export interface ObservedElementState {
   classes: string[];
@@ -964,8 +1110,16 @@ export function resolveEnvValue(value: string): string {
   });
 }
 
-/** Runs inside the page: collects visible interactive elements + text excerpt. */
-const snapshotScript = `(() => {
+/**
+ * In-page helper library, shared by the snapshot script and the single-element
+ * ladder extractor. Kept as one string so the accessible-name / role / css-path
+ * logic lives in exactly one place. `ATTR` (the testid attribute) and `HOPS`
+ * (ancestor testid reach) are interpolated by the builders below.
+ */
+function inPageHelpers(attr: string, hops: number): string {
+  return `
+  const TESTID_ATTR = ${JSON.stringify(attr)};
+  const TESTID_HOPS = ${JSON.stringify(hops)};
   const ROLE_BY_TAG = {
     a: "link", button: "button", select: "combobox", textarea: "textbox",
     summary: "button", option: "option",
@@ -1040,6 +1194,56 @@ const snapshotScript = `(() => {
     return parts.join(" > ");
   }
 
+  // The element's OWN testid — the top rung of the selector ladder.
+  function testIdOf(el) {
+    const v = el.getAttribute(TESTID_ATTR);
+    return v || undefined;
+  }
+
+  // The nearest ANCESTOR testid within TESTID_HOPS (a click may borrow it).
+  function ancestorTestIdOf(el) {
+    let node = el.parentElement;
+    let hops = 0;
+    while (node && hops < TESTID_HOPS) {
+      const v = node.getAttribute(TESTID_ATTR);
+      if (v) return v;
+      node = node.parentElement;
+      hops += 1;
+    }
+    return undefined;
+  }
+
+  // Visible text for a text anchor — only when short and stable enough, and not
+  // for form controls (their "text" is the value, not a stable label).
+  function textOf(el) {
+    const tag = el.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return undefined;
+    const t = (el.textContent || "").replace(/\\s+/g, " ").trim();
+    if (!t || t.length > 50) return undefined;
+    return t;
+  }
+
+  // The full ladder signal set for one element (role/name are COMPUTED here,
+  // from the live DOM, never guessed from a visible label).
+  function extractLadder(el) {
+    return {
+      role: roleOf(el) || undefined,
+      name: nameOf(el) || undefined,
+      css: cssPath(el),
+      testId: testIdOf(el),
+      ancestorTestId: ancestorTestIdOf(el),
+      id: el.id || undefined,
+      text: textOf(el),
+    };
+  }
+`;
+}
+
+/** Runs inside the page: collects visible interactive elements + text excerpt. */
+function buildSnapshotScript(attr: string, hops: number): string {
+  return `(() => {
+  ${inPageHelpers(attr, hops)}
+
   const selector = 'a[href], button, input, select, textarea, summary, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="switch"], [role="option"], [onclick], [tabindex]:not([tabindex="-1"])';
   const nodes = Array.from(document.querySelectorAll(selector)).filter(isVisible);
   const seen = new Set();
@@ -1051,7 +1255,12 @@ const snapshotScript = `(() => {
     const role = roleOf(el);
     const name = nameOf(el);
     if (!role && !name) continue;
-    const info = { ref: ref++, role: role || el.tagName.toLowerCase(), name, css: cssPath(el), tag: el.tagName.toLowerCase() };
+    const ladder = extractLadder(el);
+    const info = { ref: ref++, role: role || el.tagName.toLowerCase(), name, css: ladder.css, tag: el.tagName.toLowerCase() };
+    if (ladder.testId) info.testId = ladder.testId;
+    if (ladder.ancestorTestId) info.ancestorTestId = ladder.ancestorTestId;
+    if (ladder.id) info.id = ladder.id;
+    if (ladder.text) info.text = ladder.text;
     if (el.tagName === "INPUT" && el.type !== "password" && el.value) info.value = String(el.value).slice(0, 40);
     if (el.tagName === "A") {
       const href = el.getAttribute("href");
@@ -1064,3 +1273,18 @@ const snapshotScript = `(() => {
   const text = (document.body.innerText || "").replace(/\\n{3,}/g, "\\n\\n").slice(0, 2500);
   return { elements, text };
 })()`;
+}
+
+/**
+ * Runs inside the page: extracts the ladder signals for the FIRST element that
+ * matches `selector`, or returns null when nothing matches. Used to upgrade an
+ * AI-supplied selector click through the ladder.
+ */
+function buildExtractScript(selector: string, attr: string, hops: number): string {
+  return `(() => {
+  ${inPageHelpers(attr, hops)}
+  const el = document.querySelector(${JSON.stringify(selector)});
+  if (!el) return null;
+  return extractLadder(el);
+})()`;
+}

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ScoutConfig } from "../src/config.js";
-import { buildReport, renderSummary, scenarioStatus } from "../src/report.js";
-import type { RunResult, Scenario } from "../src/types.js";
+import { buildReport, renderRunReport, renderSummary, scenarioStatus } from "../src/report.js";
+import type { RunResult, Scenario, Step } from "../src/types.js";
 
 const config: ScoutConfig = { baseUrl: "http://x", model: "m", headless: true, maxTurns: 40, profiles: {} };
 
@@ -81,6 +81,43 @@ test("scenarioStatus (deprecated) returns the most recent verdict across viewpor
 test("scenarioStatus (deprecated) still accepts pre-0.11 maps keyed by plain slug", () => {
   const latest = new Map<string, RunResult>([["a/x", run("a/x", "mobile", "verified", "2026-06-10T12:00:00.000Z")]]);
   assert.equal(scenarioStatus("a/x", latest), "verified");
+});
+
+test("renderRunReport surfaces fragile selectors and marks the offending step", () => {
+  const scenario = scn({ name: "Checkout" });
+  const steps: Step[] = [
+    { kind: "click", target: { testId: "buy", description: '[data-testid="buy"]' } },
+    { kind: "click", target: { css: "main > a:nth-of-type(2)", description: "main > a:nth-of-type(2)", fragile: true } },
+  ];
+  const result: RunResult = {
+    ...run("f/s", "mobile", "verified", "2026-07-01T00:00:00.000Z"),
+    fragileSteps: [{ step: 2, description: "click main > a:nth-of-type(2)" }],
+  };
+  const md = renderRunReport(result, scenario, steps);
+  assert.match(md, /## ⚠️ Fragile selectors/);
+  assert.match(md, /step 2 .* positional selector/);
+  assert.match(md, /2\. click main > a:nth-of-type\(2\) ⚠️ fragile/);
+});
+
+test("renderRunReport lists fallback selectors that rescued a replay", () => {
+  const scenario = scn({ name: "Nav" });
+  const result: RunResult = {
+    ...run("f/s", "mobile", "verified", "2026-07-01T00:00:00.000Z"),
+    usedFallbacks: ['step 3: testid "go" → fallback css #real'],
+  };
+  const md = renderRunReport(result, scenario, []);
+  assert.match(md, /## Fallback selectors used/);
+  assert.match(md, /step 3: testid "go" → fallback css #real/);
+});
+
+test("renderRunReport omits the new sections when nothing is fragile and no fallback ran", () => {
+  const md = renderRunReport(
+    run("f/s", "mobile", "verified", "2026-07-01T00:00:00.000Z"),
+    scn({ name: "Clean" }),
+    [{ kind: "click", target: { testId: "ok", description: "ok" } }]
+  );
+  assert.doesNotMatch(md, /Fragile selectors/);
+  assert.doesNotMatch(md, /Fallback selectors used/);
 });
 
 test("buildReport and renderSummary keep working without config (pre-0.11 two-argument calls)", () => {
