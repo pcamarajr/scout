@@ -113,6 +113,47 @@ export interface Viewport {
   userAgent?: string;
 }
 
+/** Explicit viewport dimensions for device emulation. */
+export interface ViewportSize {
+  width: number;
+  height: number;
+}
+
+/**
+ * Per-scenario device / user-agent emulation, resolved from a scenario's spec
+ * (profile default + file frontmatter + per-`##` override, merged per field;
+ * scenario wins over profile). It is a context-creation parameter — re-resolved
+ * fresh from the spec each run and applied at `browser.newContext()` — NEVER a
+ * recordable Step, so replay re-reads the frontmatter and stays deterministic
+ * (like storageState/cookies/permissions).
+ *
+ * Its reason for being is UI gated on user-agent / device detection — an
+ * "Add to Home Screen" sheet that only renders under an iOS-Safari UA, a layout
+ * branch that keys off `navigator.maxTouchPoints`. Without it the runner always
+ * launches desktop Chromium with its default UA, so those flows can never pass.
+ *
+ * `device` names a Playwright device descriptor (a key of the `devices`
+ * registry, e.g. "iPhone 14"), validated against the registry at parse time.
+ * The individual fields (`userAgent`, `viewport`, `deviceScaleFactor`,
+ * `isMobile`, `hasTouch`) compose on top of (or without) `device` — an
+ * explicit field always wins over the named device's value. None of these are
+ * secrets, so no `$ENV:VAR` resolution is applied (unlike cookies/storage).
+ */
+export interface ScenarioDevice {
+  /** Playwright device registry key (e.g. "iPhone 14"); the base for overrides. */
+  device?: string;
+  /** User-agent string; wins over the named device's UA. */
+  userAgent?: string;
+  /** Viewport dimensions; win over the named device's viewport. */
+  viewport?: ViewportSize;
+  /** Device scale factor; wins over the named device's value. */
+  deviceScaleFactor?: number;
+  /** Whether to emulate a mobile device (meta viewport, touch events). */
+  isMobile?: boolean;
+  /** Whether the device supports touch. */
+  hasTouch?: boolean;
+}
+
 /**
  * One cookie applied to the browser context before the scenario runs. Resolved
  * fresh from the spec each run (profile default + per-scenario frontmatter /
@@ -242,6 +283,14 @@ export interface Scenario {
    * only at launch.
    */
   storage?: ScenarioStorage;
+  /**
+   * Device / user-agent emulation for the scenario (profile default + file
+   * frontmatter + per-section override, merged per field). A context-creation
+   * parameter re-resolved each run and applied at `newContext()` — never baked
+   * into the recorded script. Composes over the resolved viewport: the device's
+   * fields win over the viewport's for UA/metrics/size.
+   */
+  device?: ScenarioDevice;
   /** Source spec file, relative to the project root */
   file: string;
 }

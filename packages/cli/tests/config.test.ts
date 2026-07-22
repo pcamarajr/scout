@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { CONFIG_FILE, loadConfig, parseHeadersEnv, resolveCookies, resolveStorage, type ScoutConfig } from "../src/config.js";
+import { CONFIG_FILE, loadConfig, parseHeadersEnv, resolveCookies, resolveDevice, resolveStorage, type ScoutConfig } from "../src/config.js";
 import type { Scenario } from "../src/types.js";
 
 function tmpProject(config?: object): string {
@@ -187,4 +187,35 @@ test("resolveStorage validates profile storage and rejects an unknown field", ()
     qa: { storage: { locals: { a: "1" } } as never },
   });
   assert.throws(() => resolveStorage(scenarioWith({ profile: "qa" }), config), /Unknown storage field/);
+});
+
+test("resolveDevice merges profile device (base) under scenario device (per field)", () => {
+  const config = configWith({
+    qa: { device: { device: "iPhone 13", userAgent: "profile UA" } },
+  });
+  const scenario = scenarioWith({ profile: "qa", device: { device: "iPhone 14" } });
+  // Scenario's `device` name wins; the profile's `userAgent` is inherited.
+  assert.deepEqual(resolveDevice(scenario, config), {
+    device: "iPhone 14",
+    userAgent: "profile UA",
+  });
+});
+
+test("resolveDevice returns undefined when neither profile nor scenario declare a device", () => {
+  const config = configWith({ qa: {} });
+  assert.equal(resolveDevice(scenarioWith({ profile: "qa" }), config), undefined);
+  assert.equal(resolveDevice(scenarioWith({}), config), undefined);
+});
+
+test("resolveDevice uses the scenario device when there is no profile", () => {
+  const config = configWith({});
+  const scenario = scenarioWith({ device: { device: "Pixel 7" } });
+  assert.deepEqual(resolveDevice(scenario, config), { device: "Pixel 7" });
+});
+
+test("resolveDevice validates the profile device and rejects an unknown device name", () => {
+  const config = configWith({
+    qa: { device: { device: "Nokia 3310" } as never },
+  });
+  assert.throws(() => resolveDevice(scenarioWith({ profile: "qa" }), config), /Unknown Playwright device "Nokia 3310"/);
 });

@@ -96,7 +96,7 @@ The loop: you describe a flow → the agent writes the `.scout.md` → runs `sco
 
 | Topic | |
 |---|---|
-| [Writing scenarios](https://scout.pcamarajr.dev/docs/scenarios/) | the `.scout.md` format, slugs, per-scenario overrides, `cookies:`/`storage:` preconditions |
+| [Writing scenarios](https://scout.pcamarajr.dev/docs/scenarios/) | the `.scout.md` format, slugs, per-scenario overrides, `cookies:`/`storage:`/`device:` preconditions |
 | [Providers & credentials](https://scout.pcamarajr.dev/docs/providers/) | Claude, Gemini, OpenAI — detection order + `scout doctor` |
 | [Auth profiles](https://scout.pcamarajr.dev/docs/auth/) | logged-in flows, `scout login`, `$ENV:` secrets |
 | [Environments & CI](https://scout.pcamarajr.dev/docs/environments/) | base-URL overrides, worktrees, the PR gate |
