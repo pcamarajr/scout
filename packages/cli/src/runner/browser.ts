@@ -168,6 +168,86 @@ export function demoCursorStub(): string {
   })();`;
 }
 
+/**
+ * Pool of shared Chromium Browser processes, keyed by the launch-time options
+ * that cannot be changed per-context: `${headless}|${slowMoMs}`. A full
+ * `chromium.launch()` is the expensive part; within one process (the CLI `go`
+ * loop over scenarios/viewports, or the long-lived MCP server across tool
+ * calls) we launch once per key and reuse the process, opening a fresh isolated
+ * BrowserContext per BrowserSession — the context is the isolation boundary.
+ *
+ * slowMo is a launch-time option: the paced demo replay needs its own pooled
+ * browser, and both demo attempts (paced + fallback share the same slowMo=0 for
+ * the fallback / the paced value for the first) plus subsequent scenarios reuse
+ * whichever they key into.
+ *
+ * The map stores the launch PROMISE (not the resolved Browser) so two
+ * concurrent launch() calls with the same key share one launch instead of
+ * racing into two Chromium processes.
+ */
+const browserPool = new Map<string, Promise<Browser>>();
+
+function poolKey(headless: boolean, slowMoMs: number | undefined): string {
+  return `${headless}|${slowMoMs ?? 0}`;
+}
+
+/**
+ * Returns a shared Browser for the given launch options, launching one on first
+ * use and reusing it thereafter. If a pooled browser has since disconnected
+ * (crash, or an external close), its entry is dropped and a fresh browser is
+ * launched.
+ */
+async function acquireBrowser(headless: boolean, slowMoMs: number | undefined): Promise<Browser> {
+  const key = poolKey(headless, slowMoMs);
+  // Reuse a live pooled entry; drop a stale/failed one and launch a fresh
+  // browser. The map is only ever written synchronously (no await between the
+  // decision to claim `key` and the set below), so two concurrent callers that
+  // both find the same stale entry can't both launch: the first to resume
+  // claims the key, the second re-reads the map and awaits that fresh launch.
+  for (;;) {
+    const existing = browserPool.get(key);
+    if (!existing) break;
+    let browser: Browser | undefined;
+    try {
+      browser = await existing;
+    } catch {
+      browser = undefined; // a prior pooled launch failed — relaunch below
+    }
+    if (browser?.isConnected()) return browser;
+    // Stale/failed. Evict by identity: only drop it if it's still the mapped
+    // entry, so we never discard a fresh browser a concurrent caller just
+    // installed under this key. If the map already changed, loop to re-read it.
+    if (browserPool.get(key) === existing) {
+      browserPool.delete(key);
+      break;
+    }
+  }
+  const launched = chromium.launch({ headless, slowMo: slowMoMs });
+  browserPool.set(key, launched);
+  // If the launch itself rejects, don't leave a rejected promise cached — the
+  // next call should get a clean retry. Delete by identity so a rejecting
+  // orphaned launch can't evict a healthy replacement mapped under the same key.
+  launched.catch(() => {
+    if (browserPool.get(key) === launched) browserPool.delete(key);
+  });
+  return launched;
+}
+
+/**
+ * Closes every pooled Browser process and clears the pool. Call this before a
+ * process that ran scenarios exits (the CLI `go` command, a library consumer
+ * looping runScenario) — otherwise the live browser keeps the Node event loop
+ * alive and the process never exits. Errors are tolerated: a browser that is
+ * already gone is not a failure to close.
+ */
+export async function closeBrowsers(): Promise<void> {
+  const pending = Array.from(browserPool.values());
+  browserPool.clear();
+  await Promise.all(
+    pending.map((p) => p.then((b) => b.close()).catch(() => {}))
+  );
+}
+
 const STEP_TIMEOUT = 10_000;
 
 /**
@@ -201,7 +281,6 @@ export class BrowserSession {
   private readonly firstPage: Page;
 
   private constructor(
-    private browser: Browser,
     private context: BrowserContext,
     page: Page,
     private opts: LaunchOptions,
@@ -219,7 +298,10 @@ export class BrowserSession {
   }
 
   static async launch(opts: LaunchOptions): Promise<BrowserSession> {
-    const browser = await chromium.launch({ headless: opts.headless, slowMo: opts.slowMoMs });
+    // Reuse a pooled Chromium process (launched once per headless|slowMo key);
+    // isolation is provided by the fresh context created below, not by a new
+    // browser process.
+    const browser = await acquireBrowser(opts.headless, opts.slowMoMs);
     const perm = opts.permissions;
     const vp = opts.viewport;
     const size = { width: vp.width, height: vp.height };
@@ -258,7 +340,7 @@ export class BrowserSession {
     const videoEpoch = opts.recordVideo ? Date.now() : undefined;
     await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
     const page = await context.newPage();
-    const session = new BrowserSession(browser, context, page, opts, videoEpoch);
+    const session = new BrowserSession(context, page, opts, videoEpoch);
     session.trackPage(page); // first page: registered before context.on("page")
     context.on("page", (p) => session.trackPage(p)); // popups/new tabs
     return session;
@@ -824,8 +906,9 @@ export class BrowserSession {
     // finalized once the context is closed (hence close() is awaited). The
     // first page owns the context recording, even after switching tabs.
     const video = this.firstPage.video();
+    // Close ONLY the context — the Browser process is shared (pooled) and reused
+    // by later sessions. closeBrowsers() tears the process down at process exit.
     await this.context.close().catch(() => {});
-    await this.browser.close().catch(() => {});
     let videoPath: string | undefined;
     if (video) {
       try {

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import http from "node:http";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { chromium } from "playwright";
-import { BrowserSession } from "../src/runner/browser.js";
+import { BrowserSession, closeBrowsers } from "../src/runner/browser.js";
 import type { ResolvedViewport } from "../src/viewports.js";
 
 /**
@@ -28,6 +28,13 @@ const browserAvailable = await (async () => {
 const SKIP = browserAvailable ? false : "no Chromium available (run `npx playwright install chromium`)";
 
 const VIEWPORT: ResolvedViewport = { name: "mobile", width: 390, height: 844 };
+
+// session.close() now closes only the context; the pooled Chromium process
+// stays warm. Drain it at file end so the live browser can't keep this test
+// process's event loop alive.
+after(async () => {
+  await closeBrowsers();
+});
 
 /**
  * Serves a page that, on load, reads its storage and paints the values into the

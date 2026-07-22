@@ -17,6 +17,7 @@ export {
   type ReportScenario,
 } from "./report.js";
 export { describeNoVerdict, relativizeUrl, type QueryEndInfo } from "./runner/ai-runner.js";
+export { closeBrowsers } from "./runner/browser.js";
 export { addScenario, loadScenarios, parseSpec, slugify, slugToToken, type NewScenarioInput } from "./specs.js";
 export { Store } from "./store.js";
 export type { RunResult, Scenario, ScenarioStatus, Step, Target, Verdict, Viewport } from "./types.js";

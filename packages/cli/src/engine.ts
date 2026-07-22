@@ -33,6 +33,12 @@ export interface RunOptions {
  *     → pass               → verified
  *     → fail + heal        → AI run; if verified, re-record the script
  *   no script / --ai       → AI run; if verified, record the script
+ *
+ * Resource lifetime: the Chromium process is pooled and reused across runs, so
+ * it stays alive after this resolves. A library consumer that loops over
+ * `runScenario` MUST call `closeBrowsers()` before letting the process exit —
+ * otherwise the live browser keeps the Node event loop alive and the process
+ * hangs. (The `scout` CLI and MCP server already do this for you.)
  */
 export async function runScenario(
   store: Store,
@@ -347,7 +353,7 @@ async function runAi(
   let trace: string | undefined;
 
   const { outcome, attempts } = await runAiWithRetry(async (attemptNo) => {
-    if (attemptNo > 1) transcript.push(`[scout] Attempt ${attemptNo}: previous run failed in the runner — new browser, new agent.`);
+    if (attemptNo > 1) transcript.push(`[scout] Attempt ${attemptNo}: previous run failed in the runner — new context, new agent.`);
     const session = await BrowserSession.launch({
       baseUrl: config.baseUrl,
       headless: opts.headed ? false : config.headless,
@@ -365,8 +371,11 @@ async function runAi(
       result = await runWithAgent(session, scenario, config, viewport);
     } finally {
       await session.screenshot("final-state").catch(() => {});
+      // Always release the BrowserContext, even if runWithAgent threw. The
+      // Browser is pooled/shared now, so a leaked context would accumulate on
+      // the long-lived process instead of dying with a throwaway one.
+      trace = (await session.close().catch(() => ({ trace: undefined }))).trace;
     }
-    trace = (await session.close()).trace;
     transcript.push(...result.transcript);
     for (const shot of session.screenshots) if (!screenshots.includes(shot)) screenshots.push(shot);
     return result;
