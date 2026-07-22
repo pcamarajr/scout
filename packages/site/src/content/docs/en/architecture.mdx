@@ -22,7 +22,8 @@ src/
 ├── report.ts               # per-run markdown + suite summary
 ├── runner/
 │   ├── browser.ts          # Playwright wrapper: snapshot with refs, trace, screenshots,
-│   │                       #   ref→locator resolution (getByRole when unique, CSS fallback)
+│   │                       #   pooled process → per-run context, ref→locator resolution
+│   ├── selector-ladder.ts  # record-time selector preference ladder + fragility + fallbacks
 │   ├── ai-runner.ts        # Claude Agent SDK + in-process browser tools; records steps
 │   ├── engines/            # agent-sdk (default) + ai-sdk (Gemini/OpenAI/Claude parity)
 │   └── script-runner.ts    # deterministic step replay
@@ -31,11 +32,12 @@ src/
 
 ## Design decisions
 
-- **The agent never writes test code.** It acts in the browser; the script is recorded from actions that actually worked (`getByRole` + accessible name when unique on the page, CSS path as fallback). Eliminates hallucinated selectors.
+- **The agent never writes test code.** It acts in the browser; each interaction is recorded by walking a **selector preference ladder** against the live element (`data-testid` → hand-authored `id` → role + *computed* accessible name → visible text → positional CSS) and keeping the sturdiest strategy that uniquely matches. When only a positional path is left the step is flagged **fragile** and warned at record time; the other matching strategies are kept as ordered **fallbacks** that replay tries deterministically (no LLM) before failing. Eliminates hallucinated selectors — and keeps them stable as the DOM drifts. See [Stable selectors](/docs/how-verification-works/#stable-selectors).
 - **Assertions are tools.** The agent registers each expectation via `browser_assert` (DOM/URL), `browser_assert_network` (an API call happened, with tolerant method/URL/status/body matching), `browser_assert_no_console_errors`, and `browser_assert_state` (an element's visual/structural state — class token, attribute, or computed style, so an `opacity:0` show/hide toggle that Playwright would count as *visible* is checked correctly) — that's what makes the replay a real test, not just a click macro.
 - **Some elements have no accessible ref.** `browser_click` acts on numbered refs from the a11y snapshot; for a role-less element (a gesture layer, an overlay `<div data-testid="…">`) the agent falls back to `browser_click_selector`, which records a `data-testid`-first (CSS fallback) locator — no hallucinated selectors, still a deterministic click.
 - **Network/console assertions match shape, not values.** Listeners observe real traffic (`page.on('response')`/`'console'`/`'pageerror'`) — scout never mocks the network. Assertions match by method + URL glob + status class and optional stable body substrings, so they survive replay despite dynamic ids/timestamps.
 - **Recorded scripts are pruned before caching.** Agent retries (e.g. re-filling the same field) are deduplicated conservatively: an earlier `fill`/`select` is dropped only when a later one targets the same element and nothing in between (click/press/navigate) could have consumed the value. Clicks are never deduplicated.
+- **One browser process, many contexts.** Chromium is launched once and pooled per launch config (headless/`slowMo`) for the life of the process; each run gets a fresh isolated `BrowserContext` — the real isolation boundary for storage state, cookies, trace, and video. A single scenario used to pay for up to four browser launches (cached replay, heal, demo replay, fallback); they now share one process, and the pool is torn down on the CLI exit paths so it never keeps the event loop alive.
 - **Trace for debugging, video for humans.** `trace.zip` is the deep-debug artifact; the opt-in preview video is a low-friction, GitHub-playable clip for PR review. See [run artifacts](/docs/artifacts/).
 - **Scenarios are versioned source, not database rows.** One `.scout.md` per feature, reviewed in PRs like a `.test.ts`; the spec is a pure input a run never mutates (status derives from `.scout/runs/`). The recorded JSON script is a derived sidecar — clean diffs, no run noise.
 - **No server/dashboard.** State is the filesystem in the target repo; the report is markdown. Pluggable into any project with `npm i` + 2 files.
@@ -56,4 +58,3 @@ Every AI run aborts its Agent SDK query on completion, so no `claude` subprocess
 - Snapshot covers interactive elements + text; canvas/video are verified indirectly (element presence, surrounding UI state).
 - Flows that depend on reading email are not verifiable — covers UI + redirects.
 - Heal re-records the script locally; committing the updated script is manual (intentional: the diff is reviewable).
-- Fixed mobile viewport (390×844) — multi-viewport is a planned per-scenario variant.

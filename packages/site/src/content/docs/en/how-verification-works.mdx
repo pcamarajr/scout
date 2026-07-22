@@ -29,7 +29,22 @@ This is what makes Scout safe to point at code an agent just wrote: the suite re
 
 ## Recorded scripts
 
-The script is a derived sidecar, never something you author. Because it's recorded from actions that actually worked — accessible roles and names when unique, a CSS path as fallback — there are no hallucinated selectors. Assertions are recorded as tools (DOM/URL, network shape, console), so a replay re-checks behavior rather than just re-clicking. Scout prunes redundant agent retries before caching, so the committed script is a clean, reviewable diff. See [Architecture](/docs/architecture/) for the recording internals.
+The script is a derived sidecar, never something you author. Because it's recorded from actions that actually worked — Scout keeps the sturdiest selector that *uniquely* matches each element (see [Stable selectors](#stable-selectors)) — there are no hallucinated selectors. Assertions are recorded as tools (DOM/URL, network shape, console), so a replay re-checks behavior rather than just re-clicking. Scout prunes redundant agent retries before caching, so the committed script is a clean, reviewable diff. See [Architecture](/docs/architecture/) for the recording internals.
+
+## Stable selectors
+
+A recorded step is only as durable as the selector under it. Rather than accept whatever path the agent happened to click, Scout resolves each interaction against the live element and walks a **preference ladder**, keeping the most stable strategy that *uniquely* matches:
+
+1. **`data-testid`** — on the element or a close stable ancestor. The sturdiest handle; survives DOM refactors. The attribute is configurable via [`testIdAttribute`](/docs/config/) (`data-test`, `data-qa`, …).
+2. **`id`** — but only a hand-authored one. Framework-generated ids (a run of 3+ digits, or a `radix-` / `react-` / `headlessui-` / `mui-` / React `:r…` prefix) are rejected, because they change between renders.
+3. **role + accessible name** — the accessible name is *computed from the live DOM*, never guessed from the visible label. A button reading "Buy" with `aria-label="Purchase now"` is recorded with the computed name, so the selector actually resolves on replay.
+4. **visible text** — a stable, unique text anchor.
+5. **positional CSS path** — the last resort (`main > section:nth-of-type(3) > a:nth-of-type(2)`), used only when nothing above uniquely matched.
+
+Two things keep this honest over time:
+
+- **Fragility is a record-time warning, not a CI surprise.** When the ladder bottoms out at a positional path, the step is flagged **fragile** — `scout go` prints a warning and the run report lists it. The fix lives in the **app** (add a `data-testid` or a unique, accessible role/name), not the spec — then re-record. You hear about it while recording, not days later as a red replay.
+- **Fallbacks are deterministic, not AI.** The other strategies that also matched uniquely are stored as an ordered fallback list. If the primary selector stops resolving on replay, Scout tries the fallbacks in order before failing — no LLM, so `--no-heal` stays intact (this is *not* healing). Scripts recorded before this feature keep replaying unchanged.
 
 ## Determinism, in its place
 
