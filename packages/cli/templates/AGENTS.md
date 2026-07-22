@@ -53,9 +53,9 @@ Logged-in subscriber opens ep 3; the episode plays with no paywall.
 
 Rules that matter when you author:
 
-- **Frontmatter** (YAML, optional): `feature` (defaults to the filename), `profile` (default auth profile), `tags`, `viewports`, `cookies`, `storage`.
+- **Frontmatter** (YAML, optional): `feature` (defaults to the filename), `profile` (default auth profile), `tags`, `viewports`, `cookies`, `storage`, `device`.
 - **Each `## heading` is one scenario.** Its logical slug is `<file-slug>/<scenario-slug>` (e.g. `paywall/free-user-hits-paywall-on-ep-3`) and must be unique across the suite. Duplicate headings in a file, or a scenario with no body text, are hard errors.
-- **Per-scenario overrides:** immediately under a heading you may place `profile:`, `notes:`, `tags:`, `viewports:`, `grantPermissions:`, `denyPermissions:`, `geolocation:`, `cookies:`, and `storage:` lines (before the prose) to override the file-level defaults.
+- **Per-scenario overrides:** immediately under a heading you may place `profile:`, `notes:`, `tags:`, `viewports:`, `grantPermissions:`, `denyPermissions:`, `geolocation:`, `cookies:`, `storage:`, and `device:` lines (before the prose) to override the file-level defaults.
 - **Body = flow + expected behavior, in plain language.** Describe what the user does and what must (or must not) be true. No CSS selectors, no Playwright code — the agent discovers the real elements at run time and records them.
 - A `.scout.md` whose every `##` lives inside a fenced ```` ``` ```` block parses as **zero scenarios** (that is how `example.scout.md` documents the format without polluting the suite).
 
@@ -196,6 +196,38 @@ Notes:
 - **Secrets:** a value may use the `$ENV:VAR` placeholder — resolved at launch, so the secret never lands in the committed spec or the agent's context.
 - **Fail-fast:** an unknown field (only `local`/`session`/`remove` are allowed), a non-string value, or a malformed inline token is a hard error — a silently skipped storage precondition would produce a misleading verdict.
 
+## Device / user-agent emulation
+
+Some UI is gated on **device or user-agent detection** — an "Add to Home Screen" sheet that only renders under an iOS-Safari UA, a layout branch that keys off touch support. By default Scout launches desktop Chromium with its own UA, so those flows can never pass. Declare a `device:` and Scout emulates it at browser launch, for both the AI run and deterministic replay. Like `cookies`/`storage`/`storageState`, it's a context-creation parameter, never a recorded step — replay re-reads the frontmatter, so it stays deterministic.
+
+`device` names a **Playwright device descriptor** (see the [device registry](https://playwright.dev/docs/emulation#devices), e.g. `iPhone 14`, `Pixel 7`). Individual fields — `userAgent`, `viewport` (`{ width, height }`), `deviceScaleFactor`, `isMobile`, `hasTouch` — compose on top of (or without) the named device; an explicit field always wins over the device's value.
+
+Two forms. In the **frontmatter** (file default) or a **profile** (shared base in `scout.config.json`), `device:` is an object:
+
+```markdown
+---
+feature: Add to Home Screen
+device:
+  device: iPhone 14          # a Playwright device name (the base)
+  userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) …"  # optional override
+---
+
+## Sheet renders under iOS Safari
+Open the app; the Add-to-Home-Screen sheet appears.
+
+## Same flow on Android
+device: Pixel 7              # per-scenario inline override: a device name
+Open the app; the native install banner appears instead.
+```
+
+Notes:
+
+- **Inline override form:** the per-`##` override is a single line naming a device — `device: <device name>`. It carries a device name only; individual overrides (`userAgent`, `viewport`, …) belong in the frontmatter/profile because a heading override line can't carry a nested YAML object.
+- **Merge:** a profile's device is the base; the file frontmatter and then the per-scenario override win, **per field** (an inline `device: Pixel 7` keeps a file-level `userAgent`). The `viewport` field is replaced wholesale (it's a width/height pair).
+- **Composes over the viewport:** the resolved device layers on top of the run's viewport — its `viewport`/UA/`isMobile`/`hasTouch`/`deviceScaleFactor` win over the viewport's. The named viewport still determines which sizes the scenario fans out in and the run identity (`<slug>@<viewport>`).
+- **Not secrets:** these fields are plain values, so there is no `$ENV:VAR` resolution (unlike cookies/storage).
+- **Fail-fast:** an unknown field, an unknown device name, or a bad shape is a hard error at parse — a silently ignored device would produce a misleading verdict.
+
 ## New tabs / popups
 
 When a click opens a new tab (a `target="_blank"` link or `window.open`), Scout's `browser_click` result flags it. The agent then calls **`browser_switch_tab`** to move control to that tab; with no argument it switches to the newest tab, or pass a `urlGlob` (e.g. `**/booking**`) to target a specific one. The switch waits for the tab to finish loading, then becomes a recorded `switchTab` step that replays deterministically.
@@ -209,6 +241,32 @@ Beyond *absence* of errors, you can assert a **specific log was emitted** (e.g. 
 ## Clicking role-less elements (by `data-testid`)
 
 `browser_click` only takes a numbered `[ref]` from the accessibility snapshot, so an element with **no ARIA role or name** — a gesture/tap layer, an overlay `<div data-testid="…">`, a purely visual control — never gets a `[ref]` and can't be clicked that way. When you hit one, use **`browser_click_selector`**: it clicks by `data-testid` (**preferred** — stabler than a CSS path) or, if there is none, a `css` selector. It records as a plain deterministic `click` step, so replay needs no LLM. Reach for it only for elements the snapshot can't reference; a normal button still goes through `browser_click`.
+
+## How selectors are recorded (the preference ladder)
+
+You never write selectors — Scout derives them at record time. For every interaction step (click, fill, select) it resolves the target element and walks a **preference ladder**, recording the most stable strategy that *uniquely* matches the live element:
+
+1. **`data-testid`** (or the configured testid attribute) — on the element or a close stable ancestor. The sturdiest handle; survives DOM refactors.
+2. **`id`** — but only a hand-authored-looking one. Framework-generated ids are rejected (any run of 3+ digits, or a `radix-` / `react-` / `headlessui-` / `mui-` / React `useId` `:r…` prefix), because they change between renders.
+3. **role + accessible name** — the accessible name is **computed from the live DOM** at record time (the real ARIA name), never guessed from the visible label. This matters: a button reading "Buy" with `aria-label="Purchase now"` is recorded with name **"Purchase now"** — the computed name — so the selector actually resolves on replay. (Guessing "Buy" from the visible label is exactly the mistake this prevents.)
+4. **visible text** — a stable, unique text anchor.
+5. **positional CSS path** — the last resort (`main > section:nth-of-type(3) > a:nth-of-type(2)`), used only when nothing above uniquely matched.
+
+The chosen strategy becomes the step's primary selector; the other strategies that *also* uniquely matched are kept as ordered **fallbacks** (below).
+
+**The testid attribute is configurable.** It defaults to `data-testid`; set `"testIdAttribute": "data-test"` (or `data-qa`, …) in `scout.config.json` if the app uses a different convention — the ladder reads it and `getByTestId` resolves it on replay.
+
+### Fragile selectors — a warning at record time, not a failure
+
+When the ladder **bottoms out at a positional CSS path**, the step is marked **fragile**: it replays today but breaks the moment the DOM shifts. Scout makes this visible immediately — `scout go` prints a warning and the run report lists the fragile steps:
+
+> `step 4 (click main > a:nth-of-type(2)) recorded with a positional selector — add a data-testid or a unique role/name to make replay robust.`
+
+This is deliberate: fragility surfaces **at record time**, not days later as a red CI replay. The fix lives in the **app**, not the spec — add a `data-testid` (or a unique, accessible role/name) to the element, then re-record with `scout go --ai -s <slug>`. Don't treat the warning as noise: a suite full of positional selectors is a suite about to rot.
+
+### Fallback selectors — deterministic retry, no LLM
+
+Each interaction step also stores the other ladder strategies that uniquely matched, as an ordered **fallback list**. On deterministic replay, if the primary selector no longer resolves, Scout tries the fallbacks in order **before failing** — a deterministic retry with **no AI involved**, so `--no-heal` semantics are fully preserved (this is *not* healing). When a fallback rescues a step, `scout go` and the report log which one (`step 3: testid "go" → fallback css #real`) — a nudge to re-record and refresh the primary. Scripts recorded before this feature (no fallbacks) keep replaying unchanged — the format is backward compatible.
 
 ## Asserting visual/structural state (opacity, class, attribute)
 

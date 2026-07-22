@@ -11,6 +11,7 @@ Scout is self-healing browser QA. You write a scenario in one sentence; an AI ag
 - 🤖 **Verified in a real browser** — an agent judges behavior ("the paywall must *not* appear"), not just clicks.
 - 🌐 **Sees console & network** — assert "no console errors" or "a POST to `/api/checkout` returned 2xx" — not just the visible DOM.
 - ⚡ **Replays for free** — recorded runs are pure Playwright. ~zero cost, seconds per scenario, CI-ready.
+- 🎯 **Records stable selectors** — a preference ladder (data-testid → id → role+name → text → positional CSS) picks the sturdiest handle that uniquely matches, warns *at record time* when only a fragile positional selector was available, and stores fallbacks it retries deterministically on replay.
 - 🔧 **Self-heals** — when the UI changes, AI re-verifies and re-records; you review the diff.
 - 🧠 **Works with Claude, Gemini, or OpenAI** — zero-config with Claude Code; one env var for the rest.
 
@@ -95,7 +96,7 @@ The loop: you describe a flow → the agent writes the `.scout.md` → runs `sco
 
 | Topic | |
 |---|---|
-| [Writing scenarios](https://scout.pcamarajr.dev/docs/scenarios/) | the `.scout.md` format, slugs, per-scenario overrides, `cookies:`/`storage:` preconditions |
+| [Writing scenarios](https://scout.pcamarajr.dev/docs/scenarios/) | the `.scout.md` format, slugs, per-scenario overrides, `cookies:`/`storage:`/`device:` preconditions |
 | [Providers & credentials](https://scout.pcamarajr.dev/docs/providers/) | Claude, Gemini, OpenAI — detection order + `scout doctor` |
 | [Auth profiles](https://scout.pcamarajr.dev/docs/auth/) | logged-in flows, `scout login`, `$ENV:` secrets |
 | [Environments & CI](https://scout.pcamarajr.dev/docs/environments/) | base-URL overrides, worktrees, the PR gate |

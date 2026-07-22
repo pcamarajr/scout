@@ -21,6 +21,6 @@ without running it.
 
 **Read `AGENTS.md` at the repo root — it is the canonical, always-current guide**
 to the authoring loop, the `.scout.md` format, per-scenario overrides (viewports,
-permissions, `cookies:` and `storage:` preconditions), base-URL/secret handling,
+permissions, `cookies:`, `storage:` and `device:` preconditions), base-URL/secret handling,
 verdicts, and failure triage. Follow it. For commands and flags, run
 `scout --help` / `scout <command> --help`.

@@ -148,6 +148,17 @@ program
             console.log(`   ↳ ${result.reason}`);
             failed++;
           }
+          if (result.usedFallbacks?.length) {
+            for (const note of result.usedFallbacks) console.log(`   ↳ ⚠ fallback selector used — ${note}`);
+          }
+          if (result.fragileSteps?.length) {
+            console.log(
+              `   ↳ ⚠ ${result.fragileSteps.length} step(s) recorded with a positional selector (fragile) — add a data-testid or a unique role/name:`
+            );
+            for (const step of result.fragileSteps) {
+              console.log(`       • step ${step.step}: ${step.description}`);
+            }
+          }
           console.log(`   ↳ artifacts: ${path.relative(process.cwd(), result.runDir)}`);
           if (result.video) console.log(`   ↳ demo: ${path.relative(process.cwd(), result.video)}`);
         } catch (error) {

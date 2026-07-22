@@ -1,5 +1,6 @@
-import { resolveCookies, resolveStorage, type ScoutConfig } from "../config.js";
+import { resolveCookies, resolveDevice, resolveStorage, type ScoutConfig } from "../config.js";
 import { inferProvider } from "../credentials.js";
+import { resolveDeviceOptions } from "../device.js";
 import type { ResolvedViewport } from "../viewports.js";
 import type { Scenario, Step, Verdict } from "../types.js";
 import { createScoutTools } from "./agent-tools.js";
@@ -79,10 +80,29 @@ export async function runWithAgent(
 
   const viewportInfo = `Viewport: running as "${viewport.name}" (${viewport.width}×${viewport.height}${viewport.isMobile ? ", mobile/touch" : ""}). Verify the layout for that size — on mobile expect a hamburger menu/compact nav; on desktop, a horizontal nav.`;
 
+  // Device emulation is applied at context creation. Announce it so the agent
+  // understands the environment (its user-agent, touch support, metrics) and
+  // verifies behavior gated on it — e.g. a sheet that only renders under an
+  // iOS-Safari UA. Composes over the viewport, so it can override the size too.
+  const presetDevice = resolveDevice(scenario, config);
+  const deviceInfo = (() => {
+    if (!presetDevice) return "";
+    const d = resolveDeviceOptions(presetDevice);
+    const parts: string[] = [];
+    if (presetDevice.device) parts.push(`Playwright device "${presetDevice.device}"`);
+    if (d.viewport) parts.push(`${d.viewport.width}×${d.viewport.height}`);
+    if (d.isMobile) parts.push("mobile");
+    if (d.hasTouch) parts.push("touch");
+    if (d.userAgent) parts.push(`user-agent "${d.userAgent}"`);
+    const desc = parts.length ? parts.join(", ") : "custom overrides";
+    return `Device emulation active (${desc}). The browser reports this environment (user-agent, touch support, device metrics) — verify behavior gated on it (e.g. UI that only appears under a specific device/UA). This is a launch precondition — you cannot and need not change it.`;
+  })();
+
   const systemPrompt = `You are Scout, a QA agent that verifies scenarios in a real browser.
 
 Target app: ${config.baseUrl}
 ${viewportInfo}
+${deviceInfo}
 ${profileInfo}
 ${envInfo}
 ${cookieInfo}

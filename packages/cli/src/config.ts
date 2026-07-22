@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { mergeCookiesByName, validateCookie } from "./cookies.js";
+import { mergeDevice, validateDevice } from "./device.js";
 import { isEmptyStorage, mergeStorage, validateStorage } from "./storage.js";
-import type { Scenario, ScenarioCookie, ScenarioStorage, Viewport } from "./types.js";
+import type { Scenario, ScenarioCookie, ScenarioDevice, ScenarioStorage, Viewport } from "./types.js";
 
 /** Filesystem/report-safe viewport names (mirrors viewports.ts, kept inline so
  *  config has no Playwright dependency). */
@@ -35,6 +36,13 @@ export interface ScoutProfile {
    * carry a $ENV:VAR placeholder.
    */
   storage?: ScenarioStorage;
+  /**
+   * Device / user-agent emulation applied to every scenario on this profile
+   * (the shared base). A scenario's own `device` merges on top, per field.
+   * Shape: `{ device?, userAgent?, viewport?, deviceScaleFactor?, isMobile?,
+   * hasTouch? }`; `device` names a Playwright device descriptor.
+   */
+  device?: ScenarioDevice;
 }
 
 export interface ScoutConfig {
@@ -54,6 +62,12 @@ export interface ScoutConfig {
   viewports?: Record<string, Viewport>;
   /** Viewport used when a scenario declares none. Defaults to `mobile`. */
   defaultViewport?: string;
+  /**
+   * Attribute the selector ladder treats as the testid (its top rung) and that
+   * `getByTestId` resolves on replay. Defaults to `data-testid`. Set this if the
+   * app uses a different convention (e.g. `data-test`, `data-qa`).
+   */
+  testIdAttribute?: string;
   /** Locale forced on the browser context */
   locale?: string;
   /** Record a paced MP4 demo of the verified replay. Enable with --demo-video or SCOUT_RECORD_VIDEO=1. */
@@ -218,4 +232,21 @@ export function resolveStorage(scenario: Scenario, config: ScoutConfig): Scenari
     : {};
   const merged = mergeStorage(profileStorage, scenario.storage ?? {});
   return isEmptyStorage(merged) ? undefined : merged;
+}
+
+/**
+ * Resolves the device / user-agent emulation for one scenario: the profile's
+ * device is the shared base, the scenario's own device (file frontmatter +
+ * section override, already merged in specs.ts) wins on top, per field. Profile
+ * device comes from JSON, so it's validated here (lazily, like resolveCookies)
+ * and a bad one — including an unknown device name — fails loud. Returns
+ * undefined when neither side declares any emulation.
+ */
+export function resolveDevice(scenario: Scenario, config: ScoutConfig): ScenarioDevice | undefined {
+  const profileName = scenario.profile;
+  const profileRaw = profileName ? config.profiles[profileName]?.device : undefined;
+  const profileDevice = profileRaw
+    ? validateDevice(profileRaw, `${CONFIG_FILE} profile "${profileName}" device`)
+    : undefined;
+  return mergeDevice(profileDevice, scenario.device);
 }
