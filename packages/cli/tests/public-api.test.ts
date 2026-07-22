@@ -29,6 +29,8 @@ const STABLE_EXPORTS = [
   // ai-runner
   "describeNoVerdict",
   "relativizeUrl",
+  // runner/browser
+  "closeBrowsers",
   // specs
   "addScenario",
   "loadScenarios",

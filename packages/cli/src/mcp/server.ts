@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { loadConfig } from "../config.js";
 import { runScenario } from "../engine.js";
+import { closeBrowsers } from "../runner/browser.js";
 import { renderSummary, runStatus } from "../report.js";
 import { addScenario } from "../specs.js";
 import { Store } from "../store.js";
@@ -160,5 +161,12 @@ export async function startMcpServer(): Promise<void> {
   );
 
   const transport = new StdioServerTransport();
+  // The warm pooled browser is kept alive BETWEEN tool calls (that reuse is the
+  // point of a long-lived server). Release it when the stdio connection drops —
+  // the only shutdown signal a stdio MCP server gets — so a graceful disconnect
+  // doesn't leak the Chromium process before the runtime tears the child down.
+  transport.onclose = () => {
+    void closeBrowsers();
+  };
   await server.connect(transport);
 }

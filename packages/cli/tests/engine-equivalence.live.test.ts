@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { loadConfig } from "../src/config.js";
-import { BrowserSession } from "../src/runner/browser.js";
+import { BrowserSession, closeBrowsers } from "../src/runner/browser.js";
 import { runWithAgent } from "../src/runner/ai-runner.js";
 import type { Scenario, Verdict } from "../src/types.js";
 
@@ -23,6 +23,13 @@ import type { Scenario, Verdict } from "../src/types.js";
 
 const LIVE = process.env.SCOUT_LIVE_TESTS === "1" && Boolean(process.env.ANTHROPIC_API_KEY);
 const SKIP_REASON = "set SCOUT_LIVE_TESTS=1 and ANTHROPIC_API_KEY to run the live cross-engine check";
+
+// session.close() now closes only the context; the pooled Chromium process
+// stays warm. Drain it at file end so a live browser can't keep this process's
+// event loop alive after the (opt-in) live run.
+after(async () => {
+  await closeBrowsers();
+});
 
 const scenario: Scenario = {
   slug: "live/example-loads",

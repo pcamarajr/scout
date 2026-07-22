@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, test } from "node:test";
+import { chromium } from "playwright";
 import {
+  BrowserSession,
   buildSelectorTarget,
   buildStorageInitScript,
+  closeBrowsers,
   demoCursorStub,
   describeStateMismatch,
   resolveEnvValue,
   toPlaywrightCookie,
 } from "../src/runner/browser.js";
+import type { ResolvedViewport } from "../src/viewports.js";
 
 // resolveEnvValue powers both browser_fill values AND browser_navigate URLs:
 // secrets/tokens live as $ENV:VAR in the committed script and resolve at runtime.
@@ -203,4 +207,97 @@ test("describeStateMismatch reports a computed-style mismatch", () => {
     describeStateMismatch(target, { computedStyle: { property: "opacity", value: "0" } }, observed),
     /Expected computed opacity="0".*"1"/
   );
+});
+
+// --- Browser pool (real Chromium; auto-skips when none is installed) ---
+//
+// The pool launches ONE Chromium process per `${headless}|${slowMo}` launch key
+// and hands each BrowserSession a fresh isolated context, so a run that loops
+// scenarios/viewports pays the launch cost once. These proofs go through the
+// real public surface: Playwright's BrowserContext.browser() is the shared
+// process the session's context belongs to, so identity of that Browser across
+// two sessions is the observable proof of reuse. Mirrors storage-browser's
+// opt-in probe so default `npm test` stays green without a browser installed.
+
+const browserAvailable = await (async () => {
+  try {
+    const b = await chromium.launch({ headless: true });
+    await b.close();
+    return true;
+  } catch {
+    return false;
+  }
+})();
+const POOL_SKIP = browserAvailable ? false : "no Chromium available (run `npx playwright install chromium`)";
+
+const POOL_VIEWPORT: ResolvedViewport = { name: "desktop", width: 1280, height: 720 };
+
+function poolSession(over: { headless?: boolean; slowMoMs?: number } = {}): Promise<BrowserSession> {
+  return BrowserSession.launch({
+    baseUrl: "http://127.0.0.1/",
+    headless: over.headless ?? true,
+    runDir: "/tmp",
+    viewport: POOL_VIEWPORT,
+    ...(over.slowMoMs !== undefined ? { slowMoMs: over.slowMoMs } : {}),
+  });
+}
+
+// Drain the pool after each pool test (and at file end) so a live browser can't
+// keep this test process's event loop alive — close() no longer kills it.
+after(async () => {
+  await closeBrowsers();
+});
+
+test("pooled browser is reused across sessions with the same key", { skip: POOL_SKIP }, async () => {
+  await closeBrowsers(); // clean slate — start from an empty pool
+  const a = await poolSession();
+  const b = await poolSession();
+  const browserA = a.page.context().browser();
+  const browserB = b.page.context().browser();
+  try {
+    assert.ok(browserA, "context should belong to a browser");
+    assert.equal(browserA, browserB, "same key → same shared Chromium process");
+    assert.notEqual(a.page.context(), b.page.context(), "each session gets its own isolated context");
+  } finally {
+    await a.close();
+    await b.close();
+  }
+  // close() closes only the contexts; the shared process stays connected.
+  assert.equal(browserA?.isConnected(), true, "close() must NOT close the shared browser");
+  await closeBrowsers();
+});
+
+test("different slowMo keys get different pooled browsers", { skip: POOL_SKIP }, async () => {
+  await closeBrowsers();
+  const fast = await poolSession({ slowMoMs: 0 });
+  const slow = await poolSession({ slowMoMs: 50 });
+  const bFast = fast.page.context().browser();
+  const bSlow = slow.page.context().browser();
+  try {
+    assert.ok(bFast && bSlow);
+    assert.notEqual(bFast, bSlow, "slowMo is a launch-time option → its own pooled browser");
+  } finally {
+    await fast.close();
+    await slow.close();
+    await closeBrowsers();
+  }
+});
+
+test("closeBrowsers tears down pooled browsers and clears the pool", { skip: POOL_SKIP }, async () => {
+  await closeBrowsers();
+  const s1 = await poolSession();
+  const b1 = s1.page.context().browser();
+  await s1.close();
+  assert.equal(b1?.isConnected(), true, "close() alone keeps the shared browser warm");
+  await closeBrowsers();
+  assert.equal(b1?.isConnected(), false, "closeBrowsers disconnects the pooled browser");
+  // The pool is cleared, so the next launch must start a fresh process.
+  const s2 = await poolSession();
+  const b2 = s2.page.context().browser();
+  try {
+    assert.notEqual(b1, b2, "after closeBrowsers a new launch gets a fresh browser");
+  } finally {
+    await s2.close();
+    await closeBrowsers();
+  }
 });

@@ -8,6 +8,7 @@ import { CONFIG_FILE, SCOUT_DIR, loadConfig, type ScoutConfig } from "./config.j
 import { detectAiCredentials, inferProvider, type AiProvider } from "./credentials.js";
 import { resolveEngineKind } from "./runner/engines/index.js";
 import { runScenario } from "./engine.js";
+import { closeBrowsers } from "./runner/browser.js";
 import { runInit } from "./init.js";
 import { buildReport, renderSummary, runStatus } from "./report.js";
 import { addScenario, selectScenarios, slugify } from "./specs.js";
@@ -102,6 +103,7 @@ program
         resolveViewport(viewportOverride, config);
       } catch (error) {
         console.error(error instanceof Error ? error.message : String(error));
+        await closeBrowsers();
         process.exit(1);
       }
     }
@@ -109,6 +111,7 @@ program
     const targets = opts.scenario ? selectScenarios(all, opts.scenario) : all;
     if (!targets.length) {
       console.error(opts.scenario ? `No scenario or spec matched "${opts.scenario}".` : "No scenarios. Use `scout create`.");
+      await closeBrowsers();
       process.exit(1);
     }
 
@@ -164,6 +167,9 @@ program
         }
       }
     }
+    // Release the pooled Chromium process(es) so the live browser doesn't keep
+    // the Node event loop alive and block the exit.
+    await closeBrowsers();
     process.exit(failed ? 1 : 0);
   });
 
