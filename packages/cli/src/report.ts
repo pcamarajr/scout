@@ -34,7 +34,7 @@ export function renderRunReport(result: RunResult, scenario: Scenario, steps?: S
   if (steps?.length) {
     lines.push(``, `## Recorded script (${steps.length} steps)`, ``);
     steps.forEach((s, i) => {
-      const fragile = "target" in s && s.target.fragile ? " ⚠️ fragile (positional selector)" : "";
+      const fragile = "target" in s && s.target?.fragile ? " ⚠️ fragile (positional selector)" : "";
       lines.push(`${i + 1}. ${describeStep(s)}${fragile}`);
     });
   }

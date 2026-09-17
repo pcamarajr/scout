@@ -56,8 +56,10 @@ function fakeSession(overrides: Partial<Record<string, unknown>> = {}): {
       void calls.push(
         `assertVisible:${text}:${opts?.timeout ?? "default"}:${opts?.oneShot ? "one-shot" : "poll"}`
       ),
-    assertNotVisible: async (text: string, timeout?: number) =>
-      void calls.push(`assertNotVisible:${text}:${timeout ?? "default"}`),
+    assertNotVisible: async (text: string, timeout?: number, within?: { description: string }) =>
+      void calls.push(
+        `assertNotVisible:${text}:${timeout ?? "default"}:${within?.description ?? "page"}`
+      ),
     assertUrl: async (p: string, timeout?: number) =>
       void calls.push(`assertUrl:${p}:${timeout ?? "default"}`),
     assertNetwork: async (m: { urlGlob: string }) => void calls.push(`assertNetwork:${m.urlGlob}`),
@@ -189,7 +191,7 @@ test("browser_assert forwards timeoutMs and oneShot and records them on the step
   ]);
   assert.deepEqual(calls, [
     "assertVisible:Total:1500:one-shot",
-    "assertNotVisible:Loading:1500",
+    "assertNotVisible:Loading:1500:page",
     "assertUrl:/done:1500",
   ]);
 });
@@ -420,4 +422,58 @@ test("browser_assert_state requires a target and at least one check (isError, re
   const noCheck = await byName("browser_assert_state").handler({ testId: "x" });
   assert.equal(noCheck.isError, true);
   assert.equal(steps.length, 0);
+});
+
+// A negative assertion scoped to a container is what a spec means by "no error
+// message inside the auth dialog". The scope must reach the session AND land on
+// the recorded step, or the replay silently widens back to the whole page.
+test("browser_assert scopes notVisibleText to a container and records the target", async () => {
+  const { byName, steps, calls } = harness();
+  await byName("browser_assert").handler({
+    notVisibleText: "Out of stock",
+    notVisibleWithinTestId: "cart-summary",
+  });
+  assert.deepEqual(steps, [
+    {
+      kind: "assertNotVisible",
+      text: "Out of stock",
+      target: { testId: "cart-summary", description: '[data-testid="cart-summary"]' },
+    },
+  ]);
+  assert.deepEqual(calls, [
+    'assertNotVisible:Out of stock:default:[data-testid="cart-summary"]',
+  ]);
+});
+
+test("browser_assert accepts a css container when there is no testid", async () => {
+  const { byName, steps } = harness();
+  await byName("browser_assert").handler({
+    notVisibleText: "Out of stock",
+    notVisibleWithinCss: "#cart-summary",
+  });
+  assert.deepEqual(steps, [
+    {
+      kind: "assertNotVisible",
+      text: "Out of stock",
+      target: { css: "#cart-summary", description: "#cart-summary" },
+    },
+  ]);
+});
+
+// An unscoped notVisibleText must stay byte-identical to the previous format so
+// already-recorded scripts and fresh recordings don't diverge.
+test("browser_assert records no target when no container is given", async () => {
+  const { byName, steps } = harness();
+  await byName("browser_assert").handler({ notVisibleText: "Loading" });
+  assert.deepEqual(steps, [{ kind: "assertNotVisible", text: "Loading" }]);
+});
+
+test("browser_assert rejects a container without notVisibleText", async () => {
+  const { byName, steps } = harness();
+  const res = await byName("browser_assert").handler({
+    visibleText: "Welcome",
+    notVisibleWithinTestId: "cart-summary",
+  });
+  assert.match(JSON.stringify(res), /require notVisibleText/);
+  assert.deepEqual(steps, [], "nothing may be recorded when the arguments are contradictory");
 });
