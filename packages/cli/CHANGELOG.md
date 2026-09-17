@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/pcamarajr/scout/compare/scout-v0.15.0...scout-v0.16.0) (2026-09-17)
+
+
+### Features
+
+* **cli:** scope assertNotVisible to a container ([#74](https://github.com/pcamarajr/scout/issues/74)) ([271857e](https://github.com/pcamarajr/scout/commit/271857eccd53063a5f5286a483f7a196372aacd9))
+
 ## [0.15.0](https://github.com/pcamarajr/scout/compare/scout-v0.14.0...scout-v0.15.0) (2026-07-22)
 
 
