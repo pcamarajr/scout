@@ -228,7 +228,7 @@ export type Step =
   | { kind: "waitForText"; text: string; timeout?: number }
   | { kind: "waitForUrl"; pattern: string; timeout?: number }
   | { kind: "assertVisible"; text: string; timeout?: number; oneShot?: boolean }
-  | { kind: "assertNotVisible"; text: string; timeout?: number }
+  | { kind: "assertNotVisible"; text: string; timeout?: number; target?: Target }
   | ({ kind: "assertState"; target: Target; timeout?: number } & ElementStateMatcher)
   | { kind: "assertUrl"; pattern: string; timeout?: number }
   | ({ kind: "assertNetwork" } & NetworkMatcher)

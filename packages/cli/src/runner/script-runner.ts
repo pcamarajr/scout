@@ -111,7 +111,7 @@ export function describeStep(step: Step): string {
     case "assertVisible":
       return `assert text visible "${step.text}"${step.oneShot ? " (one-shot)" : ""}${timeoutSuffix(step.timeout)}`;
     case "assertNotVisible":
-      return `assert text ABSENT "${step.text}"${timeoutSuffix(step.timeout)}`;
+      return `assert text ABSENT "${step.text}"${step.target ? ` within ${step.target.description}` : ""}${timeoutSuffix(step.timeout)}`;
     case "assertState": {
       const parts = [
         step.hasClass !== undefined ? `hasClass "${step.hasClass}"` : "",

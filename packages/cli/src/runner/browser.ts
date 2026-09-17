@@ -798,15 +798,41 @@ export class BrowserSession {
       .waitFor({ state: "visible", timeout: opts.timeout ?? STEP_TIMEOUT });
   }
 
-  async assertNotVisible(text: string, timeout?: number): Promise<void> {
+  /**
+   * Asserts a text is NOT visible. Page-wide by default (the strictest form:
+   * the text may appear nowhere). `within` narrows the search to a container,
+   * which is what an expectation like "no error message inside THIS panel"
+   * actually means — page-wide there would trip on the same copy rendered by an
+   * unrelated component.
+   *
+   * Scoping is deliberately LESS strict, so it is guarded: a container that
+   * isn't in the DOM fails the assertion instead of passing vacuously. Without
+   * that guard a panel that never rendered would look like a clean check.
+   */
+  async assertNotVisible(text: string, timeout?: number, within?: Target): Promise<void> {
     // give the page a beat to render, then require absence
     await this.page.waitForTimeout(timeout ?? 1000);
-    const visible = await this.page
+    const scope = within ? this.targetLocator(within) : this.page;
+    if (within) {
+      const present = await (scope as Locator).count().catch(() => 0);
+      if (!present) {
+        throw new Error(
+          `Container ${within.description} is not in the DOM, so "${text}" could not be checked inside it.`
+        );
+      }
+    }
+    const visible = await scope
       .getByText(text)
       .first()
       .isVisible()
       .catch(() => false);
-    if (visible) throw new Error(`Text "${text}" is visible, but it should not be.`);
+    if (visible) {
+      throw new Error(
+        within
+          ? `Text "${text}" is visible inside ${within.description}, but it should not be.`
+          : `Text "${text}" is visible, but it should not be.`
+      );
+    }
   }
 
   /**
@@ -943,7 +969,7 @@ export class BrowserSession {
       case "assertVisible":
         return this.assertVisible(step.text, { timeout: step.timeout, oneShot: step.oneShot });
       case "assertNotVisible":
-        return this.assertNotVisible(step.text, step.timeout);
+        return this.assertNotVisible(step.text, step.timeout, step.target);
       case "assertState":
         return this.assertState(
           step.target,

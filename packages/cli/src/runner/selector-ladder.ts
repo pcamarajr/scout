@@ -186,7 +186,7 @@ export function fragileWarning(step: FragileStep): string {
 export function collectFragileSteps(steps: Step[]): FragileStep[] {
   const out: FragileStep[] = [];
   steps.forEach((step, i) => {
-    if ("target" in step && step.target.fragile) {
+    if ("target" in step && step.target?.fragile) {
       out.push({ step: i + 1, description: describeStep(step) });
     }
   });

@@ -292,6 +292,16 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
       z.object({
         visibleText: z.string().optional().describe("Text that MUST be visible"),
         notVisibleText: z.string().optional().describe("Text that must NOT be visible"),
+        notVisibleWithinTestId: z
+          .string()
+          .optional()
+          .describe(
+            'For notVisibleText only: data-testid of the CONTAINER to search inside, e.g. "cart-summary". Use it when the expectation is scoped ("no error message inside THIS panel") — page-wide would trip on the same copy rendered elsewhere. The container must exist, or the assertion fails.'
+          ),
+        notVisibleWithinCss: z
+          .string()
+          .optional()
+          .describe("For notVisibleText only: CSS selector of the container, used only when it has no data-testid"),
         urlContains: z.string().optional().describe("Substring the URL must contain"),
         timeoutMs: z
           .number()
@@ -306,8 +316,25 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
             "For visibleText only: waits for the page to settle (network idle, capped at 2s) and checks ONCE instead of polling the whole timeout. Use only when the text should already be present on the loaded page — content that arrives late (streaming, slow hydration) needs the default poll."
           ),
       }),
-      async ({ visibleText, notVisibleText, urlContains, timeoutMs, oneShot }) => {
+      async ({
+        visibleText,
+        notVisibleText,
+        notVisibleWithinTestId,
+        notVisibleWithinCss,
+        urlContains,
+        timeoutMs,
+        oneShot,
+      }) => {
         try {
+          const within =
+            notVisibleWithinTestId || notVisibleWithinCss
+              ? buildSelectorTarget({ testId: notVisibleWithinTestId, css: notVisibleWithinCss })
+              : undefined;
+          // A scope with nothing to scope is a silently-ignored argument, which
+          // would read to the agent as a recorded constraint. Fail loudly.
+          if (within && !notVisibleText) {
+            return fail(new Error("notVisibleWithinTestId/notVisibleWithinCss require notVisibleText."));
+          }
           if (visibleText) {
             await session.assertVisible(visibleText, { timeout: timeoutMs, oneShot });
             record({
@@ -318,11 +345,12 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
             });
           }
           if (notVisibleText) {
-            await session.assertNotVisible(notVisibleText, timeoutMs);
+            await session.assertNotVisible(notVisibleText, timeoutMs, within);
             record({
               kind: "assertNotVisible",
               text: notVisibleText,
               ...(timeoutMs ? { timeout: timeoutMs } : {}),
+              ...(within ? { target: within } : {}),
             });
           }
           if (urlContains) {
