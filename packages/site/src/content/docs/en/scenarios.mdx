@@ -232,6 +232,44 @@ This records a positive console assertion that replay re-checks: it requires a s
 
 Keep these expectations about **shape, not exact values** — "a POST to `/api/checkout` returned 2xx with an `orderId`", not "orderId was `ord_42`". Pinning a volatile value is the main way a network assertion turns flaky.
 
+## Simulating a transient network failure
+
+To verify **resilience** — "a video segment fails to load and playback keeps going", "the feed API drops once and the app retries" — describe the failure in the prose. The agent arms a **network fault** right before the moment that issues the request, lets the app recover, then asserts the recovered state:
+
+```markdown
+## Playback survives a dropped segment
+serviceWorkers: block
+
+Open episode 1 and let it play. Make the next video segment (.ts or .m4s)
+fail once with a network error. The video keeps playing past 0:15 and no
+error message appears.
+```
+
+This records a `failNetwork` step. Its semantics:
+
+- **Armed when the step runs**, never at launch — it only affects requests made **after** that point, in every tab of the context (a popup or `switchTab` target included).
+- **Mode** — `abort` (the request fails as a network error, `net::ERR_FAILED`) or `status` (fulfilled with an HTTP error, default `503`).
+- **Scope, exactly one** — `times: N` fails the next *N* matching requests and then stops interfering (default `1`, a single transient blip); `durationMs` fails **every** matching request for that window (an outage). The interception is removed when the budget or window is used up, and always when the scenario ends — later steps and later scenarios are unaffected.
+- **URL pattern** — the same glob as network assertions (`*` within a segment, `**` across, `{a,b}` alternatives), e.g. `**/*.{ts,m4s}` for HLS/DASH segments. Optional `resourceTypes` narrows it (`xhr`, `fetch`, `media`, …) — HLS players running on MSE load segments via `xhr`/`fetch`.
+- **Observable** — failed requests show up in the network log marked as injected, and an `assertNetwork` with `injected: true` proves the fault really fired (aborted requests carry status `0`). Plain network assertions **ignore** injected requests, so they can never pass on a response Scout fabricated.
+- **Never a silent no-op** — `result.json` reports how many requests each fault failed (`networkFaults`). A fault that matched **nothing** fails the run at that step: a resilience check that never failed anything would be a false pass.
+
+Replay is deterministic: the recorded fault carries its explicit scope (`times: 1` when you gave none), so the same requests are failed in the same order, with no AI involved. A recorded script looks like this:
+
+```json
+[
+  { "kind": "navigate", "url": "/series/example/episode/1" },
+  { "kind": "failNetwork", "urlGlob": "**/*.{ts,m4s}", "mode": "abort", "times": 1, "resourceTypes": ["xhr", "fetch"] },
+  { "kind": "waitForText", "text": "0:15", "timeout": 30000 },
+  { "kind": "assertNetwork", "urlGlob": "**/*.{ts,m4s}", "injected": true },
+  { "kind": "assertNotVisible", "text": "Erro ao carregar o vídeo" }
+]
+```
+
+### Service workers
+
+Set `serviceWorkers: block` (file frontmatter or per scenario) on scenarios that use a network fault when the app registers a **service worker**. Requests a worker answers from its own cache never reach the network, so no fault can touch them. Blocking is opt-in: scenarios without the key keep the browser's default, so existing scenarios and PWA flows are unaffected. When a fault runs on a worker-controlled page, the report carries a warning naming this setting.
+
 ## Authoring options
 
 - **By hand** — write the markdown directly.

@@ -1,5 +1,5 @@
 import type { AiProvider } from "../../credentials.js";
-import type { Step, Verdict } from "../../types.js";
+import type { NetworkFaultReport, Step, Verdict } from "../../types.js";
 import type { ScoutTool } from "../agent-tools.js";
 
 export interface AiRunOutcome {
@@ -13,6 +13,8 @@ export interface AiRunOutcome {
    * as an infrastructure failure, never as "the scenario is blocked by the UI".
    */
   runnerFailure?: string;
+  /** What each recorded `failNetwork` step did during the run. */
+  networkFaults?: NetworkFaultReport[];
 }
 
 /**

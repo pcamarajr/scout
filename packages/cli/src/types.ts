@@ -86,6 +86,69 @@ export interface NetworkMatcher {
    * (field names like `orderId`), not volatile values (ids, timestamps).
    */
   responseIncludes?: string[];
+  /**
+   * Whether to match requests a `failNetwork` step aborted/fulfilled. Omitted =
+   * real traffic only (injected faults are invisible, so an existing assertion
+   * can never pass on a fake response); `true` = ONLY injected faults — the way
+   * a scenario proves its fault really fired. Aborted requests carry status 0.
+   */
+  injected?: boolean;
+}
+
+/** Playwright request resource types a {@link NetworkFault} may filter on. */
+export const FAULT_RESOURCE_TYPES = [
+  "document",
+  "stylesheet",
+  "image",
+  "media",
+  "font",
+  "script",
+  "texttrack",
+  "xhr",
+  "fetch",
+  "eventsource",
+  "manifest",
+  "other",
+] as const;
+export type FaultResourceType = (typeof FAULT_RESOURCE_TYPES)[number];
+
+/**
+ * A transient network failure injected by the `failNetwork` step. Installed
+ * when the step executes (never at context creation), it intercepts only
+ * requests made AFTER that point, and is removed once its scope is used up —
+ * `times` matching requests, or the `durationMs` window — or when the context
+ * closes. Exactly one scope is set; a recorded step always carries it
+ * explicitly (`times: 1` when the author gave neither).
+ */
+export interface NetworkFault {
+  /** Glob over the request URL — same convention as {@link NetworkMatcher.urlGlob}. */
+  urlGlob: string;
+  /** "abort" = the request fails as a network error; "status" = fulfilled with an HTTP error status. */
+  mode: "abort" | "status";
+  /** HTTP status for mode "status" (default 503). Not allowed with "abort". */
+  status?: number;
+  /** Fail the next N matching requests, then stop interfering. */
+  times?: number;
+  /** Fail every matching request for this many ms after the step runs. */
+  durationMs?: number;
+  /** Only intercept requests of these Playwright resource types (e.g. xhr, fetch, media). */
+  resourceTypes?: FaultResourceType[];
+}
+
+/**
+ * What one `failNetwork` step actually did, reported in `result.json`. A fault
+ * whose pattern never matched fails the run: the scenario claimed to exercise
+ * a failure that never happened, so passing would be a false positive.
+ */
+export interface NetworkFaultReport {
+  /** 1-based position of the step in the script. */
+  step: number;
+  /** Human-readable description of the step (from `describeStep`). */
+  description: string;
+  /** How many requests were actually aborted/fulfilled by this step. */
+  failed: number;
+  /** Set when the fault under-delivered (fewer than `times`) or may have been bypassed. */
+  warning?: string;
 }
 
 /** Geographic coordinates for a granted geolocation permission. */
@@ -235,6 +298,7 @@ export type Step =
   | { kind: "assertNoConsoleErrors"; ignore?: string[] }
   | { kind: "assertConsoleMessage"; includes: string[]; type?: string }
   | { kind: "switchTab"; urlGlob?: string }
+  | ({ kind: "failNetwork" } & NetworkFault)
   | { kind: "screenshot"; label: string };
 
 export type Verdict = "verified" | "failed" | "partial" | "blocked";
@@ -291,6 +355,15 @@ export interface Scenario {
    * fields win over the viewport's for UA/metrics/size.
    */
   device?: ScenarioDevice;
+  /**
+   * Service-worker policy for the scenario's browser context (file frontmatter
+   * default, per-section override). Omitted/"allow" = Playwright's default.
+   * "block" stops the page from registering service workers — needed when a
+   * `failNetwork` step must see requests a service worker would otherwise
+   * handle (Playwright routing never sees those). A context-creation
+   * parameter, never a recorded step.
+   */
+  serviceWorkers?: "allow" | "block";
   /** Source spec file, relative to the project root */
   file: string;
 }
@@ -333,6 +406,11 @@ export interface RunResult {
    * no fallback was needed (the common case).
    */
   usedFallbacks?: string[];
+  /**
+   * One entry per `failNetwork` step that executed: how many requests it
+   * actually failed. Absent when the script has no such step.
+   */
+  networkFaults?: NetworkFaultReport[];
 }
 
 /** One recorded step that replays on a fragile positional selector. */

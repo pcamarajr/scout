@@ -76,6 +76,7 @@ export async function runScenario(
       device,
       extraHeaders: config.headers,
       testIdAttribute: config.testIdAttribute,
+      serviceWorkers: scenario.serviceWorkers,
     });
 
   let result: RunResult;
@@ -104,6 +105,7 @@ export async function runScenario(
         screenshots: session.screenshots,
         trace,
         ...(replay.fallbacks?.length ? { usedFallbacks: replay.fallbacks } : {}),
+        ...(replay.networkFaults ? { networkFaults: replay.networkFaults } : {}),
       };
     } else if (heal && aiCreds.ok) {
       // cached script broke — re-verify with the agent and re-record
@@ -131,6 +133,7 @@ export async function runScenario(
         screenshots: session.screenshots,
         trace,
         ...(replay.fallbacks?.length ? { usedFallbacks: replay.fallbacks } : {}),
+        ...(replay.networkFaults ? { networkFaults: replay.networkFaults } : {}),
       };
     }
   } else {
@@ -313,6 +316,7 @@ async function recordDemoVideo(
         device,
         extraHeaders: config.headers,
         testIdAttribute: config.testIdAttribute,
+        serviceWorkers: scenario.serviceWorkers,
       });
     } catch {
       console.warn("[scout] video: could not open the browser for the demo replay.");
@@ -391,6 +395,7 @@ async function runAi(
       device,
       extraHeaders: config.headers,
       testIdAttribute: config.testIdAttribute,
+      serviceWorkers: scenario.serviceWorkers,
     });
     let result;
     try {
@@ -431,6 +436,7 @@ async function runAi(
       screenshots,
       trace,
       runnerFailure: outcome.runnerFailure,
+      ...(outcome.networkFaults ? { networkFaults: outcome.networkFaults } : {}),
     },
     steps: outcome.steps,
   };

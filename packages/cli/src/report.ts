@@ -61,6 +61,13 @@ export function renderRunReport(result: RunResult, scenario: Scenario, steps?: S
     for (const note of result.usedFallbacks) lines.push(`- ${note}`);
   }
 
+  if (result.networkFaults?.length) {
+    lines.push(``, `## Network faults`, ``, `| Step | Fault | Requests failed | Note |`, `|---|---|---|---|`);
+    for (const f of result.networkFaults) {
+      lines.push(`| ${f.step} | ${f.description} | ${f.failed} | ${f.warning ? `⚠️ ${f.warning}` : ""} |`);
+    }
+  }
+
   if (result.screenshots.length) {
     lines.push(``, `## Evidence`, ``);
     for (const shot of result.screenshots) {

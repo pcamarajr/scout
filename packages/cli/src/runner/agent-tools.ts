@@ -1,8 +1,10 @@
 import { z } from "zod";
 import type { ScoutConfig } from "../config.js";
-import type { Step, Verdict } from "../types.js";
+import { FAULT_RESOURCE_TYPES, type Step, type Verdict } from "../types.js";
 import { BrowserSession, buildSelectorTarget, resolveEnvValue } from "./browser.js";
 import { relativizeUrl } from "./engines/types.js";
+import { describeStep } from "./script-runner.js";
+import { normalizeNetworkFault } from "./step-schema.js";
 
 /** Normalized result every engine adapter maps into its own SDK shape. */
 export interface ToolResult {
@@ -435,7 +437,7 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_assert_network",
-      'Verifies that an expected network call happened. Match the request by method + URL pattern (urlGlob with * and **) and, optionally, status. To inspect the response body use responseIncludes with STABLE substrings (field names like "orderId"), never volatile values (ids, timestamps). Becomes a deterministic test.',
+      'Verifies that an expected network call happened. Match the request by method + URL pattern (urlGlob with *, ** and {a,b}) and, optionally, status. To inspect the response body use responseIncludes with STABLE substrings (field names like "orderId"), never volatile values (ids, timestamps). Requests failed by browser_fail_network are EXCLUDED by default; pass injected=true to match ONLY those (aborted ones have status 0) — the way to prove the fault really fired. Becomes a deterministic test.',
       z.object({
         urlGlob: z.string().describe("URL pattern, e.g. **/api/checkout/**"),
         method: z.string().optional().describe("GET, POST, ... (omitted = any method)"),
@@ -447,13 +449,77 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
           .array(z.string())
           .optional()
           .describe("Substrings that MUST appear in the response body"),
+        injected: z
+          .boolean()
+          .optional()
+          .describe("true = match ONLY requests failed by browser_fail_network (proves the fault fired). Omitted = real traffic only."),
       }),
-      async ({ urlGlob, method, status, responseIncludes }) => {
+      async ({ urlGlob, method, status, responseIncludes, injected }) => {
         try {
-          await session.assertNetwork({ urlGlob, method, status, responseIncludes });
-          record({ kind: "assertNetwork", urlGlob, method, status, responseIncludes });
+          await session.assertNetwork({ urlGlob, method, status, responseIncludes, injected });
+          record({
+            kind: "assertNetwork",
+            urlGlob,
+            method,
+            status,
+            responseIncludes,
+            ...(injected !== undefined ? { injected } : {}),
+          });
           return ok(
-            `Network assertion passed: ${method ?? "ANY"} ${urlGlob}${status ? ` (status ${status})` : ""}.`
+            `Network assertion passed: ${method ?? "ANY"} ${urlGlob}${status !== undefined ? ` (status ${status})` : ""}${injected ? " [injected]" : ""}.`
+          );
+        } catch (e) {
+          return fail(e);
+        }
+      }
+    ),
+    define(
+      "browser_fail_network",
+      [
+        "Simulates a TRANSIENT network failure for resilience scenarios (\"a video segment fails to load, playback keeps going\", \"the API drops once, the app retries\").",
+        "Arms a fault that applies only to requests made AFTER this call, across every tab; it does not wait — call it right BEFORE the action/moment that triggers the request, then continue the flow and assert the recovered state.",
+        'mode "abort" = the request fails as a network error (net::ERR_FAILED); mode "status" = it gets an HTTP error response (default 503).',
+        "Scope: times=N fails the next N matching requests then stops interfering (default 1 — a single transient blip); durationMs fails EVERY match for that window (an outage). Never both.",
+        "urlGlob uses the same glob as browser_assert_network (* within a segment, ** across, {a,b} alternatives), e.g. **/*.{ts,m4s} for HLS/DASH segments or **/api/feed**. Read browser_inspect_logs first to pick a pattern that matches the real URLs.",
+        "resourceTypes narrows it (e.g. [\"xhr\",\"fetch\"] — HLS players load segments via xhr/fetch, not \"media\").",
+        "A fault that matches NOTHING fails the run (a resilience check that never failed anything is a false pass). Confirm it fired with browser_assert_network injected=true. Becomes a deterministic step.",
+      ].join(" "),
+      z.object({
+        urlGlob: z.string().min(1).describe("Glob over the request URL, e.g. **/*.{ts,m4s}"),
+        mode: z.enum(["abort", "status"]).describe('"abort" = network error; "status" = HTTP error response'),
+        status: z
+          .number()
+          .int()
+          .min(400)
+          .max(599)
+          .optional()
+          .describe('HTTP status for mode "status" (default 503). Not allowed with "abort".'),
+        times: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Fail the next N matching requests, then stop (default 1). Exclusive with durationMs."),
+        durationMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Fail every matching request for this many ms. Exclusive with times."),
+        resourceTypes: z
+          .array(z.enum(FAULT_RESOURCE_TYPES))
+          .min(1)
+          .optional()
+          .describe("Only these request types, e.g. [\"xhr\",\"fetch\"]. Omitted = any type."),
+      }),
+      async (args) => {
+        try {
+          const fault = normalizeNetworkFault(args, "browser_fail_network");
+          await session.failNetwork(fault);
+          const step: Step = { kind: "failNetwork", ...fault };
+          record(step);
+          return ok(
+            `Armed: ${describeStep(step)}. Nothing has been failed yet — trigger the request now (continue the flow), then check browser_inspect_logs ("Network faults") or assert with browser_assert_network injected=true.`
           );
         } catch (e) {
           return fail(e);

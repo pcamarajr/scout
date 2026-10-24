@@ -1,4 +1,4 @@
-import type { Step } from "../types.js";
+import type { NetworkFaultReport, Step } from "../types.js";
 import type { BrowserSession } from "./browser.js";
 import type { TimelineEntry } from "./video.js";
 
@@ -12,6 +12,8 @@ export interface ReplayOutcome {
    * resolved — deterministic retry, no LLM. Empty when no fallback was needed.
    */
   fallbacks?: string[];
+  /** What each executed `failNetwork` step did. Absent when the script has none. */
+  networkFaults?: NetworkFaultReport[];
 }
 
 const ASSERTION_KINDS = new Set<Step["kind"]>([
@@ -135,6 +137,13 @@ export function describeStep(step: Step): string {
       return `assert console message containing ${step.includes.map((s) => `"${s}"`).join(" + ")}${step.type ? ` (type ${step.type})` : ""}`;
     case "switchTab":
       return `switch to tab ${step.urlGlob ? `matching "${step.urlGlob}"` : "most recent"}`;
+    case "failNetwork": {
+      const how = step.mode === "abort" ? "abort" : `respond ${step.status ?? 503} to`;
+      const types = step.resourceTypes?.length ? ` ${step.resourceTypes.join("/")}` : "";
+      return step.durationMs !== undefined
+        ? `fail network: ${how} every${types} request matching ${step.urlGlob} for ${step.durationMs}ms`
+        : `fail network: ${how} next ${step.times ?? 1}${types} request(s) matching ${step.urlGlob}`;
+    }
     case "screenshot":
       return `screenshot "${step.label}"`;
   }
@@ -146,10 +155,19 @@ export function describeStep(step: Step): string {
  */
 export async function replaySteps(session: BrowserSession, steps: Step[]): Promise<ReplayOutcome> {
   const fallbacks: string[] = [];
+  const faultSteps: number[] = [];
+  const extras = (): Pick<ReplayOutcome, "fallbacks" | "networkFaults"> => {
+    const networkFaults = collectFaultReports(session, steps, faultSteps);
+    return {
+      ...(fallbacks.length ? { fallbacks } : {}),
+      ...(networkFaults.length ? { networkFaults } : {}),
+    };
+  };
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     try {
       await session.executeStep(step, (note) => fallbacks.push(`step ${i + 1}: ${note}`));
+      if (step.kind === "failNetwork") faultSteps.push(i);
     } catch (error) {
       await session.screenshot(`replay-failed-step-${i + 1}`).catch(() => {});
       return {
@@ -157,10 +175,45 @@ export async function replaySteps(session: BrowserSession, steps: Step[]): Promi
         failedIndex: i,
         failedStep: describeStep(step),
         error: error instanceof Error ? error.message : String(error),
-        ...(fallbacks.length ? { fallbacks } : {}),
+        ...extras(),
       };
     }
   }
+  const outcome = extras();
+  // A fault that never matched means the failure the scenario is about never
+  // happened — passing would be a false positive. Fail at that step.
+  const unexercised = outcome.networkFaults?.find((f) => f.failed === 0);
+  if (unexercised) {
+    await session.screenshot(`replay-failed-step-${unexercised.step}`).catch(() => {});
+    return {
+      passed: false,
+      failedIndex: unexercised.step - 1,
+      failedStep: unexercised.description,
+      error: unexercised.warning ?? "failNetwork never matched a request.",
+      ...outcome,
+    };
+  }
   await session.screenshot("final-state").catch(() => {});
-  return { passed: true, ...(fallbacks.length ? { fallbacks } : {}) };
+  return { passed: true, ...outcome };
+}
+
+/**
+ * Pairs the session's faults (install order) with the indices of the
+ * `failNetwork` steps that installed them, for `result.json`. Shared by replay
+ * and the AI run so both report the same shape.
+ */
+export function collectFaultReports(
+  session: Pick<BrowserSession, "networkFaults">,
+  steps: Step[],
+  faultSteps: number[]
+): NetworkFaultReport[] {
+  return session.networkFaults().map((f, k) => {
+    const index = faultSteps[k];
+    return {
+      step: index + 1,
+      description: describeStep(steps[index]),
+      failed: f.failed,
+      ...(f.warning ? { warning: f.warning } : {}),
+    };
+  });
 }

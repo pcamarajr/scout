@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { SCOUT_DIR } from "./config.js";
+import { parseSteps } from "./runner/step-schema.js";
 import { SPECS_DIR, loadScenarios, slugToToken } from "./specs.js";
 import type { RunResult, Scenario, Step } from "./types.js";
 
@@ -57,7 +58,9 @@ export class Store {
   loadSteps(slug: string, viewport: string): Step[] | undefined {
     const file = this.scriptPath(slug, viewport);
     if (!fs.existsSync(file)) return undefined;
-    return JSON.parse(fs.readFileSync(file, "utf8"));
+    // Validated on load: an unknown kind or a malformed failNetwork step fails
+    // loud here instead of replaying as a silent pass.
+    return parseSteps(JSON.parse(fs.readFileSync(file, "utf8")), path.relative(this.cwd, file));
   }
 
   saveSteps(slug: string, viewport: string, steps: Step[]): void {

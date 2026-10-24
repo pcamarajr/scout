@@ -1,7 +1,17 @@
 import path from "node:path";
-import { chromium, selectors, type Browser, type BrowserContext, type Locator, type Page } from "playwright";
+import {
+  chromium,
+  selectors,
+  type Browser,
+  type BrowserContext,
+  type Locator,
+  type Page,
+  type Request,
+  type Route,
+} from "playwright";
 import type {
   ElementStateMatcher,
+  NetworkFault,
   NetworkMatcher,
   PermissionPolicy,
   ScenarioCookie,
@@ -20,6 +30,7 @@ import {
   type CapturedRequest,
   type ConsoleMessage,
 } from "./network-match.js";
+import { normalizeNetworkFault } from "./step-schema.js";
 
 /** Default testid attribute, when `scout.config.json` sets none. */
 export const DEFAULT_TESTID_ATTR = "data-testid";
@@ -107,6 +118,40 @@ export interface LaunchOptions {
    * as Playwright's global testid attribute so `getByTestId` matches it.
    */
   testIdAttribute?: string;
+  /**
+   * Service-worker policy for the context. Omitted/"allow" keeps Playwright's
+   * default. "block" is opt-in per scenario: Playwright routing (and therefore
+   * `failNetwork`) never sees requests a service worker handles.
+   */
+  serviceWorkers?: "allow" | "block";
+}
+
+/**
+ * Live state of one `failNetwork` step. The handler counts synchronously
+ * before any await, so the `times` budget is exact even when matching requests
+ * race each other.
+ */
+interface ActiveFault {
+  fault: NetworkFault;
+  re: RegExp;
+  handler: (route: Route, request: Request) => Promise<void>;
+  /** Requests actually aborted/fulfilled so far. */
+  failed: number;
+  /** True once the budget is used up, the window ended, or the session closed. */
+  done: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+  /** Abort/fulfill calls in flight — awaited before unrouting so none is cut off. */
+  inflight: Set<Promise<void>>;
+  /** Set when the active page was service-worker-controlled at install time. */
+  swWarning?: string;
+}
+
+/** Per-step outcome of a `failNetwork` step, in install order. */
+export interface FaultOutcome {
+  fault: NetworkFault;
+  failed: number;
+  /** Set when the fault under-delivered or may have been bypassed. */
+  warning?: string;
 }
 
 /**
@@ -313,6 +358,13 @@ export class BrowserSession {
   /** Testid attribute the selector ladder reads and `getByTestId` matches. */
   private readonly testIdAttr: string;
 
+  /** `failNetwork` faults in install order. No route exists until one is installed. */
+  private faults: ActiveFault[] = [];
+  /** Requests a fault aborted/fulfilled — lets the observers mark them `injected`. */
+  private injectedRequests = new WeakSet<Request>();
+  /** Injected requests that got a (fulfilled) response — their trailing requestfailed is noise. */
+  private respondedRequests = new WeakSet<Request>();
+
   private constructor(
     private context: BrowserContext,
     page: Page,
@@ -371,6 +423,8 @@ export class BrowserSession {
       ...(perm?.grant?.length ? { permissions: perm.grant } : {}),
       ...(perm?.geolocation ? { geolocation: perm.geolocation } : {}),
       ...(opts.recordVideo ? { recordVideo: { dir: opts.runDir, size } } : {}),
+      // Only when asked: existing scenarios keep Playwright's default.
+      ...(opts.serviceWorkers === "block" ? { serviceWorkers: "block" as const } : {}),
     });
     // Deny stub must run before any page script and in every page (incl. popups).
     if (perm?.deny?.length) await context.addInitScript(denyPermissionsStub(perm.deny));
@@ -401,16 +455,12 @@ export class BrowserSession {
   }
 
   /**
-   * Passive observers for console + network. We only LISTEN (never `route()`),
-   * so the real app traffic is untouched — these feed the deterministic
-   * assertNetwork / assertNoConsoleErrors checks.
-   */
-  /**
    * Starts passive console + network observers on a page and registers its
    * ring-buffered store. Called for the first page and for every popup/new tab
    * the context opens, so a tab's logs are captured from birth — before any
-   * switchTab. Idempotent. We only LISTEN (never route()), so app traffic is
-   * untouched.
+   * switchTab. Idempotent. The observers only LISTEN; the one thing that ever
+   * routes is an explicit `failNetwork` step, and the requests it fails are
+   * recorded here marked `injected` so assertNetwork can prove the fault fired.
    */
   private trackPage(page: Page): void {
     if (this.pageBuffers.has(page)) return;
@@ -424,17 +474,40 @@ export class BrowserSession {
     };
     page.on("console", (msg) => pushConsole({ type: msg.type(), text: msg.text() }));
     page.on("pageerror", (err) => pushConsole({ type: "error", text: `${err.name}: ${err.message}` }));
+    const pushNetwork = (entry: CapturedRequest): void => this.pushNetwork(page, entry);
     page.on("response", (res) => {
       const req = res.request();
       let body: Promise<string> | undefined;
-      buf.network.push({
+      pushNetwork({
         method: req.method(),
         url: res.url(),
         status: res.status(),
         getBody: () => (body ??= res.text().catch(() => "")),
+        ...(this.injectedRequests.has(req) ? { injected: true } : {}),
       });
-      if (buf.network.length > NETWORK_LOG_CAP) buf.network.shift();
+      if (this.injectedRequests.has(req)) this.respondedRequests.add(req);
     });
+    // Only OUR aborts are recorded: logging every real failed request would let
+    // an existing status-less assertNetwork start matching requests that never
+    // got a response.
+    page.on("requestfailed", (req) => {
+      if (!this.injectedRequests.has(req) || this.respondedRequests.has(req)) return;
+      pushNetwork({
+        method: req.method(),
+        url: req.url(),
+        status: 0,
+        getBody: () => Promise.resolve(""),
+        injected: true,
+        failure: req.failure()?.errorText ?? "aborted",
+      });
+    });
+  }
+
+  /** Appends to a page's ring-buffered network log. */
+  private pushNetwork(page: Page, entry: CapturedRequest): void {
+    const buf = this.buffers(page);
+    buf.network.push(entry);
+    if (buf.network.length > NETWORK_LOG_CAP) buf.network.shift();
   }
 
   /** Console + network buffers for a page (the active tab by default). */
@@ -855,6 +928,112 @@ export class BrowserSession {
     }
   }
 
+  /**
+   * Installs a transient network fault (`failNetwork` step). Routed on the
+   * CONTEXT, not the page: a context route also covers popups and tabs opened
+   * later, so the fault follows a `switchTab` and a request from any tab counts
+   * toward the same budget. Applies only to requests made from now on, and
+   * unroutes itself when the `times` budget is used up or the `durationMs`
+   * window ends; `close()` tears down whatever is left. Non-blocking — the steps
+   * that follow run while it is armed.
+   */
+  async failNetwork(raw: NetworkFault): Promise<void> {
+    const fault = normalizeNetworkFault(raw);
+    const re = globToRegex(fault.urlGlob);
+    const types = fault.resourceTypes ? new Set<string>(fault.resourceTypes) : undefined;
+    const active: ActiveFault = {
+      fault,
+      re,
+      failed: 0,
+      done: false,
+      inflight: new Set(),
+      handler: async () => {},
+    };
+    // Stop matching at once (sync), but unroute only after in-flight
+    // aborts/fulfills settle: unrouting under a pending route hands that
+    // request back to the network, un-failed.
+    const release = async (): Promise<void> => {
+      active.done = true;
+      if (active.timer) clearTimeout(active.timer);
+      await Promise.allSettled([...active.inflight]);
+      await this.context.unroute(re, active.handler).catch(() => {});
+    };
+    active.handler = async (route, request) => {
+      if (active.done || (types && !types.has(request.resourceType()))) {
+        return route.fallback();
+      }
+      // Count before any await so concurrent matches can't overspend `times`.
+      active.failed += 1;
+      const last = fault.times !== undefined && active.failed >= fault.times;
+      if (last) active.done = true;
+      // Marked before the call: the response event can fire before it resolves.
+      this.injectedRequests.add(request);
+      const settle = (async () => {
+        try {
+          if (fault.mode === "abort") await route.abort("failed");
+          else await route.fulfill({ status: fault.status, headers: { "x-scout-fault": "failNetwork" }, body: "" });
+          // A service worker's own fetch never reaches the page observers, so
+          // log it on the active tab here — assertNetwork injected=true must
+          // still be able to prove the fault fired.
+          if (request.serviceWorker()) {
+            this.pushNetwork(this.activePage, {
+              method: request.method(),
+              url: request.url(),
+              status: fault.mode === "abort" ? 0 : (fault.status ?? 0),
+              getBody: () => Promise.resolve(""),
+              injected: true,
+              ...(fault.mode === "abort" ? { failure: "net::ERR_FAILED (service worker fetch)" } : {}),
+            });
+          }
+        } catch {
+          // The page/context went away mid-request — it was not failed by us.
+          active.failed -= 1;
+          this.injectedRequests.delete(request);
+        }
+      })();
+      active.inflight.add(settle);
+      await settle;
+      active.inflight.delete(settle);
+      if (last) await release();
+    };
+    // Playwright cannot route requests a service worker handles. Flag it so a
+    // zero-match report points at the cause instead of looking like a typo.
+    if (this.opts.serviceWorkers !== "block") {
+      const controlled = await this.page
+        .evaluate(() => Boolean(navigator.serviceWorker?.controller))
+        .catch(() => false);
+      if (controlled) {
+        active.swWarning =
+          'The page is controlled by a service worker: requests it answers from its cache never reach the network and cannot be failed. Set "serviceWorkers: block" on the scenario for a deterministic fault.';
+      }
+    }
+    await this.context.route(re, active.handler);
+    this.faults.push(active);
+    if (fault.durationMs !== undefined) {
+      active.timer = setTimeout(() => void release(), fault.durationMs);
+      active.timer.unref?.();
+    }
+  }
+
+  /**
+   * What every `failNetwork` step did so far, in install order. A fault that
+   * never matched gets a warning; the runner turns that into a failure, since
+   * the scenario would otherwise pass without exercising the failure at all.
+   */
+  networkFaults(): FaultOutcome[] {
+    return this.faults.map(({ fault, failed, swWarning }) => {
+      let warning: string | undefined;
+      if (failed === 0) {
+        warning = `No request matched ${fault.urlGlob}${fault.resourceTypes ? ` (${fault.resourceTypes.join("/")})` : ""} after the step ran, so nothing was failed.${swWarning ? ` ${swWarning}` : ""}`;
+      } else if (fault.times !== undefined && failed < fault.times) {
+        warning = `Only ${failed} of ${fault.times} budgeted request(s) were failed.${swWarning ? ` ${swWarning}` : ""}`;
+      } else if (swWarning) {
+        warning = swWarning;
+      }
+      return { fault, failed, ...(warning ? { warning } : {}) };
+    });
+  }
+
   /** Asserts an expected network call was observed. Throws with a reason on miss. */
   async assertNetwork(matcher: NetworkMatcher): Promise<void> {
     const result = await matchNetwork(this.buffers().network, matcher);
@@ -898,7 +1077,16 @@ export class BrowserSession {
   /** Compact dump of recent network + console activity for the agent to inspect. */
   formatLogs(): string {
     const { console: consoleMessages, network: networkRequests } = this.buffers();
-    const net = networkRequests.slice(-30).map((e) => `${e.method} ${e.status} ${e.url}`);
+    const net = networkRequests
+      .slice(-30)
+      .map(
+        (e) =>
+          `${e.method} ${e.failure ? `ABORTED (${e.failure})` : e.status} ${e.url}${e.injected ? " [injected by failNetwork]" : ""}`
+      );
+    const faults = this.networkFaults().map(
+      ({ fault, failed }, i) =>
+        `#${i + 1} ${fault.mode === "abort" ? "abort" : `status ${fault.status}`} ${fault.urlGlob} — failed ${failed}${fault.times !== undefined ? `/${fault.times}` : ` (window ${fault.durationMs}ms)`}`
+    );
     const isErrLike = (t: string): boolean => t === "error" || t === "warning" || t === "warn";
     const errs = consoleMessages
       .filter((m) => isErrLike(m.type))
@@ -914,6 +1102,7 @@ export class BrowserSession {
       `Network (${networkRequests.length} requests total, last ${net.length}):`,
       ...(net.length ? net.map((l) => `  ${l}`) : ["  (none)"]),
       ``,
+      ...(faults.length ? [`Network faults (failNetwork):`, ...faults.map((l) => `  ${l}`), ``] : []),
       `Console errors/warnings (${errs.length}):`,
       ...(errs.length ? errs.map((l) => `  ${l}`) : ["  (none)"]),
       ``,
@@ -991,8 +1180,13 @@ export class BrowserSession {
         return this.assertConsoleMessage(step.includes, step.type);
       case "switchTab":
         return this.switchTab(step.urlGlob);
+      case "failNetwork":
+        return this.failNetwork(step);
       case "screenshot":
         return void (await this.screenshot(step.label));
+      default:
+        // Unreachable for a validated script; a hand-built step must not pass silently.
+        throw new Error(`Unknown step kind "${(step as { kind?: unknown }).kind}".`);
     }
   }
 
@@ -1075,6 +1269,12 @@ export class BrowserSession {
   }
 
   async close(): Promise<{ trace?: string; video?: string }> {
+    // Disarm faults first: a pending window timer must not fire into a closed
+    // context. The routes themselves die with the context below.
+    for (const f of this.faults) {
+      f.done = true;
+      if (f.timer) clearTimeout(f.timer);
+    }
     let trace: string | undefined;
     try {
       trace = path.join(this.opts.runDir, "trace.zip");

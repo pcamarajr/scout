@@ -2,7 +2,7 @@ import { resolveCookies, resolveDevice, resolveStorage, type ScoutConfig } from 
 import { inferProvider } from "../credentials.js";
 import { resolveDeviceOptions } from "../device.js";
 import type { ResolvedViewport } from "../viewports.js";
-import type { Scenario, Step, Verdict } from "../types.js";
+import type { NetworkFaultReport, Scenario, Step, Verdict } from "../types.js";
 import { createScoutTools } from "./agent-tools.js";
 import { selectEngine } from "./engines/index.js";
 import {
@@ -12,11 +12,30 @@ import {
   type QueryEndInfo,
 } from "./engines/types.js";
 import { BrowserSession } from "./browser.js";
+import { collectFaultReports } from "./script-runner.js";
 
 // Re-exported from their new home so existing importers (src/index.ts, callers)
 // keep working unchanged.
 export { describeNoVerdict, relativizeUrl };
 export type { AiRunOutcome, QueryEndInfo };
+
+/**
+ * Same rule as replay: "verified" while a `failNetwork` step never failed a
+ * request is a false pass (the failure the scenario is about never happened),
+ * and its recorded script would fail on the first replay anyway. Downgrades to
+ * "partial" — which also keeps the script from being cached.
+ */
+export function guardUnexercisedFaults(
+  verdict: { verdict: Verdict; reason: string },
+  networkFaults: NetworkFaultReport[]
+): { verdict: Verdict; reason: string } {
+  const unexercised = networkFaults.find((f) => f.failed === 0);
+  if (verdict.verdict !== "verified" || !unexercised) return verdict;
+  return {
+    verdict: "partial",
+    reason: `${verdict.reason} — but step ${unexercised.step} (${unexercised.description}) never failed a request: ${unexercised.warning ?? "no match"}`,
+  };
+}
 
 /**
  * AI-driven run, engine-neutral orchestrator. A Claude agent (via the Agent SDK
@@ -129,6 +148,7 @@ Rules:
 - Gesture-driven UIs (vertical feed, carousel, swipe between items) often don't respond to the keyboard: use browser_wheel (scroll at a position) or browser_drag (point-to-point drag) and check the result in the next snapshot.
 - Never use literal secrets: use $ENV:VAR_NAME — it works both in browser_fill and in browser_navigate URLs (e.g. tokens in the query string).
 - Don't re-fill a field you already filled, unless the page cleared the value — each of your actions becomes a step in the recorded script, and duplicate steps are noise that makes replay fragile.
+- To check resilience to a transient network failure (a video segment, an API call that drops), use browser_fail_network right BEFORE the action/moment that issues the request, then let the app retry and assert the recovered state. Then prove the fault fired with browser_assert_network injected=true. A fault that never matches fails the run, so do not arm it after the request already happened.
 - Network/console assertions must be TOLERANT: match requests by method + URL pattern + status; only use responseIncludes with stable substrings (field names), never ids/timestamps. An assertion glued to a volatile value breaks on replay.
 - Be economical: don't explore beyond the scenario. Your budget is ${config.maxTurns} actions.
 - If you're repeating attempts without progress (a blocking overlay, an element that won't appear), STOP and call scout_verdict (partial or blocked) explaining the obstacle — a partial verdict is worth more than dying without a verdict.`;
@@ -168,6 +188,10 @@ Rules:
     }
   }
 
+  const faultSteps = steps.flatMap((s, i) => (s.kind === "failNetwork" ? [i] : []));
+  const networkFaults = collectFaultReports(session, steps, faultSteps);
+  const faultInfo = networkFaults.length ? { networkFaults } : {};
+
   if (!verdict) {
     const cause = mainCause ?? describeNoVerdict(endInfo, config.maxTurns);
     return {
@@ -176,8 +200,9 @@ Rules:
       steps,
       transcript,
       runnerFailure: cause,
+      ...faultInfo,
     };
   }
 
-  return { ...verdict, steps, transcript };
+  return { ...guardUnexercisedFaults(verdict, networkFaults), steps, transcript, ...faultInfo };
 }

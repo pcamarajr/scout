@@ -238,6 +238,16 @@ Console and network observers are **per-tab**: assertions (`browser_assert_no_co
 
 Beyond *absence* of errors, you can assert a **specific log was emitted** (e.g. a `DEBUG:[...]` line gated behind a debug flag). `browser_assert_console_message` requires a message on the **active tab** that contains **all** of the given substrings **within a single message**, optionally constrained to a `type` (`log`, `debug`, `error`, …). Inspect first (`browser_inspect_logs` now also lists `log`/`debug`/`info` messages), then assert on a **stable** substring — a prefix like `DEBUG:[FEATURE/x]`, never a volatile value — so the check tolerates unrelated console noise. It becomes a recorded step that fails the deterministic replay if the log goes missing.
 
+## Simulating a transient network failure
+
+For resilience scenarios ("a video segment fails to load and playback keeps going", "the API drops once and the app retries"), the agent calls **`browser_fail_network`** right **before** the moment that issues the request, continues the flow, and asserts the recovered state. It records a deterministic `failNetwork` step:
+
+- `urlGlob` — same glob as `browser_assert_network` (`*`, `**`, `{a,b}`), e.g. `**/*.{ts,m4s}` for HLS/DASH segments.
+- `mode` — `abort` (network error) or `status` (HTTP error, default `503`).
+- Scope, exactly one — `times: N` (the next *N* matches, default `1`) or `durationMs` (every match for that window). Optional `resourceTypes` (`xhr`, `fetch`, `media`, …).
+
+It applies only to requests made after it runs, across every tab, and is removed when its budget or window is used up or the scenario ends. Prove it fired with `browser_assert_network` + `injected: true` (plain network assertions ignore injected requests). `result.json` → `networkFaults` reports how many requests each fault failed; a fault that matched **nothing fails the run** (never a silent pass). If the app registers a **service worker**, add `serviceWorkers: block` to the scenario: a worker answering from its cache bypasses any fault. It is opt-in, so other scenarios keep the default.
+
 ## Clicking role-less elements (by `data-testid`)
 
 `browser_click` only takes a numbered `[ref]` from the accessibility snapshot, so an element with **no ARIA role or name** — a gesture/tap layer, an overlay `<div data-testid="…">`, a purely visual control — never gets a `[ref]` and can't be clicked that way. When you hit one, use **`browser_click_selector`**: it clicks by `data-testid` (**preferred** — stabler than a CSS path) or, if there is none, a `css` selector. It records as a plain deterministic `click` step, so replay needs no LLM. Reach for it only for elements the snapshot can't reference; a normal button still goes through `browser_click`.
