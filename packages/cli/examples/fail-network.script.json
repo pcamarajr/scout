@@ -1,0 +1,10 @@
+[
+  { "kind": "navigate", "url": "/series/example/episode/1" },
+  { "kind": "assertState", "target": { "testId": "video-player", "description": "[data-testid=\"video-player\"]" }, "attribute": { "name": "data-state", "value": "playing" } },
+  { "kind": "failNetwork", "urlGlob": "**/*.{ts,m4s}", "mode": "abort", "times": 1, "resourceTypes": ["xhr", "fetch"] },
+  { "kind": "waitForText", "text": "0:15", "timeout": 30000 },
+  { "kind": "assertNetwork", "urlGlob": "**/*.{ts,m4s}", "injected": true },
+  { "kind": "assertNetwork", "urlGlob": "**/*.{ts,m4s}", "status": "2xx" },
+  { "kind": "assertState", "target": { "testId": "video-player", "description": "[data-testid=\"video-player\"]" }, "attribute": { "name": "data-state", "value": "playing" } },
+  { "kind": "assertNotVisible", "text": "Erro ao carregar o vídeo" }
+]

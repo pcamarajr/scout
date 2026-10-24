@@ -62,7 +62,9 @@ function fakeSession(overrides: Partial<Record<string, unknown>> = {}): {
       ),
     assertUrl: async (p: string, timeout?: number) =>
       void calls.push(`assertUrl:${p}:${timeout ?? "default"}`),
-    assertNetwork: async (m: { urlGlob: string }) => void calls.push(`assertNetwork:${m.urlGlob}`),
+    assertNetwork: async (m: { urlGlob: string; injected?: boolean }) =>
+      void calls.push(`assertNetwork:${m.urlGlob}${m.injected ? ":injected" : ""}`),
+    failNetwork: async (f: Record<string, unknown>) => void calls.push(`failNetwork:${JSON.stringify(f)}`),
     assertNoConsoleErrors: async (ignore?: string[]) =>
       void calls.push(`assertNoConsoleErrors:${(ignore ?? []).join(",")}`),
     assertConsoleMessage: async (includes: string[], type?: string) =>
@@ -113,6 +115,7 @@ test("exposes the browser tools plus scout_verdict", () => {
       "browser_click",
       "browser_click_selector",
       "browser_drag",
+      "browser_fail_network",
       "browser_fill",
       "browser_inspect_logs",
       "browser_navigate",
@@ -476,4 +479,48 @@ test("browser_assert rejects a container without notVisibleText", async () => {
   });
   assert.match(JSON.stringify(res), /require notVisibleText/);
   assert.deepEqual(steps, [], "nothing may be recorded when the arguments are contradictory");
+});
+
+test("browser_fail_network arms the fault and records the normalized step", async () => {
+  const { byName, steps, calls } = harness();
+  const res = await byName("browser_fail_network").handler({
+    urlGlob: "**/*.{ts,m4s}",
+    mode: "abort",
+    resourceTypes: ["xhr", "fetch"],
+  });
+  assert.equal(res.isError, undefined);
+  assert.match(res.text, /Armed: fail network: abort next 1 xhr\/fetch request/);
+  // Neither scope given → times: 1 is written out, so replay never re-derives a default.
+  const expected = { urlGlob: "**/*.{ts,m4s}", mode: "abort", times: 1, resourceTypes: ["xhr", "fetch"] };
+  assert.deepEqual(steps, [{ kind: "failNetwork", ...expected }]);
+  assert.deepEqual(calls, [`failNetwork:${JSON.stringify(expected)}`]);
+});
+
+test("browser_fail_network writes the default 503 for mode status", async () => {
+  const { byName, steps } = harness();
+  await byName("browser_fail_network").handler({ urlGlob: "**/api/feed", mode: "status", durationMs: 2000 });
+  assert.deepEqual(steps, [{ kind: "failNetwork", urlGlob: "**/api/feed", mode: "status", status: 503, durationMs: 2000 }]);
+});
+
+test("browser_fail_network rejects both scopes and records nothing", async () => {
+  const { byName, steps, calls } = harness();
+  const res = await byName("browser_fail_network").handler({
+    urlGlob: "**/x",
+    mode: "abort",
+    times: 2,
+    durationMs: 100,
+  });
+  assert.equal(res.isError, true);
+  assert.match(res.text, /exactly one of "times" or "durationMs"/);
+  assert.deepEqual(steps, []);
+  assert.deepEqual(calls, []);
+});
+
+test("browser_assert_network records injected=true only when asked", async () => {
+  const { byName, steps, calls } = harness();
+  await byName("browser_assert_network").handler({ urlGlob: "**/seg.ts", injected: true });
+  await byName("browser_assert_network").handler({ urlGlob: "**/seg.ts", status: 200 });
+  assert.deepEqual(calls, ["assertNetwork:**/seg.ts:injected", "assertNetwork:**/seg.ts"]);
+  assert.equal((steps[0] as { injected?: boolean }).injected, true);
+  assert.equal("injected" in steps[1], false);
 });

@@ -40,6 +40,7 @@ const OVERRIDE_KEYS = new Set([
   "cookies",
   "storage",
   "device",
+  "serviceWorkers",
 ]);
 
 /** Filesystem/report-safe viewport names (mirrors viewports.ts, kept inline so
@@ -233,6 +234,18 @@ function parseViewportList(raw: unknown, ctx: string): string[] | undefined {
   return [...new Set(items)];
 }
 
+/**
+ * Parse a `serviceWorkers` policy ("allow" | "block"). Anything else fails
+ * loud — a typo silently leaving service workers on would make a `failNetwork`
+ * step miss every request the worker handles.
+ */
+function parseServiceWorkers(raw: unknown, ctx: string): "allow" | "block" | undefined {
+  if (raw == null) return undefined;
+  const v = String(raw).trim();
+  if (v === "allow" || v === "block") return v;
+  throw new Error(`Invalid serviceWorkers "${v}" in ${ctx}. Expected "allow" or "block".`);
+}
+
 interface Section {
   name: string;
   bodyLines: string[];
@@ -274,6 +287,7 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
   const fileCookies = parseCookieList(data.cookies, relFile);
   const fileStorage = parseStorageBlock(data.storage, relFile);
   const fileDevice = parseDeviceBlock(data.device, `${relFile} frontmatter`);
+  const fileServiceWorkers = parseServiceWorkers(data.serviceWorkers, `${relFile} frontmatter`);
 
   const sections = splitSections(content);
   const scenarios: Scenario[] = [];
@@ -326,6 +340,8 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
     // form names a device only — individual overrides belong in frontmatter.
     const sectionDevice = "device" in overrides ? parseInlineDevice(overrides.device, ctx) : undefined;
     const device: ScenarioDevice | undefined = mergeDevice(fileDevice, sectionDevice);
+    const serviceWorkers =
+      "serviceWorkers" in overrides ? parseServiceWorkers(overrides.serviceWorkers, ctx) : fileServiceWorkers;
     scenarios.push({
       slug: `${fileSlug}/${scenarioSlug}`,
       name: section.name,
@@ -339,6 +355,7 @@ export function parseSpec(specFile: string, root: string, cwd: string): Scenario
       cookies,
       storage,
       device,
+      ...(serviceWorkers ? { serviceWorkers } : {}),
       file: relFile,
     });
   }
