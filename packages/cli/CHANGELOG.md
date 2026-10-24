@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/pcamarajr/scout/compare/scout-v0.16.0...scout-v0.17.0) (2026-10-24)
+
+
+### Features
+
+* **cli:** add failNetwork step to simulate transient network failures ([#76](https://github.com/pcamarajr/scout/issues/76)) ([afb6e25](https://github.com/pcamarajr/scout/commit/afb6e256c1e43c27c30fdc2f7b1e9100196bf4db))
+
 ## [0.16.0](https://github.com/pcamarajr/scout/compare/scout-v0.15.0...scout-v0.16.0) (2026-09-17)
 
 
