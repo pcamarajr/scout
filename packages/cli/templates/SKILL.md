@@ -22,6 +22,6 @@ without running it.
 **Read `AGENTS.md` at the repo root — it is the canonical, always-current guide**
 to the authoring loop, the `.scout.md` format, per-scenario overrides (viewports,
 permissions, `cookies:`, `storage:`, `device:` and `serviceWorkers:` preconditions), simulated
-network failures, base-URL/secret handling,
+network failures and offline mode, base-URL/secret handling,
 verdicts, and failure triage. Follow it. For commands and flags, run
 `scout --help` / `scout <command> --help`.

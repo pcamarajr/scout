@@ -130,7 +130,7 @@ export function describeStep(step: Step): string {
     case "assertUrl":
       return `assert URL contains "${step.pattern}"${timeoutSuffix(step.timeout)}`;
     case "assertNetwork":
-      return `assert request ${step.method ?? "ANY"} ${step.urlGlob}${step.status ? ` (status ${step.status})` : ""}${step.responseIncludes?.length ? ` containing ${step.responseIncludes.join(", ")}` : ""}`;
+      return `assert request ${step.method ?? "ANY"} ${step.urlGlob}${step.status ? ` (status ${step.status})` : ""}${step.responseIncludes?.length ? ` containing ${step.responseIncludes.join(", ")}` : ""}${timeoutSuffix(step.timeout)}`;
     case "assertNoConsoleErrors":
       return `assert no console errors${step.ignore?.length ? ` (ignoring ${step.ignore.join(", ")})` : ""}`;
     case "assertConsoleMessage":
@@ -144,6 +144,8 @@ export function describeStep(step: Step): string {
         ? `fail network: ${how} every${types} request matching ${step.urlGlob} for ${step.durationMs}ms`
         : `fail network: ${how} next ${step.times ?? 1}${types} request(s) matching ${step.urlGlob}`;
     }
+    case "setOffline":
+      return step.offline ? "go offline" : "go back online";
     case "screenshot":
       return `screenshot "${step.label}"`;
   }
@@ -170,6 +172,7 @@ export async function replaySteps(session: BrowserSession, steps: Step[]): Promi
       if (step.kind === "failNetwork") faultSteps.push(i);
     } catch (error) {
       await session.screenshot(`replay-failed-step-${i + 1}`).catch(() => {});
+      await session.settleNetworkFaults();
       return {
         passed: false,
         failedIndex: i,
@@ -179,6 +182,8 @@ export async function replaySteps(session: BrowserSession, steps: Step[]): Promi
       };
     }
   }
+  // Let any abort/fulfill still in flight land, so the report counts it.
+  await session.settleNetworkFaults();
   const outcome = extras();
   // A fault that never matched means the failure the scenario is about never
   // happened — passing would be a false positive. Fail at that step.

@@ -154,6 +154,7 @@ function stubSession(outcomes: FaultOutcome[]): BrowserSession {
   return {
     executeStep: async () => {},
     screenshot: async () => "",
+    settleNetworkFaults: async () => {},
     networkFaults: () => outcomes,
   } as unknown as BrowserSession;
 }
@@ -256,4 +257,37 @@ test("AI run: a verified verdict with an unexercised fault is downgraded to part
   // A non-verified verdict is the agent's own judgment and stays as is.
   const failed = { verdict: "failed" as const, reason: "stalled" };
   assert.deepEqual(guardUnexercisedFaults(failed, [{ ...fired[0], failed: 0 }]), failed);
+});
+
+test("parseSteps: setOffline needs a boolean, assertNetwork.timeout is optional and validated", () => {
+  assert.deepEqual(parseSteps([{ kind: "setOffline", offline: true }]), [{ kind: "setOffline", offline: true }]);
+  assert.throws(() => parseSteps([{ kind: "setOffline" }]), /"offline" must be true or false/);
+  assert.throws(() => parseSteps([{ kind: "setOffline", offline: "yes" }]), /"offline" must be true or false/);
+  assert.throws(
+    () => parseSteps([{ kind: "assertNetwork", urlGlob: "**/*.ts", timeout: -1 }]),
+    /"timeout" must be a non-negative integer/
+  );
+  assert.equal(describeStep({ kind: "setOffline", offline: true }), "go offline");
+  assert.equal(describeStep({ kind: "setOffline", offline: false }), "go back online");
+});
+
+test("parseSteps: a script recorded by 0.17 (assertNetwork without timeout) loads unchanged", () => {
+  const recorded = [
+    { kind: "navigate", url: "/pt/assistir/sinal-fechado-01" },
+    { kind: "click", target: { role: "button", name: "Rejeitar", description: 'button "Rejeitar"' } },
+    {
+      kind: "assertState",
+      target: { testId: "player-wrapper", description: '[data-testid="player-wrapper"]' },
+      attribute: { name: "data-testid", value: "player-wrapper" },
+    },
+    { kind: "failNetwork", urlGlob: "**/*.ts", mode: "abort", times: 1 },
+    {
+      kind: "assertState",
+      target: { css: "button[aria-label='Pausar']", description: "button[aria-label='Pausar']" },
+      attribute: { name: "aria-label", value: "Pausar" },
+    },
+    { kind: "assertNetwork", urlGlob: "**/*.ts", status: 0, injected: true },
+    { kind: "screenshot", label: "video-playing-after-injected-abort" },
+  ];
+  assert.deepEqual(parseSteps(structuredClone(recorded)), recorded);
 });

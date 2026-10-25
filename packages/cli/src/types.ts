@@ -294,11 +294,12 @@ export type Step =
   | { kind: "assertNotVisible"; text: string; timeout?: number; target?: Target }
   | ({ kind: "assertState"; target: Target; timeout?: number } & ElementStateMatcher)
   | { kind: "assertUrl"; pattern: string; timeout?: number }
-  | ({ kind: "assertNetwork" } & NetworkMatcher)
+  | ({ kind: "assertNetwork"; timeout?: number } & NetworkMatcher)
   | { kind: "assertNoConsoleErrors"; ignore?: string[] }
   | { kind: "assertConsoleMessage"; includes: string[]; type?: string }
   | { kind: "switchTab"; urlGlob?: string }
   | ({ kind: "failNetwork" } & NetworkFault)
+  | { kind: "setOffline"; offline: boolean }
   | { kind: "screenshot"; label: string };
 
 export type Verdict = "verified" | "failed" | "partial" | "blocked";

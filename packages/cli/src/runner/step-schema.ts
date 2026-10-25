@@ -20,6 +20,7 @@ export const STEP_KINDS: ReadonlySet<Step["kind"]> = new Set<Step["kind"]>([
   "assertConsoleMessage",
   "switchTab",
   "failNetwork",
+  "setOffline",
   "screenshot",
 ]);
 
@@ -93,7 +94,8 @@ export function normalizeNetworkFault(raw: unknown, ctx = "failNetwork"): Networ
 /**
  * Parses a recorded script (`.scout/scripts/<slug>@<viewport>.json`). Every
  * step must name a known kind — an unknown one used to fall through replay as
- * a silent pass — and `failNetwork` steps are fully validated. Other kinds are
+ * a silent pass — `failNetwork` steps are fully validated, and `setOffline`
+ * and the optional `assertNetwork.timeout` are type-checked. Other kinds are
  * passed through as recorded, so existing scripts load unchanged.
  */
 export function parseSteps(raw: unknown, source = "script"): Step[] {
@@ -108,6 +110,15 @@ export function parseSteps(raw: unknown, source = "script"): Step[] {
       throw new Error(`${ctx}: unknown step kind ${JSON.stringify(kind)}. Known: ${[...STEP_KINDS].join(", ")}.`);
     }
     if (kind === "failNetwork") return { kind, ...normalizeNetworkFault(step, `${ctx} (failNetwork)`) };
+    if (kind === "setOffline" && typeof (step as { offline?: unknown }).offline !== "boolean") {
+      throw new Error(`${ctx} (setOffline): "offline" must be true or false.`);
+    }
+    if (kind === "assertNetwork") {
+      const timeout = (step as { timeout?: unknown }).timeout;
+      if (timeout !== undefined && !(typeof timeout === "number" && Number.isInteger(timeout) && timeout >= 0)) {
+        throw new Error(`${ctx} (assertNetwork): "timeout" must be a non-negative integer (ms), got ${JSON.stringify(timeout)}.`);
+      }
+    }
     return step as Step;
   });
 }

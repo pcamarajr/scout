@@ -251,7 +251,7 @@ This records a `failNetwork` step. Its semantics:
 - **Mode** — `abort` (the request fails as a network error, `net::ERR_FAILED`) or `status` (fulfilled with an HTTP error, default `503`).
 - **Scope, exactly one** — `times: N` fails the next *N* matching requests and then stops interfering (default `1`, a single transient blip); `durationMs` fails **every** matching request for that window (an outage). The interception is removed when the budget or window is used up, and always when the scenario ends — later steps and later scenarios are unaffected.
 - **URL pattern** — the same glob as network assertions (`*` within a segment, `**` across, `{a,b}` alternatives), e.g. `**/*.{ts,m4s}` for HLS/DASH segments. Optional `resourceTypes` narrows it (`xhr`, `fetch`, `media`, …) — HLS players running on MSE load segments via `xhr`/`fetch`.
-- **Observable** — failed requests show up in the network log marked as injected, and an `assertNetwork` with `injected: true` proves the fault really fired (aborted requests carry status `0`). Plain network assertions **ignore** injected requests, so they can never pass on a response Scout fabricated.
+- **Observable** — failed requests show up in the network log marked as injected, and an `assertNetwork` with `injected: true` proves the fault really fired (aborted requests carry status `0`). Plain network assertions **ignore** injected requests, so they can never pass on a response Scout fabricated. `assertNetwork` **waits** for a match (optional `timeout`, default 10 000 ms), so the proof holds on replay even when the request fires a moment after the step before it; a fault that never fires still fails, saying how long it waited.
 - **Never a silent no-op** — `result.json` reports how many requests each fault failed (`networkFaults`). A fault that matched **nothing** fails the run at that step: a resilience check that never failed anything would be a false pass.
 
 Replay is deterministic: the recorded fault carries its explicit scope (`times: 1` when you gave none), so the same requests are failed in the same order, with no AI involved. A recorded script looks like this:
@@ -265,6 +265,19 @@ Replay is deterministic: the recorded fault carries its explicit scope (`times: 
   { "kind": "assertNotVisible", "text": "Erro ao carregar o vídeo" }
 ]
 ```
+
+### Going offline
+
+To test how the app handles losing the connection, a scenario can take the whole browser offline and bring it back:
+
+```md
+## Offline notice and recovery
+
+Open episode 1 and let it play. Go offline: a "check your connection"
+notice appears. Go back online: the notice disappears and playback resumes.
+```
+
+This records `setOffline` steps (`{ "kind": "setOffline", "offline": true }`, then `false`). Offline applies to every tab: new requests fail, `navigator.onLine` flips and the page receives the `offline` and `online` events. Replay is deterministic. Use `failNetwork` when only some requests should fail.
 
 ### Service workers
 

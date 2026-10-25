@@ -10,7 +10,7 @@ Scout is self-healing browser QA. You write a scenario in one sentence; an AI ag
 - ✍️ **Author in one sentence** — no selectors, no code. Just the flow and what should happen.
 - 🤖 **Verified in a real browser** — an agent judges behavior ("the paywall must *not* appear"), not just clicks.
 - 🌐 **Sees console & network** — assert "no console errors" or "a POST to `/api/checkout` returned 2xx" — not just the visible DOM.
-- 💥 **Simulates network failures** — abort or 5xx the next video segment / API call, then verify the app recovers. Replays deterministically.
+- 💥 **Simulates network failures** — abort or 5xx the next video segment / API call, then verify the app recovers — or take the browser offline and back. Replays deterministically.
 - ⚡ **Replays for free** — recorded runs are pure Playwright. ~zero cost, seconds per scenario, CI-ready.
 - 🎯 **Records stable selectors** — a preference ladder (data-testid → id → role+name → text → positional CSS) picks the sturdiest handle that uniquely matches, warns *at record time* when only a fragile positional selector was available, and stores fallbacks it retries deterministically on replay.
 - 🔧 **Self-heals** — when the UI changes, AI re-verifies and re-records; you review the diff.
@@ -80,6 +80,7 @@ npx playwright install chromium
 scout init                        # writes scout.config.json, .scout/, and AI agent files (below)
 ```
 
+- Playwright is a **peer dependency** (`^1.52.0`): Scout uses your project's own Playwright, so pinning one (directly or via `@playwright/test`) pins the version replay runs on — no second copy is installed.
 - `.scout/specs/*.scout.md` (your scenarios) and `.scout/scripts/` are **committed**; runs and sessions are gitignored.
 - Gate a PR on it: `scout report --check` exits non-zero if any scenario isn't `verified`. → [CI setup](https://scout.pcamarajr.dev/docs/environments/)
 

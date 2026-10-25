@@ -437,7 +437,7 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
     ),
     define(
       "browser_assert_network",
-      'Verifies that an expected network call happened. Match the request by method + URL pattern (urlGlob with *, ** and {a,b}) and, optionally, status. To inspect the response body use responseIncludes with STABLE substrings (field names like "orderId"), never volatile values (ids, timestamps). Requests failed by browser_fail_network are EXCLUDED by default; pass injected=true to match ONLY those (aborted ones have status 0) — the way to prove the fault really fired. Becomes a deterministic test.',
+      'Verifies that an expected network call happened. Match the request by method + URL pattern (urlGlob with *, ** and {a,b}) and, optionally, status. To inspect the response body use responseIncludes with STABLE substrings (field names like "orderId"), never volatile values (ids, timestamps). Requests failed by browser_fail_network are EXCLUDED by default; pass injected=true to match ONLY those (aborted ones have status 0) — the way to prove the fault really fired. Waits for a matching request up to timeoutMs (default 10s), so it also holds when the request (or the fault) lands a moment later on replay. Becomes a deterministic test.',
       z.object({
         urlGlob: z.string().describe("URL pattern, e.g. **/api/checkout/**"),
         method: z.string().optional().describe("GET, POST, ... (omitted = any method)"),
@@ -453,10 +453,16 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
           .boolean()
           .optional()
           .describe("true = match ONLY requests failed by browser_fail_network (proves the fault fired). Omitted = real traffic only."),
+        timeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("How long to wait for a matching request (default 10000). Raise it only for a request that is known to come late (e.g. a video segment fetched after several seconds of playback)."),
       }),
-      async ({ urlGlob, method, status, responseIncludes, injected }) => {
+      async ({ urlGlob, method, status, responseIncludes, injected, timeoutMs }) => {
         try {
-          await session.assertNetwork({ urlGlob, method, status, responseIncludes, injected });
+          await session.assertNetwork({ urlGlob, method, status, responseIncludes, injected }, timeoutMs);
           record({
             kind: "assertNetwork",
             urlGlob,
@@ -464,6 +470,7 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
             status,
             responseIncludes,
             ...(injected !== undefined ? { injected } : {}),
+            ...(timeoutMs ? { timeout: timeoutMs } : {}),
           });
           return ok(
             `Network assertion passed: ${method ?? "ANY"} ${urlGlob}${status !== undefined ? ` (status ${status})` : ""}${injected ? " [injected]" : ""}.`
@@ -521,6 +528,27 @@ export function createScoutTools(ctx: ScoutToolContext): ScoutTool[] {
           return ok(
             `Armed: ${describeStep(step)}. Nothing has been failed yet — trigger the request now (continue the flow), then check browser_inspect_logs ("Network faults") or assert with browser_assert_network injected=true.`
           );
+        } catch (e) {
+          return fail(e);
+        }
+      }
+    ),
+    define(
+      "browser_set_offline",
+      [
+        "Takes the whole browser offline (offline=true) or back online (offline=false) — for scenarios like \"the connection drops, a 'check your connection' notice appears, and the app recovers when it comes back\".",
+        "Every tab is affected: new requests fail as offline, navigator.onLine flips, and the page receives the offline/online events.",
+        "Always bring it back online (offline=false) before asserting the recovery. Becomes a deterministic step.",
+      ].join(" "),
+      z.object({
+        offline: z.boolean().describe("true = go offline; false = back online"),
+      }),
+      async ({ offline }) => {
+        try {
+          await session.setOffline(offline);
+          const step: Step = { kind: "setOffline", offline };
+          record(step);
+          return ok(`${describeStep(step)}: done. navigator.onLine is now ${!offline}.`);
         } catch (e) {
           return fail(e);
         }
