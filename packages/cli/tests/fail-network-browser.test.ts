@@ -79,6 +79,25 @@ const POPUP = `<!doctype html><html><body><div id="pop"></div><script>
     .catch(() => { document.getElementById('pop').textContent = 'pop=failed'; });
 </script></body></html>`;
 
+/**
+ * The race the HotShort replay hit: the ready marker is visible at once, the
+ * segment is requested only `delay` ms later — so the assertion step runs
+ * before the fault has fired.
+ */
+const racePage = (delay: number): string => `<!doctype html><html><body>
+  <div id="ready">ready</div>
+  <script>setTimeout(() => fetch('/hls/seg_000.ts', { cache: 'no-store' }).catch(() => {}), ${delay});</script>
+</body></html>`;
+
+/** Paints navigator.onLine and every online/offline event the page receives. */
+const OFFLINE_PAGE = `<!doctype html><html><body><div id="net"></div><div id="events"></div><script>
+  const paint = () => { document.getElementById('net').textContent = navigator.onLine ? 'net=online' : 'net=offline'; };
+  const log = (e) => { document.getElementById('events').textContent += ' ' + e.type; paint(); };
+  addEventListener('online', log);
+  addEventListener('offline', log);
+  paint();
+</script></body></html>`;
+
 /** Page that registers a pass-through service worker before offering "Load". */
 const SW_PAGE = PAGE.replace(
   "<script>",
@@ -111,6 +130,8 @@ function startFixture(): Promise<Fixture> {
     if (p === "/popup") return send("text/html", POPUP);
     if (p === "/sw") return send("text/html", SW_PAGE);
     if (p === "/sw.js") return send("text/javascript", SW_JS);
+    if (p === "/race") return send("text/html", racePage(Number(new URL(req.url ?? "/", "http://x").searchParams.get("delay") ?? 0)));
+    if (p === "/offline") return send("text/html", OFFLINE_PAGE);
     if (p.startsWith("/hls/")) return send("video/mp2t", `DATA${path.basename(p)}`);
     res.writeHead(404);
     res.end();
@@ -184,8 +205,8 @@ test("aborts exactly one matching segment; the retry succeeds and later segments
       assert.equal(fixture.hits.get("/hls/seg-2.m4s"), 1);
       // Only the injected entry is visible to injected:true, and it is marked.
       await assert.rejects(
-        s.assertNetwork({ urlGlob: "**/seg-2.m4s", injected: true }),
-        /No observed request matched .*injected by failNetwork/
+        s.assertNetwork({ urlGlob: "**/seg-2.m4s", injected: true }, 200),
+        /No observed request matched .*injected by failNetwork.*\(waited \d+ms\)/
       );
       assert.match(s.formatLogs(), /GET ABORTED \(net::ERR_FAILED\) .*seg-1\.ts \[injected by failNetwork\]/);
       assert.match(s.formatLogs(), /#1 abort \*\*\/\*\.\{ts,m4s\} — failed 1\/1/);
@@ -214,7 +235,7 @@ test("mode status fulfills the budgeted requests with the HTTP status, marked in
       assert.equal(replay.networkFaults?.[0].failed, 2);
       assert.equal(fixture.hits.get("/hls/seg-1.ts"), 1);
       // A plain assertion never matches the fabricated 503s.
-      await assert.rejects(s.assertNetwork({ urlGlob: "**/seg-1.ts", status: 503 }), /No observed request/);
+      await assert.rejects(s.assertNetwork({ urlGlob: "**/seg-1.ts", status: 503 }, 200), /No observed request/);
     });
   } finally {
     await fixture.close();
@@ -350,6 +371,143 @@ test("service workers: allowed → worker fetches are still failed but flagged; 
       },
       "block"
     );
+  } finally {
+    await fixture.close();
+  }
+});
+
+/** The generic HotShort repro: assert the fault right after an unrelated ready marker. */
+const raceScript = (delay: number, mode: "abort" | "status"): Step[] =>
+  parseSteps([
+    { kind: "navigate", url: `/race?delay=${delay}` },
+    mode === "abort"
+      ? { kind: "failNetwork", urlGlob: "**/*.ts", mode: "abort", times: 1 }
+      : { kind: "failNetwork", urlGlob: "**/*.ts", mode: "status", status: 503, times: 1 },
+    { kind: "assertVisible", text: "ready" },
+    // Recorded by 0.17 — no timeout field.
+    { kind: "assertNetwork", urlGlob: "**/*.ts", status: mode === "abort" ? 0 : 503, injected: true },
+  ]);
+
+for (const mode of ["abort", "status"] as const) {
+  test(`assertNetwork injected=true waits for a fault that fires after the step starts (${mode})`, { skip: SKIP }, async () => {
+    const fixture = await startFixture();
+    try {
+      for (const delay of [50, 150, 300, 500]) {
+        for (let i = 0; i < 3; i++) {
+          await withSession(fixture, async (s) => {
+            const replay = await replaySteps(s, raceScript(delay, mode));
+            assert.equal(replay.passed, true, `delay ${delay}ms run ${i + 1}: ${replay.error}`);
+            assert.equal(replay.networkFaults?.[0].failed, 1);
+          });
+        }
+      }
+    } finally {
+      await fixture.close();
+    }
+  });
+}
+
+test("assertNetwork injected=true cannot pass before the fault fires, and passes once it fires within the timeout", { skip: SKIP }, async () => {
+  const fixture = await startFixture();
+  try {
+    await withSession(fixture, async (s) => {
+      await s.navigate("/");
+      await s.executeStep({ kind: "failNetwork", urlGlob: "**/seg-1.ts", mode: "abort", times: 1 });
+      // Nothing requested yet: an immediate check fails.
+      await assert.rejects(s.assertNetwork({ urlGlob: "**/seg-1.ts", injected: true }, 0), /No observed request/);
+      let settled = false;
+      const pending = s.assertNetwork({ urlGlob: "**/seg-1.ts", status: 0, injected: true }, 5_000).finally(() => {
+        settled = true;
+      });
+      await new Promise((r) => setTimeout(r, 300));
+      assert.equal(settled, false, "the assertion must still be waiting — the fault has not fired");
+      assert.equal(s.networkFaults()[0].failed, 0);
+      await s.executeStep({ kind: "click", target: button("Load") });
+      await pending;
+      assert.equal(s.networkFaults()[0].failed, 1);
+    });
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("a fault that never fires fails the replay at the injected assertion, saying how long it waited", { skip: SKIP }, async () => {
+  const fixture = await startFixture();
+  try {
+    await withSession(fixture, async (s) => {
+      const replay = await replaySteps(
+        s,
+        parseSteps([
+          { kind: "navigate", url: "/race?delay=50" },
+          { kind: "failNetwork", urlGlob: "**/never.ts", mode: "abort" },
+          { kind: "assertVisible", text: "ready" },
+          { kind: "assertNetwork", urlGlob: "**/*.ts", injected: true, timeout: 500 },
+        ])
+      );
+      assert.equal(replay.passed, false);
+      assert.equal(replay.failedIndex, 3);
+      assert.match(replay.error ?? "", /No observed request matched ANY \*\*\/\*\.ts \[injected by failNetwork\]\. \(waited \d+ms\)/);
+      assert.equal(replay.networkFaults?.[0].failed, 0);
+    });
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("the fault report never runs ahead of the network log (page and service-worker requests)", { skip: SKIP }, async () => {
+  const fixture = await startFixture();
+  try {
+    for (const sw of [false, true]) {
+      await withSession(fixture, async (s) => {
+        await s.navigate(sw ? "/sw" : "/");
+        if (sw) {
+          await s.page
+            .waitForFunction(() => Boolean(navigator.serviceWorker.controller), undefined, { timeout: 2_000 })
+            .catch(() => s.page.reload());
+          await s.page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+        }
+        await s.executeStep({ kind: "failNetwork", urlGlob: "**/seg-1.ts", mode: "abort", times: 1 });
+        await s.executeStep({ kind: "click", target: button("Load") });
+        // Spin on the report; the instant it counts the fault, the log must hold it.
+        const deadline = Date.now() + 5_000;
+        while (s.networkFaults()[0].failed === 0) {
+          assert.ok(Date.now() < deadline, "fault never fired");
+          await new Promise((r) => setImmediate(r));
+        }
+        await s.assertNetwork({ urlGlob: "**/seg-1.ts", status: 0, injected: true }, 0);
+      });
+    }
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("setOffline flips navigator.onLine both ways, fires the events, and replays deterministically", { skip: SKIP }, async () => {
+  const fixture = await startFixture();
+  try {
+    const script = parseSteps([
+      { kind: "navigate", url: "/offline" },
+      { kind: "assertVisible", text: "net=online" },
+      { kind: "setOffline", offline: true },
+      { kind: "assertVisible", text: "net=offline" },
+      { kind: "setOffline", offline: false },
+      { kind: "assertVisible", text: "net=online" },
+    ]);
+    for (let i = 0; i < 2; i++) {
+      await withSession(fixture, async (s) => {
+        const replay = await replaySteps(s, script);
+        assert.equal(replay.passed, true, replay.error);
+        assert.equal(await s.page.evaluate(() => navigator.onLine), true);
+        assert.equal((await s.page.locator("#events").innerText()).trim(), "offline online");
+      });
+    }
+    // While offline, requests really fail.
+    await withSession(fixture, async (s) => {
+      await s.navigate("/offline");
+      await s.setOffline(true);
+      const failed = await s.page.evaluate(() => fetch("/hls/x.ts").then(() => false, () => true));
+      assert.equal(failed, true);
+    });
   } finally {
     await fixture.close();
   }

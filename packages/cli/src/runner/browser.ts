@@ -127,15 +127,18 @@ export interface LaunchOptions {
 }
 
 /**
- * Live state of one `failNetwork` step. The handler counts synchronously
- * before any await, so the `times` budget is exact even when matching requests
- * race each other.
+ * Live state of one `failNetwork` step. The handler claims budget
+ * synchronously before any await, so the `times` budget is exact even when
+ * matching requests race each other; `failed` only moves once the request was
+ * really failed AND logged, so the report never runs ahead of the network log.
  */
 interface ActiveFault {
   fault: NetworkFault;
   re: RegExp;
   handler: (route: Route, request: Request) => Promise<void>;
-  /** Requests actually aborted/fulfilled so far. */
+  /** Requests that took a slot of the budget (incl. ones still being failed). */
+  claimed: number;
+  /** Requests aborted/fulfilled AND already in the network log. */
   failed: number;
   /** True once the budget is used up, the window ended, or the session closed. */
   done: boolean;
@@ -334,6 +337,8 @@ const SETTLE_TIMEOUT = 2_000;
 
 /** Cap the ring buffers so a long-running session can't grow them unbounded. */
 const NETWORK_LOG_CAP = 300;
+/** How often assertNetwork re-reads the network log while waiting for a match. */
+const NETWORK_POLL_MS = 50;
 const CONSOLE_LOG_CAP = 500;
 
 /**
@@ -360,10 +365,12 @@ export class BrowserSession {
 
   /** `failNetwork` faults in install order. No route exists until one is installed. */
   private faults: ActiveFault[] = [];
-  /** Requests a fault aborted/fulfilled — lets the observers mark them `injected`. */
+  /**
+   * Requests a fault is failing. The fault handler logs them itself, so the
+   * page observers skip them — one entry per injected request, written before
+   * the fault counts it.
+   */
   private injectedRequests = new WeakSet<Request>();
-  /** Injected requests that got a (fulfilled) response — their trailing requestfailed is noise. */
-  private respondedRequests = new WeakSet<Request>();
 
   private constructor(
     private context: BrowserContext,
@@ -459,8 +466,8 @@ export class BrowserSession {
    * ring-buffered store. Called for the first page and for every popup/new tab
    * the context opens, so a tab's logs are captured from birth — before any
    * switchTab. Idempotent. The observers only LISTEN; the one thing that ever
-   * routes is an explicit `failNetwork` step, and the requests it fails are
-   * recorded here marked `injected` so assertNetwork can prove the fault fired.
+   * routes is an explicit `failNetwork` step; the requests it fails are logged
+   * by its handler (marked `injected`), not here.
    */
   private trackPage(page: Page): void {
     if (this.pageBuffers.has(page)) return;
@@ -475,30 +482,17 @@ export class BrowserSession {
     page.on("console", (msg) => pushConsole({ type: msg.type(), text: msg.text() }));
     page.on("pageerror", (err) => pushConsole({ type: "error", text: `${err.name}: ${err.message}` }));
     const pushNetwork = (entry: CapturedRequest): void => this.pushNetwork(page, entry);
+    // Real failed requests are never logged: an existing status-less
+    // assertNetwork would start matching requests that never got a response.
     page.on("response", (res) => {
       const req = res.request();
+      if (this.injectedRequests.has(req)) return;
       let body: Promise<string> | undefined;
       pushNetwork({
         method: req.method(),
         url: res.url(),
         status: res.status(),
         getBody: () => (body ??= res.text().catch(() => "")),
-        ...(this.injectedRequests.has(req) ? { injected: true } : {}),
-      });
-      if (this.injectedRequests.has(req)) this.respondedRequests.add(req);
-    });
-    // Only OUR aborts are recorded: logging every real failed request would let
-    // an existing status-less assertNetwork start matching requests that never
-    // got a response.
-    page.on("requestfailed", (req) => {
-      if (!this.injectedRequests.has(req) || this.respondedRequests.has(req)) return;
-      pushNetwork({
-        method: req.method(),
-        url: req.url(),
-        status: 0,
-        getBody: () => Promise.resolve(""),
-        injected: true,
-        failure: req.failure()?.errorText ?? "aborted",
       });
     });
   }
@@ -944,6 +938,7 @@ export class BrowserSession {
     const active: ActiveFault = {
       fault,
       re,
+      claimed: 0,
       failed: 0,
       done: false,
       inflight: new Set(),
@@ -962,9 +957,9 @@ export class BrowserSession {
       if (active.done || (types && !types.has(request.resourceType()))) {
         return route.fallback();
       }
-      // Count before any await so concurrent matches can't overspend `times`.
-      active.failed += 1;
-      const last = fault.times !== undefined && active.failed >= fault.times;
+      // Claim before any await so concurrent matches can't overspend `times`.
+      active.claimed += 1;
+      const last = fault.times !== undefined && active.claimed >= fault.times;
       if (last) active.done = true;
       // Marked before the call: the response event can fire before it resolves.
       this.injectedRequests.add(request);
@@ -972,22 +967,25 @@ export class BrowserSession {
         try {
           if (fault.mode === "abort") await route.abort("failed");
           else await route.fulfill({ status: fault.status, headers: { "x-scout-fault": "failNetwork" }, body: "" });
-          // A service worker's own fetch never reaches the page observers, so
-          // log it on the active tab here — assertNetwork injected=true must
-          // still be able to prove the fault fired.
-          if (request.serviceWorker()) {
-            this.pushNetwork(this.activePage, {
-              method: request.method(),
-              url: request.url(),
-              status: fault.mode === "abort" ? 0 : (fault.status ?? 0),
-              getBody: () => Promise.resolve(""),
-              injected: true,
-              ...(fault.mode === "abort" ? { failure: "net::ERR_FAILED (service worker fetch)" } : {}),
-            });
-          }
+          // Logged here, not by the page observers, for page AND service-worker
+          // requests alike (a worker's own fetch never reaches the page
+          // observers): the entry lands in the log in the same tick `failed`
+          // counts it, so the report and assertNetwork injected=true agree.
+          const owner = this.requestPage(request);
+          this.pushNetwork(owner, {
+            method: request.method(),
+            url: request.url(),
+            status: fault.mode === "abort" ? 0 : (fault.status ?? 0),
+            getBody: () => Promise.resolve(""),
+            injected: true,
+            ...(fault.mode === "abort"
+              ? { failure: request.serviceWorker() ? "net::ERR_FAILED (service worker fetch)" : "net::ERR_FAILED" }
+              : {}),
+          });
+          active.failed += 1;
         } catch {
           // The page/context went away mid-request — it was not failed by us.
-          active.failed -= 1;
+          active.claimed -= 1;
           this.injectedRequests.delete(request);
         }
       })();
@@ -1016,6 +1014,36 @@ export class BrowserSession {
   }
 
   /**
+   * The tab a request belongs to. A service worker's own fetch has no frame,
+   * so it is logged on the active tab — where assertNetwork looks.
+   */
+  private requestPage(request: Request): Page {
+    if (request.serviceWorker()) return this.activePage;
+    try {
+      return request.frame().page();
+    } catch {
+      return this.activePage;
+    }
+  }
+
+  /**
+   * Waits for every abort/fulfill a fault has in flight, so a report read
+   * right after reflects requests that were already intercepted. Never throws.
+   */
+  async settleNetworkFaults(): Promise<void> {
+    await Promise.allSettled(this.faults.flatMap((f) => [...f.inflight]));
+  }
+
+  /**
+   * Emulates losing (`true`) or regaining (`false`) the network connection for
+   * the whole context (`setOffline` step): requests fail as offline, and pages
+   * see `navigator.onLine` flip and the `offline`/`online` events fire.
+   */
+  async setOffline(offline: boolean): Promise<void> {
+    await this.context.setOffline(offline);
+  }
+
+  /**
    * What every `failNetwork` step did so far, in install order. A fault that
    * never matched gets a warning; the runner turns that into a failure, since
    * the scenario would otherwise pass without exercising the failure at all.
@@ -1034,10 +1062,25 @@ export class BrowserSession {
     });
   }
 
-  /** Asserts an expected network call was observed. Throws with a reason on miss. */
-  async assertNetwork(matcher: NetworkMatcher): Promise<void> {
-    const result = await matchNetwork(this.buffers().network, matcher);
-    if (!result.ok) throw new Error(result.reason ?? "Network assertion failed.");
+  /**
+   * Asserts an expected network call was observed on the active tab, polling
+   * the log until it matches or `timeout` elapses (STEP_TIMEOUT when omitted).
+   * Replay runs steps back to back, so the request — or the fault a previous
+   * `failNetwork` armed — may land a moment after this step starts. A match
+   * already in the log passes on the first check, as before. Throws with the
+   * reason and how long it waited on miss.
+   */
+  async assertNetwork(matcher: NetworkMatcher, timeout = STEP_TIMEOUT): Promise<void> {
+    const started = Date.now();
+    const deadline = started + timeout;
+    for (;;) {
+      const result = await matchNetwork(this.buffers().network, matcher);
+      if (result.ok) return;
+      if (Date.now() >= deadline) {
+        throw new Error(`${result.reason ?? "Network assertion failed."} (waited ${Date.now() - started}ms)`);
+      }
+      await new Promise((r) => setTimeout(r, Math.min(NETWORK_POLL_MS, Math.max(0, deadline - Date.now()))));
+    }
   }
 
   /** Asserts no console errors (console.error + uncaught) except ignored substrings. */
@@ -1173,7 +1216,7 @@ export class BrowserSession {
       case "assertUrl":
         return this.assertUrl(step.pattern, step.timeout);
       case "assertNetwork":
-        return this.assertNetwork(step);
+        return this.assertNetwork(step, step.timeout);
       case "assertNoConsoleErrors":
         return this.assertNoConsoleErrors(step.ignore);
       case "assertConsoleMessage":
@@ -1182,6 +1225,8 @@ export class BrowserSession {
         return this.switchTab(step.urlGlob);
       case "failNetwork":
         return this.failNetwork(step);
+      case "setOffline":
+        return this.setOffline(step.offline);
       case "screenshot":
         return void (await this.screenshot(step.label));
       default:

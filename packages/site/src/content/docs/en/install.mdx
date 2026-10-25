@@ -20,6 +20,8 @@ npm i -D @pcamarajr/scout
 
 It's a dev dependency: Scout runs in development and CI, never in your shipped app.
 
+Playwright is a **peer dependency** (`playwright` `^1.52.0`): Scout drives the browser with *your* project's Playwright, so a project that already pins one (directly or through `@playwright/test`) gets no second copy and replays on the exact version it tests with. npm 7+ installs it for you when the project has none. Then install the browser engine once with `npx playwright install chromium`.
+
 ## 2. Scaffold with `scout init`
 
 ```bash

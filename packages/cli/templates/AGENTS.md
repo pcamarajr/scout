@@ -246,7 +246,11 @@ For resilience scenarios ("a video segment fails to load and playback keeps goin
 - `mode` — `abort` (network error) or `status` (HTTP error, default `503`).
 - Scope, exactly one — `times: N` (the next *N* matches, default `1`) or `durationMs` (every match for that window). Optional `resourceTypes` (`xhr`, `fetch`, `media`, …).
 
-It applies only to requests made after it runs, across every tab, and is removed when its budget or window is used up or the scenario ends. Prove it fired with `browser_assert_network` + `injected: true` (plain network assertions ignore injected requests). `result.json` → `networkFaults` reports how many requests each fault failed; a fault that matched **nothing fails the run** (never a silent pass). If the app registers a **service worker**, add `serviceWorkers: block` to the scenario: a worker answering from its cache bypasses any fault. It is opt-in, so other scenarios keep the default.
+It applies only to requests made after it runs, across every tab, and is removed when its budget or window is used up or the scenario ends. Prove it fired with `browser_assert_network` + `injected: true` (plain network assertions ignore injected requests). Network assertions **wait** for a match (default 10 s, `timeoutMs` to change it), so the proof holds on replay even when the request comes a moment after the previous step. `result.json` → `networkFaults` reports how many requests each fault failed; a fault that matched **nothing fails the run** (never a silent pass). If the app registers a **service worker**, add `serviceWorkers: block` to the scenario: a worker answering from its cache bypasses any fault. It is opt-in, so other scenarios keep the default.
+
+## Going offline
+
+For "the connection drops" scenarios (a *check your connection* notice, a paused upload, recovery when it comes back), the agent calls **`browser_set_offline`** with `offline: true`, asserts the offline state, then `offline: false` and asserts the recovery. It records a `setOffline` step (`{ "kind": "setOffline", "offline": true }`) that replays deterministically: the whole browser context goes offline, `navigator.onLine` flips and the page receives the `offline`/`online` events. Use `failNetwork` instead when only some requests should fail.
 
 ## Clicking role-less elements (by `data-testid`)
 

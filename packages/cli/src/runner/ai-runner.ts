@@ -149,6 +149,7 @@ Rules:
 - Never use literal secrets: use $ENV:VAR_NAME — it works both in browser_fill and in browser_navigate URLs (e.g. tokens in the query string).
 - Don't re-fill a field you already filled, unless the page cleared the value — each of your actions becomes a step in the recorded script, and duplicate steps are noise that makes replay fragile.
 - To check resilience to a transient network failure (a video segment, an API call that drops), use browser_fail_network right BEFORE the action/moment that issues the request, then let the app retry and assert the recovered state. Then prove the fault fired with browser_assert_network injected=true. A fault that never matches fails the run, so do not arm it after the request already happened.
+- To check how the app handles losing the connection (an offline notice, a paused upload, a recovery), use browser_set_offline offline=true at that moment, assert the offline state, then browser_set_offline offline=false and assert the recovery.
 - Network/console assertions must be TOLERANT: match requests by method + URL pattern + status; only use responseIncludes with stable substrings (field names), never ids/timestamps. An assertion glued to a volatile value breaks on replay.
 - Be economical: don't explore beyond the scenario. Your budget is ${config.maxTurns} actions.
 - If you're repeating attempts without progress (a blocking overlay, an element that won't appear), STOP and call scout_verdict (partial or blocked) explaining the obstacle — a partial verdict is worth more than dying without a verdict.`;
@@ -188,6 +189,7 @@ Rules:
     }
   }
 
+  await session.settleNetworkFaults();
   const faultSteps = steps.flatMap((s, i) => (s.kind === "failNetwork" ? [i] : []));
   const networkFaults = collectFaultReports(session, steps, faultSteps);
   const faultInfo = networkFaults.length ? { networkFaults } : {};

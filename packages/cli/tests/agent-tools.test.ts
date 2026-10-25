@@ -122,6 +122,7 @@ test("exposes the browser tools plus scout_verdict", () => {
       "browser_press",
       "browser_screenshot",
       "browser_select",
+      "browser_set_offline",
       "browser_snapshot",
       "browser_switch_tab",
       "browser_wait_for",
@@ -523,4 +524,18 @@ test("browser_assert_network records injected=true only when asked", async () =>
   assert.deepEqual(calls, ["assertNetwork:**/seg.ts:injected", "assertNetwork:**/seg.ts"]);
   assert.equal((steps[0] as { injected?: boolean }).injected, true);
   assert.equal("injected" in steps[1], false);
+});
+
+test("browser_set_offline toggles the context and records a setOffline step", async () => {
+  const calls: boolean[] = [];
+  const { tools, steps } = harness({ setOffline: async (offline: boolean) => void calls.push(offline) });
+  const tool = tools.find((t) => t.name === "browser_set_offline")!;
+  const off = await tool.handler({ offline: true });
+  assert.equal(off.isError, undefined);
+  await tool.handler({ offline: false });
+  assert.deepEqual(calls, [true, false]);
+  assert.deepEqual(steps, [
+    { kind: "setOffline", offline: true },
+    { kind: "setOffline", offline: false },
+  ]);
 });
