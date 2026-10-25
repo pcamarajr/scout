@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.18.0](https://github.com/pcamarajr/scout/compare/scout-v0.17.0...scout-v0.18.0) (2026-10-25)
+
+
+### Features
+
+* **cli:** add setOffline step to emulate losing and regaining the connection ([4ebf7ba](https://github.com/pcamarajr/scout/commit/4ebf7ba4efd7d933266951dc0a24fce0e15e7b54))
+
+
+### Bug Fixes
+
+* **cli:** make failNetwork verification replay-deterministic (assertNetwork waits up to an optional timeout; injected requests are logged before the fault counts them) ([4ebf7ba](https://github.com/pcamarajr/scout/commit/4ebf7ba4efd7d933266951dc0a24fce0e15e7b54))
+* **cli:** make Playwright a peerDependency so the consumer's Playwright is used ([4ebf7ba](https://github.com/pcamarajr/scout/commit/4ebf7ba4efd7d933266951dc0a24fce0e15e7b54))
+
 ## [0.17.0](https://github.com/pcamarajr/scout/compare/scout-v0.16.0...scout-v0.17.0) (2026-10-24)
 
 
